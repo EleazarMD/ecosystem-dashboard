@@ -1,0 +1,879 @@
+/**
+ * Multi-Agent Evaluator Panel
+ * 
+ * Provides full transparency into the clinical evidence multi-agent evaluation system.
+ * Shows real-time status of Backend, Frontend (Vision), and Orchestrator agents.
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Box,
+  VStack,
+  HStack,
+  Text,
+  Badge,
+  Grid,
+  GridItem,
+  Stat,
+  StatLabel,
+  StatNumber,
+  StatHelpText,
+  StatArrow,
+  Progress,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  Button,
+  Spinner,
+  Icon,
+  Tooltip,
+  useToast,
+  Collapse,
+  IconButton,
+  SimpleGrid,
+} from '@chakra-ui/react';
+import {
+  Activity,
+  Eye,
+  Database,
+  GitBranch,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  RefreshCw,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  ChevronDown,
+  ChevronUp,
+  Cpu,
+  Image,
+  MessageSquare,
+  Layers,
+} from 'lucide-react';
+import { useSemanticToken } from '@/hooks/useSemanticToken';
+import { SimpleGlassPanel } from '@/components/ui/SimpleGlassPanel';
+import {
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  Legend,
+  ResponsiveContainer,
+  ReferenceLine,
+} from 'recharts';
+
+const API_BASE = '/api/clinical-kb/multi-agent-status';
+
+interface AgentStatus {
+  name: string;
+  status: 'healthy' | 'degraded' | 'error' | 'idle';
+  lastActivity: string | null;
+  currentTask: string | null;
+  metrics: Record<string, any>;
+}
+
+interface SystemOverview {
+  timestamp: string;
+  overallHealth: string;
+  agents: {
+    backend: AgentStatus;
+    frontend: AgentStatus;
+    orchestrator: AgentStatus;
+  };
+  recentEvaluations: number;
+  avgQualityScore: number;
+  pendingEnrichments: number;
+  activeRecalibrations: number;
+  visionAnalysisEnabled: boolean;
+}
+
+interface Evaluation {
+  timestamp: string;
+  query: string;
+  compositeScore: number;
+  grade: string;
+  domain: string;
+  visionUsed: boolean;
+  gapsCount: number;
+  layoutScore?: number;
+  uxScore?: number;
+}
+
+interface QualityTrend {
+  condition: string;
+  trend: string;
+  latestScore: number;
+  dataPoints: Array<{ timestamp: string; score: number }>;
+}
+
+const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
+  const colorScheme = {
+    healthy: 'green',
+    degraded: 'yellow',
+    error: 'red',
+    idle: 'gray',
+  }[status] || 'gray';
+
+  return (
+    <Badge colorScheme={colorScheme} fontSize="xs" px={2} py={1} borderRadius="full">
+      {status.toUpperCase()}
+    </Badge>
+  );
+};
+
+const TrendIcon: React.FC<{ trend: string }> = ({ trend }) => {
+  if (trend === 'improving') return <Icon as={TrendingUp} color="green.400" />;
+  if (trend === 'declining') return <Icon as={TrendingDown} color="red.400" />;
+  return <Icon as={Minus} color="gray.400" />;
+};
+
+const AgentCard: React.FC<{ agent: AgentStatus; icon: any; color: string }> = ({ 
+  agent, 
+  icon, 
+  color 
+}) => {
+  const bgCard = useSemanticToken('surface.card');
+  const borderSubtle = useSemanticToken('border.subtle');
+  const textSecondary = useSemanticToken('text.secondary');
+
+  return (
+    <Box
+      bg={bgCard}
+      borderRadius="lg"
+      border="1px solid"
+      borderColor={borderSubtle}
+      p={4}
+    >
+      <HStack justify="space-between" mb={3}>
+        <HStack>
+          <Icon as={icon} color={color} boxSize={5} />
+          <Text fontWeight="semibold" fontSize="sm">{agent.name}</Text>
+        </HStack>
+        <StatusBadge status={agent.status} />
+      </HStack>
+      
+      {agent.lastActivity && (
+        <Text fontSize="xs" color={textSecondary} mb={2}>
+          Last active: {new Date(agent.lastActivity).toLocaleString()}
+        </Text>
+      )}
+      
+      <VStack align="stretch" spacing={1}>
+        {Object.entries(agent.metrics).map(([key, value]) => (
+          <HStack key={key} justify="space-between" fontSize="xs">
+            <Text color={textSecondary}>{key.replace(/([A-Z])/g, ' $1').trim()}:</Text>
+            <Text fontWeight="medium">{typeof value === 'number' ? value.toFixed(2) : value}</Text>
+          </HStack>
+        ))}
+      </VStack>
+    </Box>
+  );
+};
+
+export default function MultiAgentEvaluatorPanel() {
+  const [overview, setOverview] = useState<SystemOverview | null>(null);
+  const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+  const [qualityTrends, setQualityTrends] = useState<QualityTrend[]>([]);
+  const [feedback, setFeedback] = useState<any>(null);
+  const [gaps, setGaps] = useState<any>(null);
+  const [cycles, setCycles] = useState<any[]>([]);
+  const [fineTuning, setFineTuning] = useState<any>(null);
+  const [trainingProgress, setTrainingProgress] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  
+  const toast = useToast();
+  const bgCard = useSemanticToken('surface.card');
+  const borderSubtle = useSemanticToken('border.subtle');
+  const textPrimary = useSemanticToken('text.primary');
+  const textSecondary = useSemanticToken('text.secondary');
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [overviewRes, evalsRes, trendsRes, feedbackRes, gapsRes, cyclesRes, fineTuningRes, trainingProgressRes] = await Promise.all([
+        fetch(API_BASE),
+        fetch(`${API_BASE}?view=evaluations&hours=48&limit=20`),
+        fetch(`${API_BASE}?view=quality&days=7`),
+        fetch(`${API_BASE}?view=feedback&hours=48`),
+        fetch(`${API_BASE}?view=gaps`),
+        fetch(`${API_BASE}?view=cycles&limit=10`),
+        fetch(`${API_BASE}?view=finetuning`),
+        fetch(`${API_BASE}?view=training-progress`),
+      ]);
+
+      if (overviewRes.ok) setOverview(await overviewRes.json());
+      if (evalsRes.ok) {
+        const data = await evalsRes.json();
+        setEvaluations(data.evaluations || []);
+      }
+      if (trendsRes.ok) {
+        const data = await trendsRes.json();
+        setQualityTrends(data.trends || []);
+      }
+      if (feedbackRes.ok) setFeedback(await feedbackRes.json());
+      if (gapsRes.ok) setGaps(await gapsRes.json());
+        if (cyclesRes.ok) {
+          const cyclesData = await cyclesRes.json();
+          setCycles(cyclesData.scoreTrend || []);
+        }
+        if (fineTuningRes.ok) setFineTuning(await fineTuningRes.json());
+        if (trainingProgressRes.ok) {
+          const tpData = await trainingProgressRes.json();
+          console.log('[MultiAgentEvaluator] Training progress data:', tpData);
+          setTrainingProgress(tpData);
+        } else {
+          console.warn('[MultiAgentEvaluator] Training progress fetch failed:', trainingProgressRes.status);
+        }
+    } catch (error) {
+      console.error('Failed to fetch multi-agent data:', error);
+      toast({
+        title: 'Failed to load data',
+        status: 'error',
+        duration: 3000,
+      });
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchData();
+  };
+
+  if (loading) {
+    return (
+      <VStack h="full" justify="center" align="center" p={8}>
+        <Spinner size="xl" color="purple.500" thickness="4px" />
+        <Text color={textSecondary}>Loading multi-agent status...</Text>
+      </VStack>
+    );
+  }
+
+  return (
+    <VStack spacing={4} align="stretch" h="full">
+      {/* Header */}
+      <HStack justify="space-between">
+        <HStack>
+          <Icon as={Layers} color="purple.400" boxSize={5} />
+          <Text fontSize="lg" fontWeight="semibold">Multi-Agent Evaluator System</Text>
+          {overview && <StatusBadge status={overview.overallHealth} />}
+        </HStack>
+        <Button
+          size="sm"
+          leftIcon={<RefreshCw size={14} />}
+          onClick={handleRefresh}
+          isLoading={refreshing}
+          variant="ghost"
+        >
+          Refresh
+        </Button>
+      </HStack>
+
+      {/* Overview Stats */}
+      {overview && (
+        <Grid templateColumns="repeat(4, 1fr)" gap={4}>
+          <GridItem>
+            <Stat>
+              <StatLabel fontSize="xs">Recent Evaluations</StatLabel>
+              <StatNumber fontSize="2xl">{overview.recentEvaluations}</StatNumber>
+              <StatHelpText fontSize="xs">Last 24 hours</StatHelpText>
+            </Stat>
+          </GridItem>
+          <GridItem>
+            <Stat>
+              <StatLabel fontSize="xs">Avg Quality Score</StatLabel>
+              <StatNumber fontSize="2xl">{(overview.avgQualityScore * 100).toFixed(0)}%</StatNumber>
+              <StatHelpText fontSize="xs">
+                <StatArrow type={overview.avgQualityScore > 0.7 ? 'increase' : 'decrease'} />
+                Target: 80%
+              </StatHelpText>
+            </Stat>
+          </GridItem>
+          <GridItem>
+            <Stat>
+              <StatLabel fontSize="xs">Pending Enrichments</StatLabel>
+              <StatNumber fontSize="2xl">{overview.pendingEnrichments}</StatNumber>
+              <StatHelpText fontSize="xs">Feedback to process</StatHelpText>
+            </Stat>
+          </GridItem>
+          <GridItem>
+            <Stat>
+              <StatLabel fontSize="xs">Vision Analysis</StatLabel>
+              <StatNumber fontSize="2xl">
+                <Badge colorScheme={overview.visionAnalysisEnabled ? 'green' : 'gray'}>
+                  {overview.visionAnalysisEnabled ? 'Enabled' : 'Disabled'}
+                </Badge>
+              </StatNumber>
+              <StatHelpText fontSize="xs">Gemini Flash</StatHelpText>
+            </Stat>
+          </GridItem>
+        </Grid>
+      )}
+
+      {/* Agent Status Cards */}
+      {overview && (
+        <Grid templateColumns="repeat(3, 1fr)" gap={4}>
+          <AgentCard
+            agent={overview.agents.backend}
+            icon={Database}
+            color="blue.400"
+          />
+          <AgentCard
+            agent={overview.agents.frontend}
+            icon={Eye}
+            color="purple.400"
+          />
+          <AgentCard
+            agent={overview.agents.orchestrator}
+            icon={GitBranch}
+            color="green.400"
+          />
+        </Grid>
+      )}
+
+      {/* Tabs for detailed views */}
+      <Tabs variant="soft-rounded" colorScheme="purple" size="sm">
+        <TabList>
+          <Tab>Recent Evaluations</Tab>
+          <Tab>Quality Trends</Tab>
+          <Tab>Feedback</Tab>
+          <Tab>Gap Ledger</Tab>
+          <Tab>Improvement Cycles</Tab>
+          <Tab>Training Progress</Tab>
+        </TabList>
+
+        <TabPanels>
+          {/* Evaluations Tab */}
+          <TabPanel px={0}>
+            <Box maxH="300px" overflowY="auto">
+              <Table size="sm">
+                <Thead position="sticky" top={0} bg={bgCard} zIndex={1}>
+                  <Tr>
+                    <Th>Query</Th>
+                    <Th isNumeric>Score</Th>
+                    <Th>Grade</Th>
+                    <Th>Vision</Th>
+                    <Th>Gaps</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {evaluations.map((e, i) => (
+                    <Tr key={i}>
+                      <Td maxW="200px" isTruncated>
+                        <Tooltip label={e.query}>
+                          <Text fontSize="xs">{e.query}</Text>
+                        </Tooltip>
+                      </Td>
+                      <Td isNumeric>
+                        <Text fontSize="xs" fontWeight="medium">
+                          {e.compositeScore.toFixed(1)}
+                        </Text>
+                      </Td>
+                      <Td>
+                        <Badge
+                          colorScheme={
+                            e.grade === 'A' ? 'green' :
+                            e.grade === 'B' ? 'blue' :
+                            e.grade === 'C' ? 'yellow' :
+                            e.grade === 'D' ? 'orange' : 'red'
+                          }
+                          fontSize="xs"
+                        >
+                          {e.grade}
+                        </Badge>
+                      </Td>
+                      <Td>
+                        {e.visionUsed ? (
+                          <Icon as={Image} color="purple.400" boxSize={4} />
+                        ) : (
+                          <Icon as={XCircle} color="gray.400" boxSize={4} />
+                        )}
+                      </Td>
+                      <Td isNumeric>
+                        <Text fontSize="xs">{e.gapsCount}</Text>
+                      </Td>
+                    </Tr>
+                  ))}
+                </Tbody>
+              </Table>
+            </Box>
+          </TabPanel>
+
+          {/* Quality Trends Tab */}
+          <TabPanel px={0}>
+            <Box maxH="300px" overflowY="auto">
+              <Table size="sm">
+                <Thead position="sticky" top={0} bg={bgCard} zIndex={1}>
+                  <Tr>
+                    <Th>Condition</Th>
+                    <Th isNumeric>Latest Score</Th>
+                    <Th>Trend</Th>
+                    <Th isNumeric>Data Points</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {qualityTrends.map((t, i) => (
+                    <Tr key={i}>
+                      <Td>
+                        <Text fontSize="xs">{t.condition}</Text>
+                      </Td>
+                      <Td isNumeric>
+                        <Text fontSize="xs" fontWeight="medium">
+                          {(t.latestScore * 100).toFixed(0)}%
+                        </Text>
+                      </Td>
+                      <Td>
+                        <HStack>
+                          <TrendIcon trend={t.trend} />
+                          <Text fontSize="xs" textTransform="capitalize">{t.trend}</Text>
+                        </HStack>
+                      </Td>
+                      <Td isNumeric>
+                        <Text fontSize="xs">{t.dataPoints.length}</Text>
+                      </Td>
+                    </Tr>
+                  ))}
+                </Tbody>
+              </Table>
+            </Box>
+          </TabPanel>
+
+          {/* Feedback Tab */}
+          <TabPanel px={0}>
+            {feedback && (
+              <VStack align="stretch" spacing={3}>
+                <Grid templateColumns="repeat(3, 1fr)" gap={4}>
+                  <Stat size="sm">
+                    <StatLabel fontSize="xs">Total Feedback</StatLabel>
+                    <StatNumber>{feedback.totalFeedback}</StatNumber>
+                  </Stat>
+                  <Stat size="sm">
+                    <StatLabel fontSize="xs">Pending</StatLabel>
+                    <StatNumber color="yellow.400">{feedback.pendingFeedback}</StatNumber>
+                  </Stat>
+                  <Stat size="sm">
+                    <StatLabel fontSize="xs">Processed</StatLabel>
+                    <StatNumber color="green.400">{feedback.processedFeedback}</StatNumber>
+                  </Stat>
+                </Grid>
+                
+                {feedback.topIssues?.length > 0 && (
+                  <Box>
+                    <Text fontSize="xs" fontWeight="semibold" mb={2}>Top Issues:</Text>
+                    <VStack align="stretch" spacing={1}>
+                      {feedback.topIssues.slice(0, 5).map((issue: string, i: number) => (
+                        <HStack key={i} fontSize="xs">
+                          <Icon as={AlertTriangle} color="yellow.400" boxSize={3} />
+                          <Text>{issue}</Text>
+                        </HStack>
+                      ))}
+                    </VStack>
+                  </Box>
+                )}
+              </VStack>
+            )}
+          </TabPanel>
+
+          {/* Gap Ledger Tab */}
+          <TabPanel px={0}>
+            {gaps && (
+              <VStack align="stretch" spacing={3}>
+                <HStack justify="space-between">
+                  <Text fontSize="sm" fontWeight="semibold">
+                    Total Gaps: {gaps.totalGaps}
+                  </Text>
+                  <StatusBadge status={gaps.status === 'ok' ? 'healthy' : gaps.status} />
+                </HStack>
+                
+                {gaps.gapsByType && Object.keys(gaps.gapsByType).length > 0 && (
+                  <Box>
+                    <Text fontSize="xs" fontWeight="semibold" mb={2}>By Type:</Text>
+                    <HStack wrap="wrap" spacing={2}>
+                      {Object.entries(gaps.gapsByType).map(([type, count]) => (
+                        <Badge key={type} variant="outline" fontSize="xs">
+                          {type}: {count as number}
+                        </Badge>
+                      ))}
+                    </HStack>
+                  </Box>
+                )}
+                
+                {gaps.gapsByPriority && Object.keys(gaps.gapsByPriority).length > 0 && (
+                  <Box>
+                    <Text fontSize="xs" fontWeight="semibold" mb={2}>By Priority:</Text>
+                    <HStack wrap="wrap" spacing={2}>
+                      {Object.entries(gaps.gapsByPriority).map(([priority, count]) => (
+                        <Badge
+                          key={priority}
+                          colorScheme={
+                            priority === 'high' ? 'red' :
+                            priority === 'medium' ? 'yellow' : 'gray'
+                          }
+                          fontSize="xs"
+                        >
+                          {priority}: {count as number}
+                        </Badge>
+                      ))}
+                    </HStack>
+                  </Box>
+                )}
+              </VStack>
+            )}
+          </TabPanel>
+
+          {/* Improvement Cycles Tab */}
+          <TabPanel px={0}>
+            <VStack align="stretch" spacing={4}>
+              {/* Score Trend Chart */}
+              {cycles.length > 0 && (
+                <Box h="220px" w="100%">
+                  <Text fontSize="sm" fontWeight="semibold" mb={2}>Score Trend Over Cycles</Text>
+                  <ResponsiveContainer width="100%" height="90%">
+                    <AreaChart data={[...cycles].reverse()} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                      <defs>
+                        <linearGradient id="scoreGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id="improvementGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
+                      <XAxis 
+                        dataKey="cycleId" 
+                        tick={{ fontSize: 10, fill: '#9CA3AF' }}
+                        tickFormatter={(v) => v?.slice(-6) || ''}
+                      />
+                      <YAxis 
+                        domain={[0, 10]} 
+                        tick={{ fontSize: 10, fill: '#9CA3AF' }}
+                        tickFormatter={(v) => v.toFixed(1)}
+                      />
+                      <RechartsTooltip 
+                        contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: '8px' }}
+                        labelStyle={{ color: '#F3F4F6' }}
+                        formatter={(value: number, name: string) => [value?.toFixed(2) || '0', name]}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '11px' }} />
+                      <ReferenceLine y={8} stroke="#10B981" strokeDasharray="5 5" label={{ value: 'Target', fill: '#10B981', fontSize: 10 }} />
+                      <Area 
+                        type="monotone" 
+                        dataKey="scoreAfter" 
+                        name="Score After"
+                        stroke="#8B5CF6" 
+                        fill="url(#scoreGradient)"
+                        strokeWidth={2}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="scoreBefore" 
+                        name="Score Before"
+                        stroke="#6B7280" 
+                        strokeDasharray="5 5"
+                        dot={{ fill: '#6B7280', r: 3 }}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </Box>
+              )}
+
+              {/* Improvement Delta Chart */}
+              {cycles.length > 0 && (
+                <Box h="150px" w="100%">
+                  <Text fontSize="sm" fontWeight="semibold" mb={2}>Improvement per Cycle (Δ)</Text>
+                  <ResponsiveContainer width="100%" height="85%">
+                    <AreaChart data={[...cycles].reverse()} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
+                      <XAxis 
+                        dataKey="cycleId" 
+                        tick={{ fontSize: 10, fill: '#9CA3AF' }}
+                        tickFormatter={(v) => v?.slice(-6) || ''}
+                      />
+                      <YAxis 
+                        tick={{ fontSize: 10, fill: '#9CA3AF' }}
+                        tickFormatter={(v) => (v > 0 ? '+' : '') + v.toFixed(2)}
+                      />
+                      <RechartsTooltip 
+                        contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: '8px' }}
+                        formatter={(value: number) => [(value > 0 ? '+' : '') + value?.toFixed(3), 'Δ']}
+                      />
+                      <ReferenceLine y={0} stroke="#6B7280" />
+                      <Area 
+                        type="monotone" 
+                        dataKey="improvement" 
+                        name="Improvement"
+                        stroke="#10B981"
+                        fill="url(#improvementGradient)"
+                        strokeWidth={2}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </Box>
+              )}
+
+              <HStack justify="space-between">
+                <Text fontSize="sm" fontWeight="semibold">
+                  Cycle History
+                </Text>
+                {fineTuning && (
+                  <HStack spacing={4}>
+                    <Badge colorScheme="purple" fontSize="xs">
+                      {fineTuning.trainingExamples} training examples
+                    </Badge>
+                    <Badge colorScheme="blue" fontSize="xs">
+                      {fineTuning.promptSuggestions} prompt suggestions
+                    </Badge>
+                  </HStack>
+                )}
+              </HStack>
+              
+              {cycles.length > 0 ? (
+                <Box maxH="250px" overflowY="auto">
+                  <Table size="sm">
+                    <Thead position="sticky" top={0} bg={bgCard} zIndex={1}>
+                      <Tr>
+                        <Th>Cycle</Th>
+                        <Th isNumeric>Before</Th>
+                        <Th isNumeric>After</Th>
+                        <Th isNumeric>Δ</Th>
+                        <Th>Status</Th>
+                      </Tr>
+                    </Thead>
+                    <Tbody>
+                      {cycles.map((c: any, i: number) => (
+                        <Tr key={i}>
+                          <Td>
+                            <Text fontSize="xs">{c.cycleId}</Text>
+                          </Td>
+                          <Td isNumeric>
+                            <Text fontSize="xs">{c.scoreBefore?.toFixed(1) || '-'}</Text>
+                          </Td>
+                          <Td isNumeric>
+                            <Text fontSize="xs" fontWeight="medium">{c.scoreAfter?.toFixed(1) || '-'}</Text>
+                          </Td>
+                          <Td isNumeric>
+                            <Text 
+                              fontSize="xs" 
+                              color={c.improvement > 0 ? 'green.400' : c.improvement < 0 ? 'red.400' : 'gray.400'}
+                              fontWeight="medium"
+                            >
+                              {c.improvement > 0 ? '+' : ''}{c.improvement?.toFixed(2) || '0'}
+                            </Text>
+                          </Td>
+                          <Td>
+                            <Badge colorScheme="green" fontSize="xs">completed</Badge>
+                          </Td>
+                        </Tr>
+                      ))}
+                    </Tbody>
+                  </Table>
+                </Box>
+              ) : (
+                <Text fontSize="sm" color="gray.500">No improvement cycles recorded yet</Text>
+              )}
+              
+              <Box pt={2} borderTop="1px solid" borderColor={borderSubtle}>
+                <Text fontSize="xs" color="gray.500">
+                  Cycles run frontend fixes, KB enrichment, and fine-tuning data collection
+                </Text>
+              </Box>
+            </VStack>
+          </TabPanel>
+
+          {/* Training Progress Tab */}
+          <TabPanel px={0}>
+            <VStack align="stretch" spacing={4}>
+              {trainingProgress ? (
+                <>
+                  {/* Progress Overview */}
+                  <SimpleGrid columns={5} spacing={3}>
+                    <Box bg={bgCard} p={3} borderRadius="md" border="1px solid" borderColor={borderSubtle}>
+                      <Text fontSize="xs" color={textSecondary}>Total Cycles</Text>
+                      <Text fontSize="xl" fontWeight="bold">{trainingProgress.totalCycles}</Text>
+                    </Box>
+                    <Box bg={bgCard} p={3} borderRadius="md" border="1px solid" borderColor={borderSubtle}>
+                      <Text fontSize="xs" color={textSecondary}>Total Evaluations</Text>
+                      <Text fontSize="xl" fontWeight="bold">{trainingProgress.totalEvaluations || 0}</Text>
+                    </Box>
+                    <Box bg={bgCard} p={3} borderRadius="md" border="1px solid" borderColor={borderSubtle}>
+                      <Text fontSize="xs" color={textSecondary}>Training Examples</Text>
+                      <Text fontSize="xl" fontWeight="bold">{trainingProgress.totalTrainingExamples}</Text>
+                    </Box>
+                    <Box bg={bgCard} p={3} borderRadius="md" border="1px solid" borderColor={borderSubtle}>
+                      <Text fontSize="xs" color={textSecondary}>Latest Score</Text>
+                      <Text fontSize="xl" fontWeight="bold" color={Number(trainingProgress.latestScore) >= 7 ? 'green.400' : Number(trainingProgress.latestScore) >= 5 ? 'yellow.400' : 'red.400'}>
+                        {trainingProgress.latestScore ? Number(trainingProgress.latestScore).toFixed(1) : '0.0'}
+                      </Text>
+                    </Box>
+                    <Box bg={bgCard} p={3} borderRadius="md" border="1px solid" borderColor={borderSubtle}>
+                      <Text fontSize="xs" color={textSecondary}>Progress to Target</Text>
+                      <Progress value={Number(trainingProgress.progressPercent)} colorScheme={Number(trainingProgress.progressPercent) >= 80 ? 'green' : Number(trainingProgress.progressPercent) >= 50 ? 'yellow' : 'red'} size="sm" mt={2} borderRadius="full" />
+                      <Text fontSize="xs" mt={1}>{trainingProgress.progressPercent ? Number(trainingProgress.progressPercent).toFixed(0) : '0'}% of {trainingProgress.targetScore}</Text>
+                    </Box>
+                  </SimpleGrid>
+
+                  {/* Score Progression by Cycle - uses recentCycles which has multiple data points */}
+                  {trainingProgress.recentCycles?.length > 1 && (
+                    <Box h="180px" w="100%">
+                      <Text fontSize="sm" fontWeight="semibold" mb={2}>Score Progression by Training Cycle</Text>
+                      <ResponsiveContainer width="100%" height="85%">
+                        <LineChart 
+                          data={[...trainingProgress.recentCycles].reverse()} 
+                          margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
+                          <XAxis 
+                            dataKey="cycleId" 
+                            tick={{ fontSize: 9, fill: '#9CA3AF' }} 
+                            tickFormatter={(v) => v?.slice(-6) || ''}
+                          />
+                          <YAxis domain={[0, 10]} tick={{ fontSize: 10, fill: '#9CA3AF' }} />
+                          <RechartsTooltip 
+                            contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: '8px' }}
+                            formatter={(value: number, name: string) => [
+                              value?.toFixed(2), 
+                              name === 'scoreAfter' ? 'Score After' : name === 'scoreBefore' ? 'Score Before' : name
+                            ]}
+                            labelFormatter={(label) => `Cycle: ${label}`}
+                          />
+                          <ReferenceLine y={trainingProgress.targetScore} stroke="#10B981" strokeDasharray="5 5" label={{ value: 'Target', fill: '#10B981', fontSize: 10 }} />
+                          <Line type="monotone" dataKey="scoreBefore" name="Score Before" stroke="#6B7280" strokeWidth={1} dot={{ fill: '#6B7280', r: 2 }} strokeDasharray="3 3" />
+                          <Line type="monotone" dataKey="scoreAfter" name="Score After" stroke="#8B5CF6" strokeWidth={2} dot={{ fill: '#8B5CF6', r: 3 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </Box>
+                  )}
+
+                  {/* Improvement Delta per Cycle */}
+                  {trainingProgress.recentCycles?.length > 1 && (
+                    <Box h="160px" w="100%">
+                      <Text fontSize="sm" fontWeight="semibold" mb={2}>Score Improvement per Cycle (Δ)</Text>
+                      <ResponsiveContainer width="100%" height="85%">
+                        <AreaChart 
+                          data={[...trainingProgress.recentCycles].reverse()} 
+                          margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                        >
+                          <defs>
+                            <linearGradient id="improvementGradientPos" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#10B981" stopOpacity={0.4}/>
+                              <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
+                          <XAxis 
+                            dataKey="cycleId" 
+                            tick={{ fontSize: 9, fill: '#9CA3AF' }} 
+                            tickFormatter={(v) => v?.slice(-6) || ''}
+                          />
+                          <YAxis 
+                            tick={{ fontSize: 10, fill: '#9CA3AF' }} 
+                            tickFormatter={(v) => (v > 0 ? '+' : '') + v.toFixed(1)}
+                          />
+                          <RechartsTooltip 
+                            contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: '8px' }}
+                            formatter={(value: number) => [(value > 0 ? '+' : '') + value?.toFixed(3), 'Δ Score']}
+                            labelFormatter={(label) => `Cycle: ${label}`}
+                          />
+                          <ReferenceLine y={0} stroke="#6B7280" />
+                          <Area 
+                            type="monotone" 
+                            dataKey="improvement" 
+                            name="Improvement"
+                            stroke="#10B981"
+                            fill="url(#improvementGradientPos)"
+                            strokeWidth={2}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </Box>
+                  )}
+
+                  {/* Avg Improvement */}
+                  <HStack justify="space-between" p={3} bg={bgCard} borderRadius="md" border="1px solid" borderColor={borderSubtle}>
+                    <Text fontSize="sm">Average Score Improvement per Cycle</Text>
+                    <Badge colorScheme={Number(trainingProgress.avgScoreImprovement) > 0 ? 'green' : 'gray'} fontSize="sm">
+                      {Number(trainingProgress.avgScoreImprovement) > 0 ? '+' : ''}{Number(trainingProgress.avgScoreImprovement || 0).toFixed(3)}
+                    </Badge>
+                  </HStack>
+
+                  {/* Recent Cycles with Action Breakdown */}
+                  {trainingProgress.recentCycles?.length > 0 && (
+                    <Box>
+                      <Text fontSize="sm" fontWeight="semibold" mb={2}>Recent Cycles (Action Breakdown)</Text>
+                      <Box maxH="200px" overflowY="auto">
+                        <Table size="sm">
+                          <Thead position="sticky" top={0} bg={bgCard} zIndex={1}>
+                            <Tr>
+                              <Th>Cycle</Th>
+                              <Th isNumeric>Score Δ</Th>
+                              <Th isNumeric><Icon as={Eye} boxSize={3} /> FE</Th>
+                              <Th isNumeric><Icon as={Cpu} boxSize={3} /> Mid</Th>
+                              <Th isNumeric><Icon as={Database} boxSize={3} /> BE</Th>
+                            </Tr>
+                          </Thead>
+                          <Tbody>
+                            {trainingProgress.recentCycles.map((c: any, i: number) => (
+                              <Tr key={i}>
+                                <Td>
+                                  <Text fontSize="xs">{c.cycleId?.slice(-8) || `Cycle ${i + 1}`}</Text>
+                                </Td>
+                                <Td isNumeric>
+                                  <Text 
+                                    fontSize="xs" 
+                                    color={c.improvement > 0 ? 'green.400' : c.improvement < 0 ? 'red.400' : 'gray.400'}
+                                    fontWeight="medium"
+                                  >
+                                    {c.improvement > 0 ? '+' : ''}{Number(c.improvement || 0).toFixed(2)}
+                                  </Text>
+                                </Td>
+                                <Td isNumeric>
+                                  <Badge colorScheme="purple" fontSize="xs" variant="subtle">{c.frontendActions || 0}</Badge>
+                                </Td>
+                                <Td isNumeric>
+                                  <Badge colorScheme="blue" fontSize="xs" variant="subtle">{c.middletierActions || 0}</Badge>
+                                </Td>
+                                <Td isNumeric>
+                                  <Badge colorScheme="cyan" fontSize="xs" variant="subtle">{c.backendActions || 0}</Badge>
+                                </Td>
+                              </Tr>
+                            ))}
+                          </Tbody>
+                        </Table>
+                      </Box>
+                    </Box>
+                  )}
+                </>
+              ) : (
+                <Text fontSize="sm" color="gray.500">No training progress data available</Text>
+              )}
+            </VStack>
+          </TabPanel>
+        </TabPanels>
+      </Tabs>
+    </VStack>
+  );
+}

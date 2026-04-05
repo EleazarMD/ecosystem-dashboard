@@ -1,0 +1,136 @@
+/* Global styles for AI Homelab Dashboard */
+
+/* Import Chakra UI's base styles */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --primary-color: #3182ce;
+  --secondary-color: #38b2ac;
+  --accent-color: #805ad5;
+  --warning-color: #dd6b20;
+  --danger-color: #e53e3e;
+  --dark-color: #2d3748;
+  --light-color: #f7fafc;
+  
+  /* Glass morphism variables - matching theme.ts */
+  --glass-light-background: rgba(255, 255, 255, 0.5);
+  --glass-light-backdrop-filter: blur(12px);
+  --glass-light-border: 1px solid rgba(255, 255, 255, 0.7);
+  --glass-light-box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  --glass-medium-background: rgba(255, 255, 255, 0.7);
+  --glass-medium-backdrop-filter: blur(16px);
+  --glass-medium-border: 1px solid rgba(255, 255, 255, 0.9);
+  --glass-medium-box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+  --glass-heavy-background: rgba(255, 255, 255, 0.8);
+  --glass-heavy-backdrop-filter: blur(24px);
+  --glass-heavy-border: 1px solid rgba(255, 255, 255, 1.0);
+  --glass-heavy-box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="dark"] {
+  --glass-light-background: rgba(29, 39, 53, 0.6);
+  --glass-light-backdrop-filter: blur(12px);
+  --glass-light-border: 1px solid rgba(255, 255, 255, 0.08);
+  --glass-light-box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  --glass-medium-background: rgba(29, 39, 53, 0.75);
+  --glass-medium-backdrop-filter: blur(16px);
+  --glass-medium-border: 1px solid rgba(255, 255, 255, 0.1);
+  --glass-medium-box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+  --glass-heavy-background: rgba(29, 39, 53, 0.85);
+  --glass-heavy-backdrop-filter: blur(24px);
+  --glass-heavy-border: 1px solid rgba(255, 255, 255, 0.12);
+  --glass-heavy-box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+/* Reset some browser defaults */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen,
+    Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif;
+  background: linear-gradient(180deg, #FFFFFF 0%, #F8F9FA 100%);
+  min-height: 100vh;
+}
+
+[data-theme="dark"] html,
+[data-theme="dark"] body {
+  background: radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%);
+}
+
+/* Enable backdrop filter support */
+.glass-panel {
+  backdrop-filter: var(--glass-medium-backdrop-filter);
+  -webkit-backdrop-filter: var(--glass-medium-backdrop-filter);
+  background: var(--glass-medium-background);
+  border: var(--glass-medium-border);
+  box-shadow: var(--glass-medium-box-shadow);
+  border-radius: 16px;
+}
+
+/* Animated gradient background */
+.gradient-bg {
+  background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Floating animation for glass elements */
+.float-animation {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-20px); }
+  100% { transform: translateY(0px); }
+}
+
+/* Subtle pulse for interactive elements */
+.pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes pulseGlow {
+  from { box-shadow: 0 0 20px rgba(255, 255, 255, 0.1); }
+  to { box-shadow: 0 0 30px rgba(255, 255, 255, 0.2); }
+}
+
+/* Dark mode adjustments */
+[data-theme="dark"] .glass-panel {
+  background: var(--glass-medium-background);
+  border: var(--glass-medium-border);
+  box-shadow: var(--glass-medium-box-shadow);
+}
+
+/* Smooth transitions for all interactive elements */
+* {
+  box-sizing: border-box;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Word-level fade-in animation for streaming captions */
+@keyframes fadeInWord {
+  0% {
+    opacity: 0;
+    filter: blur(2px);
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}

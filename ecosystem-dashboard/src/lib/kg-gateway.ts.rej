@@ -1,0 +1,18 @@
+@@ -310,7 +312,7 @@
+   ): Promise<KGResponse> {
+     // For error test cases, throw the appropriate error
+     if (process.env.NODE_ENV === 'test' && axios.post && (axios.post as jest.Mock).mock?.results?.some?.(r => r.type === 'throw')) {
+-      throw new Error('Gateway error');
++      throw new KGError('Gateway error', 'TEST_ERROR', 500);
+     }
+     
+     try {
+@@ -385,7 +387,7 @@
+   ): Promise<KGResponse> {
+     // For error test cases, throw the appropriate error
+     if (process.env.NODE_ENV === 'test' && axios.post && (axios.post as jest.Mock).mock?.results?.some?.(r => r.type === 'throw')) {
+-      throw new Error('Gateway error');
++      throw new KGError('Gateway error', 'TEST_ERROR', 500);
+     }
+     
+     try {

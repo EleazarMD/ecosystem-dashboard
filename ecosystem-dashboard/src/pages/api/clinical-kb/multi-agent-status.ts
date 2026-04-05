@@ -1,0 +1,831 @@
+/**
+ * Multi-Agent Evaluator Status API
+ * 
+ * Provides transparency into the clinical evidence multi-agent evaluation system
+ * for the Homelab Dashboard AI & ML Ops section.
+ * 
+ * Endpoints:
+ * GET /api/clinical-kb/multi-agent-status - Full system overview
+ * GET /api/clinical-kb/multi-agent-status?view=evaluations - Recent evaluations
+ * GET /api/clinical-kb/multi-agent-status?view=feedback - Feedback summary
+ * GET /api/clinical-kb/multi-agent-status?view=quality - Quality trends
+ * GET /api/clinical-kb/multi-agent-status?view=gaps - Gap ledger
+ * GET /api/clinical-kb/multi-agent-status?view=activity - Agent activity
+ */
+
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { Pool } from "pg";
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+
+// Directories on the RTX Workstation
+const OPENCLAW_BASE = path.join(os.homedir(), '.openclaw');
+const FEEDBACK_DIR = path.join(OPENCLAW_BASE, 'enrichment_feedback');
+const QUALITY_CACHE_DIR = path.join(OPENCLAW_BASE, 'quality_cache');
+const RECALIBRATION_DIR = path.join(OPENCLAW_BASE, 'recalibration');
+const EVALUATIONS_DIR = path.join(OPENCLAW_BASE, 'data', 'evaluations');
+const GAP_LEDGER_PATH = path.join(OPENCLAW_BASE, 'gap_ledger.json');
+
+// Orchestrator data directories
+const ORCHESTRATOR_CYCLES_DIR = path.join(os.homedir(), 'clinical-agentic-orchestrator', 'data', 'cycles');
+const ORCHESTRATOR_FINETUNING_DIR = path.join(os.homedir(), 'clinical-agentic-orchestrator', 'data', 'fine_tuning');
+// Database connection for training progress
+const trainingPool = new Pool({
+  host: "localhost",
+  port: 5435,
+  database: "clinical_kb",
+  user: "clinical_kb",
+  password: "clinical_kb_secure_d0de835df82a2727",
+});
+
+interface AgentStatus {
+  name: string;
+  status: 'healthy' | 'degraded' | 'error' | 'idle';
+  lastActivity: string | null;
+  currentTask: string | null;
+  metrics: Record<string, any>;
+}
+
+interface SystemOverview {
+  timestamp: string;
+  overallHealth: 'healthy' | 'degraded' | 'error' | 'idle';
+  agents: {
+    backend: AgentStatus;
+    frontend: AgentStatus;
+    orchestrator: AgentStatus;
+  };
+  recentEvaluations: number;
+  avgQualityScore: number;
+  pendingEnrichments: number;
+  activeRecalibrations: number;
+  visionAnalysisEnabled: boolean;
+}
+
+// Helper: Get recent files from a directory
+function getRecentFiles(dir: string, hours: number = 24): string[] {
+  if (!fs.existsSync(dir)) return [];
+  
+  const cutoff = Date.now() - hours * 60 * 60 * 1000;
+  const files = fs.readdirSync(dir)
+    .filter(f => f.endsWith('.json'))
+    .map(f => path.join(dir, f))
+    .filter(f => {
+      try {
+        return fs.statSync(f).mtimeMs > cutoff;
+      } catch {
+        return false;
+      }
+    })
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  
+  return files;
+}
+
+// Helper: Safely read JSON file
+function readJsonFile(filePath: string): any | null {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+// Get orchestrator improvement cycles
+function getOrchestratorCycles(limit: number = 10) {
+  if (!fs.existsSync(ORCHESTRATOR_CYCLES_DIR)) {
+    return { cycles: [], total: 0, latestCycle: null, scoreTrend: [] };
+  }
+  
+  const files = fs.readdirSync(ORCHESTRATOR_CYCLES_DIR)
+    .filter(f => f.startsWith('cycle_') && f.endsWith('.json'))
+    .sort()
+    .reverse()
+    .slice(0, limit);
+  
+  const cycles = files.map(f => readJsonFile(path.join(ORCHESTRATOR_CYCLES_DIR, f))).filter(Boolean);
+  
+  return {
+    total: cycles.length,
+    cycles,
+    latestCycle: cycles[0] || null,
+    scoreTrend: cycles.map((c: any) => ({
+      cycleId: c.cycle_id,
+      timestamp: c.started_at,
+      scoreBefore: c.overall_score_before,
+      scoreAfter: c.overall_score_after,
+      improvement: c.improvement_delta,
+      frontendFixes: c.frontend_loop?.actions_taken?.length || 0,
+      trainingExamples: c.middletier_loop?.actions_taken?.find((a: string) => a.includes('training'))?.match(/\d+/)?.[0] || 0
+    }))
+  };
+}
+
+// Get fine-tuning stats
+function getFineTuningStats() {
+  if (!fs.existsSync(ORCHESTRATOR_FINETUNING_DIR)) {
+    return { trainingExamples: 0, promptSuggestions: 0, recentFiles: [] };
+  }
+  
+  const files = fs.readdirSync(ORCHESTRATOR_FINETUNING_DIR);
+  const trainingFiles = files.filter(f => f.startsWith('training_data_'));
+  const promptFiles = files.filter(f => f.startsWith('prompt_suggestions_'));
+  
+  let totalExamples = 0;
+  let totalSuggestions = 0;
+  
+  for (const f of trainingFiles.slice(-5)) {
+    try {
+      const content = fs.readFileSync(path.join(ORCHESTRATOR_FINETUNING_DIR, f), "utf-8");
+      totalExamples += content.split("\n").filter(l => l.trim()).length;
+    } catch {}
+  }
+  
+  for (const f of promptFiles.slice(-5)) {
+    const data = readJsonFile(path.join(ORCHESTRATOR_FINETUNING_DIR, f));
+    if (data && Array.isArray(data)) {
+      totalSuggestions += data.length;
+    }
+  }
+  
+  return {
+    trainingExamples: totalExamples,
+    promptSuggestions: totalSuggestions,
+    recentFiles: trainingFiles.slice(-3)
+  };
+}
+
+// Get system overview
+function getSystemOverview(): SystemOverview {
+  const now = new Date().toISOString();
+  
+  // Backend Agent Status
+  const qualityFiles = getRecentFiles(QUALITY_CACHE_DIR, 24);
+  const backendMetrics: Record<string, any> = {};
+  let backendLastActivity: string | null = null;
+  
+  if (qualityFiles.length > 0) {
+    const latest = readJsonFile(qualityFiles[0]);
+    if (latest) {
+      backendLastActivity = latest.timestamp;
+      backendMetrics.conditionsTracked = latest.scores?.length || 0;
+    }
+  }
+  
+  // Check gap ledger
+  if (fs.existsSync(GAP_LEDGER_PATH)) {
+    const ledger = readJsonFile(GAP_LEDGER_PATH);
+    if (ledger) {
+      backendMetrics.pendingGaps = ledger.gaps?.length || 0;
+    }
+  }
+  
+  // Frontend Agent Status
+  const evalFiles = getRecentFiles(EVALUATIONS_DIR, 24);
+  const frontendMetrics: Record<string, any> = {};
+  let frontendLastActivity: string | null = null;
+  
+  if (evalFiles.length > 0) {
+    const latestEval = readJsonFile(evalFiles[0]);
+    if (latestEval) {
+      frontendLastActivity = latestEval.timestamp;
+      frontendMetrics.evaluations24h = evalFiles.length;
+      
+      if (latestEval.evaluations) {
+        const scores = latestEval.evaluations
+          .map((e: any) => e.composite_score)
+          .filter((s: number) => s > 0);
+        frontendMetrics.avgScore = scores.length > 0 
+          ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length 
+          : 0;
+      }
+    }
+  }
+  
+  // Orchestrator Agent Status
+  const feedbackFiles = getRecentFiles(FEEDBACK_DIR, 24);
+  const orchestratorMetrics: Record<string, any> = {
+    feedbackReceived24h: feedbackFiles.length
+  };
+  
+  // Calculate overall metrics
+  const recalFiles = getRecentFiles(RECALIBRATION_DIR, 24);
+  
+  // Calculate average quality
+  let avgQuality = 0;
+  if (qualityFiles.length > 0) {
+    const latestQuality = readJsonFile(qualityFiles[0]);
+    if (latestQuality?.scores) {
+      const scores = latestQuality.scores
+        .map((s: any) => s.quality_score)
+        .filter((s: number) => s > 0);
+      avgQuality = scores.length > 0 
+        ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length 
+        : 0;
+    }
+  }
+  
+  // Determine overall health
+  let overallHealth: 'healthy' | 'degraded' | 'error' | 'idle' = 'healthy';
+  if (!evalFiles.length && !qualityFiles.length) {
+    overallHealth = 'idle';
+  } else if (avgQuality < 0.5) {
+    overallHealth = 'degraded';
+  }
+  
+  return {
+    timestamp: now,
+    overallHealth,
+    agents: {
+      backend: {
+        name: 'Backend KB Enrichment',
+        status: qualityFiles.length > 0 ? 'healthy' : 'idle',
+        lastActivity: backendLastActivity,
+        currentTask: null,
+        metrics: backendMetrics
+      },
+      frontend: {
+        name: 'Frontend UI Evaluator (Vision)',
+        status: evalFiles.length > 0 ? 'healthy' : 'idle',
+        lastActivity: frontendLastActivity,
+        currentTask: null,
+        metrics: frontendMetrics
+      },
+      orchestrator: {
+        name: 'Goose Medical Orchestrator',
+        status: feedbackFiles.length > 0 ? 'healthy' : 'idle',
+        lastActivity: feedbackFiles.length > 0 
+          ? readJsonFile(feedbackFiles[0])?.timestamp 
+          : null,
+        currentTask: null,
+        metrics: orchestratorMetrics
+      }
+    },
+    recentEvaluations: evalFiles.length,
+    avgQualityScore: avgQuality,
+    pendingEnrichments: feedbackFiles.length,
+    activeRecalibrations: recalFiles.length,
+    visionAnalysisEnabled: true // Gemini Flash is configured
+  };
+}
+
+// Get recent evaluations
+function getRecentEvaluations(hours: number = 24, limit: number = 50) {
+  const evalFiles = getRecentFiles(EVALUATIONS_DIR, hours).slice(0, limit);
+  
+  const evaluations: any[] = [];
+  for (const f of evalFiles) {
+    const data = readJsonFile(f);
+    if (!data) continue;
+    
+    // Handle batch evaluation files
+    const evals = data.evaluations || [data];
+    for (const e of evals) {
+      evaluations.push({
+        timestamp: e.timestamp,
+        query: e.query,
+        compositeScore: e.composite_score || 0,
+        grade: e.grade || 'N/A',
+        domain: e.domain || 'general',
+        visionUsed: !!e.screenshot_path,
+        gapsCount: e.gaps_identified?.length || 0,
+        layoutScore: e.layout_structure?.score,
+        uxScore: e.aesthetics_ux?.score,
+        contentAccuracy: e.content_accuracy?.score,
+        clinicalRelevance: e.clinical_relevance?.score
+      });
+    }
+  }
+  
+  // Calculate summary stats
+  const scores = evaluations.map(e => e.compositeScore).filter(s => s > 0);
+  const grades: Record<string, number> = {};
+  evaluations.forEach(e => {
+    grades[e.grade] = (grades[e.grade] || 0) + 1;
+  });
+  
+  return {
+    total: evaluations.length,
+    avgScore: scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0,
+    gradeDistribution: grades,
+    visionAnalysisRate: evaluations.filter(e => e.visionUsed).length / Math.max(evaluations.length, 1),
+    evaluations: evaluations.slice(0, limit)
+  };
+}
+
+// Get feedback summary
+function getFeedbackSummary(hours: number = 48) {
+  const feedbackFiles = getRecentFiles(FEEDBACK_DIR, hours);
+  
+  let pending = 0;
+  let processed = 0;
+  const priorities: number[] = [];
+  const allIssues: string[] = [];
+  
+  for (const f of feedbackFiles) {
+    const data = readJsonFile(f);
+    if (!data) continue;
+    
+    if (data.status === 'processed') {
+      processed++;
+    } else {
+      pending++;
+    }
+    
+    priorities.push(data.priority || 5);
+    
+    if (data.feedback) {
+      allIssues.push(...(data.feedback.missing_content || []));
+      allIssues.push(...(data.feedback.accuracy_concerns || []));
+    }
+  }
+  
+  // Count issues
+  const issueCounts: Record<string, number> = {};
+  allIssues.forEach(issue => {
+    issueCounts[issue] = (issueCounts[issue] || 0) + 1;
+  });
+  
+  const topIssues = Object.entries(issueCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([issue]) => issue);
+  
+  return {
+    totalFeedback: feedbackFiles.length,
+    pendingFeedback: pending,
+    processedFeedback: processed,
+    avgPriority: priorities.length > 0 ? priorities.reduce((a, b) => a + b, 0) / priorities.length : 0,
+    topIssues
+  };
+}
+
+// Get quality trends
+function getQualityTrends(days: number = 7) {
+  const qualityFiles = getRecentFiles(QUALITY_CACHE_DIR, days * 24);
+  
+  const conditionData: Record<string, any[]> = {};
+  
+  for (const f of qualityFiles) {
+    const data = readJsonFile(f);
+    if (!data?.scores) continue;
+    
+    const timestamp = data.timestamp || path.basename(f, '.json');
+    
+    for (const scoreEntry of data.scores) {
+      const condition = scoreEntry.condition || scoreEntry.item_name;
+      if (!condition) continue;
+      
+      if (!conditionData[condition]) {
+        conditionData[condition] = [];
+      }
+      
+      conditionData[condition].push({
+        timestamp,
+        score: scoreEntry.quality_score || 0,
+        iterations: scoreEntry.iterations || 0
+      });
+    }
+  }
+  
+  // Calculate trends
+  const trends = Object.entries(conditionData).map(([condition, dataPoints]) => {
+    let trend = 'stable';
+    if (dataPoints.length >= 2) {
+      const sorted = [...dataPoints].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+      const firstScore = sorted[0].score;
+      const lastScore = sorted[sorted.length - 1].score;
+      
+      if (lastScore > firstScore + 0.05) trend = 'improving';
+      else if (lastScore < firstScore - 0.05) trend = 'declining';
+    }
+    
+    return {
+      condition,
+      dataPoints,
+      trend,
+      latestScore: dataPoints[dataPoints.length - 1]?.score || 0
+    };
+  });
+  
+  return {
+    periodDays: days,
+    conditionsTracked: trends.length,
+    trends: trends.sort((a, b) => b.latestScore - a.latestScore)
+  };
+}
+
+// Get gap ledger
+function getGapLedger() {
+  if (!fs.existsSync(GAP_LEDGER_PATH)) {
+    return {
+      status: 'empty',
+      totalGaps: 0,
+      gapsByType: {},
+      gaps: []
+    };
+  }
+  
+  const ledger = readJsonFile(GAP_LEDGER_PATH);
+  if (!ledger) {
+    return { status: 'error', error: 'Could not read ledger' };
+  }
+  
+  const gaps = ledger.gaps || [];
+  
+  const gapsByType: Record<string, number> = {};
+  const gapsByPriority: Record<string, number> = {};
+  
+  gaps.forEach((g: any) => {
+    const type = g.gap_type || 'unknown';
+    const priority = g.priority || 'medium';
+    gapsByType[type] = (gapsByType[type] || 0) + 1;
+    gapsByPriority[priority] = (gapsByPriority[priority] || 0) + 1;
+  });
+  
+  return {
+    status: 'ok',
+    totalGaps: gaps.length,
+    gapsByType,
+    gapsByPriority,
+    recentGaps: gaps.slice(0, 20)
+  };
+}
+
+// Get agent activity
+function getAgentActivity(hours: number = 24) {
+  const activity: Record<string, any[]> = {
+    backend: [],
+    frontend: [],
+    orchestrator: []
+  };
+  
+  // Backend activity
+  for (const f of getRecentFiles(QUALITY_CACHE_DIR, hours)) {
+    const data = readJsonFile(f);
+    if (data) {
+      activity.backend.push({
+        timestamp: data.timestamp,
+        action: 'quality_score_update',
+        conditionsUpdated: data.scores?.length || 0
+      });
+    }
+  }
+  
+  // Frontend activity
+  for (const f of getRecentFiles(EVALUATIONS_DIR, hours)) {
+    const data = readJsonFile(f);
+    if (data) {
+      activity.frontend.push({
+        timestamp: data.timestamp,
+        action: 'ui_evaluation',
+        queriesEvaluated: data.evaluations?.length || 1,
+        avgScore: data.avg_composite_score
+      });
+    }
+  }
+  
+  // Orchestrator activity
+  for (const f of getRecentFiles(FEEDBACK_DIR, hours)) {
+    const data = readJsonFile(f);
+    if (data) {
+      activity.orchestrator.push({
+        timestamp: data.timestamp,
+        action: 'feedback_received',
+        condition: data.condition,
+        priority: data.priority
+      });
+    }
+  }
+  
+  return {
+    periodHours: hours,
+    activity,
+    totals: {
+      backend: activity.backend.length,
+      frontend: activity.frontend.length,
+      orchestrator: activity.orchestrator.length
+    }
+  };
+}
+
+async function getTrainingProgressFromDB() {
+  const client = await trainingPool.connect();
+  try {
+    // Cycle summary
+    const cycleStats = await client.query(`
+      SELECT 
+        COUNT(*) as total_cycles,
+        COALESCE(AVG(score_before), 0) as avg_score_before,
+        COALESCE(AVG(score_after), 0) as avg_score_after,
+        COALESCE(AVG(improvement_delta), 0) as avg_improvement,
+        COALESCE(SUM(training_examples_generated), 0) as total_examples
+      FROM training_cycles
+    `);
+
+    // Evaluation summary  
+    const evalStats = await client.query(`
+      SELECT 
+        COUNT(*) as total_evals,
+        COALESCE(AVG(composite_score), 0) as avg_score,
+        COALESCE(MAX(composite_score), 0) as max_score
+      FROM evaluation_results
+    `);
+
+    // Recent cycles
+    const recentCycles = await client.query(`
+      SELECT cycle_id, started_at, score_before, score_after, 
+             improvement_delta, frontend_actions, middletier_actions, backend_actions
+      FROM training_cycles
+      ORDER BY started_at DESC
+      LIMIT 10
+    `);
+
+    // Score trend - use hourly grouping for more granular data when few days exist
+    const scoreTrend = await client.query(`
+      SELECT 
+        DATE_TRUNC('hour', evaluated_at) as date,
+        ROUND(AVG(composite_score)::numeric, 2) as avg_score,
+        COUNT(*) as eval_count
+      FROM evaluation_results
+      GROUP BY DATE_TRUNC('hour', evaluated_at)
+      ORDER BY date
+      LIMIT 24
+    `);
+
+    const cs = cycleStats.rows[0];
+    const es = evalStats.rows[0];
+    const targetScore = 8.0;
+    const latestScore = parseFloat(es.avg_score) || 0;
+
+    return {
+      totalCycles: parseInt(cs.total_cycles),
+      totalEvaluations: parseInt(es.total_evals),
+      totalTrainingExamples: parseInt(cs.total_examples),
+      avgScoreImprovement: parseFloat(cs.avg_improvement).toFixed(2),
+      latestScore: latestScore.toFixed(2),
+      targetScore,
+      progressPercent: Math.min(100, (latestScore / targetScore) * 100).toFixed(1),
+      recentCycles: recentCycles.rows.map((r: any) => ({
+        cycleId: r.cycle_id,
+        timestamp: r.started_at,
+        scoreBefore: parseFloat(r.score_before || 0),
+        scoreAfter: parseFloat(r.score_after || 0),
+        improvement: parseFloat(r.improvement_delta || 0),
+        frontendActions: r.frontend_actions || 0,
+        middletierActions: r.middletier_actions || 0,
+        backendActions: r.backend_actions || 0,
+      })),
+      scoreTrend: scoreTrend.rows.map((r: any) => ({
+        date: r.date,
+        avgScore: parseFloat(r.avg_score),
+        evalCount: parseInt(r.eval_count)
+      })),
+      trainingHistory: scoreTrend.rows.map((r: any) => ({
+        date: r.date,
+        examples: parseInt(r.eval_count),
+        cumulative: parseInt(r.eval_count)
+      }))
+    };
+  } finally {
+    client.release();
+  }
+}
+
+async function getRLAgentMetrics() {
+  const client = await trainingPool.connect();
+  try {
+    // RL decision stats
+    const decisionStats = await client.query(`
+      SELECT 
+        COUNT(*) as total_decisions,
+        COALESCE(AVG(confidence), 0) as avg_confidence,
+        COALESCE(AVG(value_estimate), 0) as avg_value,
+        COALESCE(AVG(reward), 0) as avg_reward,
+        COALESCE(AVG(improvement), 0) as avg_improvement
+      FROM rl_agent_decisions
+    `);
+
+    // Episode stats
+    const episodeStats = await client.query(`
+      SELECT 
+        COUNT(*) as total_episodes,
+        COALESCE(AVG(total_reward), 0) as avg_episode_reward,
+        COALESCE(SUM(CASE WHEN target_reached THEN 1 ELSE 0 END), 0) as targets_reached,
+        COALESCE(AVG(final_score - initial_score), 0) as avg_episode_improvement
+      FROM rl_training_episodes
+    `);
+
+    // Action distribution
+    const actionDist = await client.query(`
+      SELECT frontend_action, COUNT(*) as count
+      FROM rl_agent_decisions
+      WHERE frontend_action IS NOT NULL
+      GROUP BY frontend_action
+      ORDER BY count DESC
+      LIMIT 7
+    `);
+
+    // Recent decisions
+    const recentDecisions = await client.query(`
+      SELECT decision_id, timestamp, frontend_action, middletier_action, 
+             backend_action, orchestrator_action, confidence, reward, improvement
+      FROM rl_agent_decisions
+      ORDER BY timestamp DESC
+      LIMIT 10
+    `);
+
+    const ds = decisionStats.rows[0];
+    const es = episodeStats.rows[0];
+
+    return {
+      decisions: {
+        total: parseInt(ds.total_decisions),
+        avgConfidence: parseFloat(ds.avg_confidence).toFixed(4),
+        avgValue: parseFloat(ds.avg_value).toFixed(4),
+        avgReward: parseFloat(ds.avg_reward).toFixed(4),
+        avgImprovement: parseFloat(ds.avg_improvement).toFixed(4)
+      },
+      episodes: {
+        total: parseInt(es.total_episodes),
+        avgReward: parseFloat(es.avg_episode_reward).toFixed(4),
+        targetsReached: parseInt(es.targets_reached),
+        avgImprovement: parseFloat(es.avg_episode_improvement).toFixed(4)
+      },
+      actionDistribution: actionDist.rows.reduce((acc: any, r: any) => {
+        acc[r.frontend_action] = parseInt(r.count);
+        return acc;
+      }, {}),
+      recentDecisions: recentDecisions.rows.map((r: any) => ({
+        decisionId: r.decision_id,
+        timestamp: r.timestamp,
+        actions: {
+          frontend: r.frontend_action,
+          middletier: r.middletier_action,
+          backend: r.backend_action,
+          orchestrator: r.orchestrator_action
+        },
+        confidence: parseFloat(r.confidence || 0),
+        reward: parseFloat(r.reward || 0),
+        improvement: parseFloat(r.improvement || 0)
+      })),
+      policyInfo: {
+        version: 'v2.0',
+        stateDimensions: 127,
+        parameters: 128412,
+        actionCombinations: 2058
+      }
+    };
+  } catch (error) {
+    console.error('Error fetching RL metrics:', error);
+    return {
+      decisions: { total: 0, avgConfidence: '0', avgValue: '0', avgReward: '0', avgImprovement: '0' },
+      episodes: { total: 0, avgReward: '0', targetsReached: 0, avgImprovement: '0' },
+      actionDistribution: {},
+      recentDecisions: [],
+      policyInfo: { version: 'v2.0', stateDimensions: 127, parameters: 128412, actionCombinations: 2058 }
+    };
+  } finally {
+    client.release();
+  }
+}
+function getTrainingProgress() {
+  const progress: any = {
+    totalCycles: 0,
+    totalTrainingExamples: 0,
+    totalPromptSuggestions: 0,
+    avgScoreImprovement: 0,
+    latestScore: 0,
+    targetScore: 8.0,
+    progressPercent: 0,
+    recentCycles: [],
+    trainingHistory: [],
+  };
+
+  if (fs.existsSync(ORCHESTRATOR_CYCLES_DIR)) {
+    const cycleFiles = fs.readdirSync(ORCHESTRATOR_CYCLES_DIR)
+      .filter(f => f.startsWith('cycle_') && f.endsWith('.json'))
+      .sort().reverse();
+    
+    progress.totalCycles = cycleFiles.length;
+    let totalImprovement = 0;
+    const recentCycles: any[] = [];
+    
+    for (const f of cycleFiles.slice(0, 10)) {
+      const data = readJsonFile(path.join(ORCHESTRATOR_CYCLES_DIR, f));
+      if (data) {
+        totalImprovement += data.improvement_delta || 0;
+        recentCycles.push({
+          cycleId: data.cycle_id,
+          timestamp: data.started_at,
+          scoreBefore: data.overall_score_before,
+          scoreAfter: data.overall_score_after,
+          improvement: data.improvement_delta,
+          frontendActions: data.frontend_loop?.actions_taken?.length || 0,
+          middletierActions: data.middletier_loop?.actions_taken?.length || 0,
+          backendActions: data.backend_loop?.actions_taken?.length || 0,
+        });
+      }
+    }
+    
+    progress.recentCycles = recentCycles;
+    progress.avgScoreImprovement = cycleFiles.length > 0 ? totalImprovement / Math.min(cycleFiles.length, 10) : 0;
+    progress.latestScore = recentCycles[0]?.scoreAfter || 0;
+    progress.progressPercent = Math.min(100, (progress.latestScore / progress.targetScore) * 100);
+  }
+
+  if (fs.existsSync(ORCHESTRATOR_FINETUNING_DIR)) {
+    const files = fs.readdirSync(ORCHESTRATOR_FINETUNING_DIR);
+    const trainingFiles = files.filter(f => f.startsWith('training_data_')).sort();
+    const promptFiles = files.filter(f => f.startsWith('prompt_suggestions_')).sort();
+    
+    let runningTotal = 0;
+    const history: any[] = [];
+    
+    for (const f of trainingFiles) {
+      try {
+        const content = fs.readFileSync(path.join(ORCHESTRATOR_FINETUNING_DIR, f), 'utf-8');
+        const count = content.split('\n').filter((l: string) => l.trim()).length;
+        runningTotal += count;
+        const dateMatch = f.match(/training_data_(\d{8})/);
+        history.push({ date: dateMatch ? dateMatch[1] : f, examples: count, cumulative: runningTotal });
+      } catch {}
+    }
+    
+    progress.totalTrainingExamples = runningTotal;
+    progress.trainingHistory = history.slice(-14);
+    
+    for (const f of promptFiles) {
+      const data = readJsonFile(path.join(ORCHESTRATOR_FINETUNING_DIR, f));
+      if (data && Array.isArray(data)) {
+        progress.totalPromptSuggestions += data.length;
+      }
+    }
+  }
+
+  return progress;
+}
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', ['GET']);
+    return res.status(405).end(`Method ${req.method} Not Allowed`);
+  }
+  
+  try {
+    const { view, hours = '24', days = '7', limit = '50' } = req.query;
+    
+    switch (view) {
+      case 'evaluations':
+        return res.status(200).json(getRecentEvaluations(
+          parseInt(hours as string),
+          parseInt(limit as string)
+        ));
+      
+      case 'feedback':
+        return res.status(200).json(getFeedbackSummary(
+          parseInt(hours as string)
+        ));
+      
+      case 'quality':
+        return res.status(200).json(getQualityTrends(
+          parseInt(days as string)
+        ));
+      
+      case 'gaps':
+        return res.status(200).json(getGapLedger());
+      
+      case 'cycles':
+        return res.status(200).json(getOrchestratorCycles(
+          parseInt(limit as string)
+        ));
+      
+      case 'rl-agent':
+        return res.status(200).json(await getRLAgentMetrics());
+
+      case 'training-progress':
+        return res.status(200).json(await getTrainingProgressFromDB());
+
+      case 'finetuning':
+        return res.status(200).json(getFineTuningStats());
+      
+      case 'activity':
+        return res.status(200).json(getAgentActivity(
+          parseInt(hours as string)
+        ));
+      
+      default:
+        // Return full system overview
+        return res.status(200).json(getSystemOverview());
+    }
+  } catch (error) {
+    console.error('Multi-agent status error:', error);
+    return res.status(500).json({ 
+      error: 'Failed to get multi-agent status',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}
+

@@ -1,0 +1,280 @@
+"""
+Event Metadata Enrichment Service
+
+Non-invasive metadata layer for calendar events.
+Enriches events with AI-generated classifications WITHOUT modifying upstream sources.
+"""
+
+import re
+from typing import Dict, List, Optional, Any
+from datetime import datetime
+import asyncpg
+from dataclasses import dataclass
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class EventMetadata:
+    """Enriched metadata for a calendar event."""
+    event_uid: str
+    calendar_source: str
+    calendar_name: str
+    title: str
+    start_time: datetime
+    end_time: datetime
+    all_day: bool
+    event_type: str
+    blocking: bool
+    allows_activities: bool
+    priority: str
+    category: Optional[str] = None
+    classification_confidence: float = 0.0
+    classification_method: str = 'rule_based'
+    is_organizer: bool = False
+    is_editable: bool = False
+    source_calendar_type: str = 'personal'
+
+
+class EventEnrichmentService:
+    """Service for enriching calendar events with metadata."""
+    
+    def __init__(self, db_pool: asyncpg.Pool):
+        self.db = db_pool
+        self.rules_cache = []
+        
+    async def initialize(self):
+        """Load classification rules into cache."""
+        await self._load_rules()
+        logger.info(f"EventEnrichmentService initialized with {len(self.rules_cache)} rules")
+        
+    async def _load_rules(self):
+        """Load classification rules from database."""
+        query = """
+            SELECT rule_name, pattern_type, pattern_value, event_type, 
+                   blocking, allows_activities, priority
+            FROM event_classification_rules
+            WHERE enabled = TRUE
+            ORDER BY priority DESC
+        """
+        self.rules_cache = await self.db.fetch(query)
+        
+    async def enrich_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Enrich a calendar event with metadata."""
+        event_uid = event.get('uid') or event.get('id') or event.get('title', 'unknown')
+        calendar_source = event.get('calendar_source', 'apple')
+        calendar_name = event.get('calendar_name', 'Unknown')
+        
+        existing = await self._get_existing_metadata(event_uid, calendar_source, calendar_name)
+        
+        if existing and not self._needs_reclassification(existing, event):
+            return self._merge_event_with_metadata(event, existing)
+        
+        metadata = await self._classify_event(event)
+        await self._store_metadata(metadata)
+        
+        return self._merge_event_with_metadata(event, metadata)
+    
+    async def _classify_event(self, event: Dict[str, Any]) -> EventMetadata:
+        """Classify an event using rule-based classification."""
+        title = event.get('title', '').lower()
+        calendar_name = event.get('calendar_name', '').lower()
+        
+        for rule in self.rules_cache:
+            if self._rule_matches(rule, title, calendar_name):
+                return EventMetadata(
+                    event_uid=event.get('uid') or event.get('id') or event.get('title', 'unknown'),
+                    calendar_source=event.get('calendar_source', 'apple'),
+                    calendar_name=event.get('calendar_name', 'Unknown'),
+                    title=event.get('title', ''),
+                    start_time=self._parse_datetime(event.get('start_time')),
+                    end_time=self._parse_datetime(event.get('end_time')),
+                    all_day=event.get('all_day', False),
+                    event_type=rule['event_type'],
+                    blocking=rule['blocking'],
+                    allows_activities=rule['allows_activities'],
+                    priority=self._infer_priority(event),
+                    classification_confidence=0.9,
+                    classification_method='rule_based',
+                    is_organizer=event.get('is_organizer', False),
+                    is_editable=self._is_editable(event),
+                    source_calendar_type=self._infer_calendar_type(event)
+                )
+        
+        return EventMetadata(
+            event_uid=event.get('uid') or event.get('id') or event.get('title', 'unknown'),
+            calendar_source=event.get('calendar_source', 'apple'),
+            calendar_name=event.get('calendar_name', 'Unknown'),
+            title=event.get('title', ''),
+            start_time=self._parse_datetime(event.get('start_time')),
+            end_time=self._parse_datetime(event.get('end_time')),
+            all_day=event.get('all_day', False),
+            event_type='unknown',
+            blocking=True,
+            allows_activities=False,
+            priority='medium',
+            classification_confidence=0.5,
+            classification_method='default',
+            is_organizer=event.get('is_organizer', False),
+            is_editable=self._is_editable(event),
+            source_calendar_type=self._infer_calendar_type(event)
+        )
+    
+    def _rule_matches(self, rule: Dict, title: str, calendar_name: str) -> bool:
+        """Check if a classification rule matches the event."""
+        pattern_type = rule['pattern_type']
+        pattern_value = rule['pattern_value'].lower()
+        
+        if pattern_type == 'title_contains':
+            return pattern_value in title
+        elif pattern_type == 'title_regex':
+            return bool(re.search(pattern_value, title))
+        elif pattern_type == 'calendar_name':
+            return pattern_value in calendar_name
+        
+        return False
+    
+    def _infer_priority(self, event: Dict) -> str:
+        """Infer event priority from various signals."""
+        title = event.get('title', '').lower()
+        
+        if any(word in title for word in ['urgent', 'critical', 'important', 'asap']):
+            return 'high'
+        if any(word in title for word in ['optional', 'maybe', 'tentative']):
+            return 'low'
+        
+        return 'medium'
+    
+    def _is_editable(self, event: Dict) -> bool:
+        """Determine if user can edit this event upstream."""
+        if event.get('is_organizer', False):
+            return True
+        
+        calendar_name = event.get('calendar_name', '').lower()
+        if any(word in calendar_name for word in ['personal', 'private', 'my']):
+            return True
+        
+        return False
+    
+    def _infer_calendar_type(self, event: Dict) -> str:
+        """Infer calendar type from calendar name."""
+        calendar_name = event.get('calendar_name', '').lower()
+        
+        if any(word in calendar_name for word in ['work', 'office', 'company']):
+            return 'work'
+        elif any(word in calendar_name for word in ['shared', 'team', 'group']):
+            return 'shared'
+        elif any(word in calendar_name for word in ['org', 'organization', 'department']):
+            return 'org'
+        
+        return 'personal'
+    
+    def _parse_datetime(self, dt_value: Any) -> datetime:
+        """Parse datetime from various formats."""
+        if isinstance(dt_value, datetime):
+            return dt_value
+        if isinstance(dt_value, str):
+            try:
+                return datetime.fromisoformat(dt_value.replace('Z', '+00:00'))
+            except:
+                return datetime.now()
+        return datetime.now()
+    
+    async def _get_existing_metadata(
+        self, 
+        event_uid: str, 
+        calendar_source: str, 
+        calendar_name: str
+    ) -> Optional[Dict]:
+        """Retrieve existing metadata for an event."""
+        query = """
+            SELECT * FROM event_metadata
+            WHERE event_uid = $1 AND calendar_source = $2 AND calendar_name = $3
+        """
+        return await self.db.fetchrow(query, event_uid, calendar_source, calendar_name)
+    
+    def _needs_reclassification(self, existing: Dict, event: Dict) -> bool:
+        """Check if event needs to be reclassified."""
+        return existing['title'] != event.get('title')
+    
+    async def _store_metadata(self, metadata: EventMetadata):
+        """Store enriched metadata in database."""
+        query = """
+            INSERT INTO event_metadata (
+                event_uid, calendar_source, calendar_name,
+                title, start_time, end_time, all_day,
+                event_type, blocking, allows_activities, priority,
+                classification_confidence, classification_method,
+                is_organizer, is_editable, source_calendar_type
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            ON CONFLICT (event_uid, calendar_source, calendar_name)
+            DO UPDATE SET
+                title = EXCLUDED.title,
+                start_time = EXCLUDED.start_time,
+                end_time = EXCLUDED.end_time,
+                all_day = EXCLUDED.all_day,
+                event_type = EXCLUDED.event_type,
+                blocking = EXCLUDED.blocking,
+                allows_activities = EXCLUDED.allows_activities,
+                priority = EXCLUDED.priority,
+                classification_confidence = EXCLUDED.classification_confidence,
+                classification_method = EXCLUDED.classification_method,
+                updated_at = NOW(),
+                last_synced_at = NOW()
+        """
+        await self.db.execute(
+            query,
+            metadata.event_uid, metadata.calendar_source, metadata.calendar_name,
+            metadata.title, metadata.start_time, metadata.end_time, metadata.all_day,
+            metadata.event_type, metadata.blocking, metadata.allows_activities, 
+            metadata.priority, metadata.classification_confidence, 
+            metadata.classification_method, metadata.is_organizer, 
+            metadata.is_editable, metadata.source_calendar_type
+        )
+    
+    def _merge_event_with_metadata(
+        self, 
+        event: Dict[str, Any], 
+        metadata: Any
+    ) -> Dict[str, Any]:
+        """Merge original event with enriched metadata."""
+        enriched = event.copy()
+        
+        if isinstance(metadata, EventMetadata):
+            enriched['_metadata'] = {
+                'event_type': metadata.event_type,
+                'blocking': metadata.blocking,
+                'allows_activities': metadata.allows_activities,
+                'priority': metadata.priority,
+                'category': metadata.category,
+                'classification_confidence': metadata.classification_confidence,
+                'classification_method': metadata.classification_method,
+                'is_editable': metadata.is_editable,
+                'source_calendar_type': metadata.source_calendar_type
+            }
+        else:
+            enriched['_metadata'] = {
+                'event_type': metadata['event_type'],
+                'blocking': metadata['blocking'],
+                'allows_activities': metadata['allows_activities'],
+                'priority': metadata.get('priority', 'medium'),
+                'classification_confidence': metadata.get('classification_confidence', 0.0),
+                'classification_method': metadata.get('classification_method', 'unknown'),
+                'is_editable': metadata.get('is_editable', False),
+                'source_calendar_type': metadata.get('source_calendar_type', 'personal')
+            }
+        
+        return enriched
+    
+    async def enrich_events_batch(self, events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Enrich multiple events in batch."""
+        enriched_events = []
+        for event in events:
+            try:
+                enriched = await self.enrich_event(event)
+                enriched_events.append(enriched)
+            except Exception as e:
+                logger.error(f"Error enriching event {event.get('title', 'unknown')}: {e}")
+                enriched_events.append(event)
+        return enriched_events

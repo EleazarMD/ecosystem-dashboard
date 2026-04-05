@@ -1,0 +1,187 @@
+/* Enhanced Kubernetes Dashboard Animations */
+
+/* Floating animation for decorative elements */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-10px) rotate(1deg);
+  }
+  50% {
+    transform: translateY(-20px) rotate(0deg);
+  }
+  75% {
+    transform: translateY(-10px) rotate(-1deg);
+  }
+}
+
+/* Enhanced pulse animation with glow effect */
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 20px rgba(72, 187, 120, 0.6);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+    box-shadow: 0 0 30px rgba(72, 187, 120, 0.8);
+  }
+}
+
+/* Shimmer effect for loading states */
+@keyframes shimmer {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+
+/* Slide up animation for cards */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Scale in animation for buttons */
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Gradient animation for backgrounds */
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Bounce animation for status indicators */
+@keyframes bounce {
+  0%, 20%, 53%, 80%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  40%, 43% {
+    transform: translate3d(0, -8px, 0);
+  }
+  70% {
+    transform: translate3d(0, -4px, 0);
+  }
+  90% {
+    transform: translate3d(0, -2px, 0);
+  }
+}
+
+/* Utility classes for animations */
+.float-animation {
+  animation: float 6s ease-in-out infinite;
+}
+
+.float-animation-reverse {
+  animation: float 8s ease-in-out infinite reverse;
+}
+
+.pulse-glow-animation {
+  animation: pulse-glow 2s infinite;
+}
+
+.shimmer-loading {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200px 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.slide-up-animation {
+  animation: slideUp 0.6s ease-out;
+}
+
+.scale-in-animation {
+  animation: scaleIn 0.3s ease-out;
+}
+
+.gradient-shift-animation {
+  background-size: 400% 400%;
+  animation: gradientShift 8s ease infinite;
+}
+
+.bounce-animation {
+  animation: bounce 2s infinite;
+}
+
+/* Enhanced hover effects */
+.enhanced-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.enhanced-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+/* Glass morphism effects */
+.glass-morphism {
+  backdrop-filter: blur(20px);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.glass-morphism-dark {
+  backdrop-filter: blur(20px);
+  background: rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Status indicator animations */
+.status-running {
+  background: #48BB78;
+  animation: pulse-glow 2s infinite;
+}
+
+.status-pending {
+  background: #ECC94B;
+  animation: bounce 2s infinite;
+}
+
+.status-failed {
+  background: #F56565;
+  animation: pulse-glow 1s infinite;
+}
+
+/* Responsive animations */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Dark mode specific animations */
+@media (prefers-color-scheme: dark) {
+  .shimmer-loading {
+    background: linear-gradient(90deg, #2d3748 25%, #4a5568 50%, #2d3748 75%);
+    background-size: 200px 100%;
+    animation: shimmer 1.5s infinite;
+  }
+}

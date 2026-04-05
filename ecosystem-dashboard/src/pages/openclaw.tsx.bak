@@ -1,0 +1,795 @@
+/**
+ * GooseMind - Personal AI Assistant
+ * Clean, functional chat interface with voice support
+ */
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  Box, VStack, HStack, Text, Spinner,
+  useToast, Textarea, IconButton,
+  useColorModeValue, Modal, ModalOverlay, ModalContent, ModalBody, ModalCloseButton,
+  useDisclosure, Image, Tooltip,
+} from '@chakra-ui/react';
+import { keyframes } from '@emotion/react';
+import { FiSend, FiMic, FiTrash2, FiSettings, FiDownload, FiMaximize2 } from 'react-icons/fi';
+import ReactMarkdown from 'react-markdown';
+import { motion, AnimatePresence } from 'framer-motion';
+import DashboardLayout from '@/components/layout/DashboardLayout';
+import { useRightPanel } from '@/contexts/RightPanelContext';
+import { PipecatVoicePanel } from '@/components/voice/PipecatVoicePanel';
+
+const MotionBox = motion(Box);
+
+const pulseKeyframes = keyframes`
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+`;
+
+// OpenClaw agent gateway proxy — handles user.md, memory.md, agent context, sessions
+const OPENCLAW_CHAT_URL = '/api/openclaw/chat';
+// AI Gateway fallback (raw LLM, no agent context) when OpenClaw gateway is down
+const AI_GATEWAY_CHAT_URL = '/api/ai-gateway/chat';
+
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  images?: Array<{ type: string; data: string }>;
+  toolsUsed?: string[];
+  citations?: string[];
+  latencyMs?: number;
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+  model?: string;
+}
+
+interface StreamingState {
+  isStreaming: boolean;
+  currentContent: string;
+  toolProgress: string[];
+  images: Array<{ type: string; data: string }>;
+}
+
+// Typing indicator component
+const TypingIndicator = () => (
+  <HStack spacing={1}>
+    {[0, 1, 2].map((i) => (
+      <Box
+        key={i}
+        w="6px"
+        h="6px"
+        borderRadius="full"
+        bg="blue.400"
+        animation={`${pulseKeyframes} 1s ease-in-out infinite`}
+        style={{ animationDelay: `${i * 0.2}s` }}
+      />
+    ))}
+  </HStack>
+);
+
+// Status indicator
+const StatusDot = ({ status }: { status: 'online' | 'thinking' | 'offline' }) => (
+  <Box
+    w="8px"
+    h="8px"
+    borderRadius="full"
+    bg={status === 'online' ? 'green.400' : status === 'thinking' ? 'orange.400' : 'gray.400'}
+    animation={status === 'thinking' ? `${pulseKeyframes} 1s ease-in-out infinite` : undefined}
+  />
+);
+
+export default function GooseMindPage() {
+  const toast = useToast();
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  
+  const { setIsOpen: setRightPanelOpen, setActiveTab, setContext, setCustomData, isOpen: isRightPanelOpen } = useRightPanel();
+  
+  // Model and agent selection from right panel
+  const [selectedModelId, setSelectedModelId] = useState<string>('minimax-m2.5');
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('main');
+  
+  const handleModelSelect = useCallback((modelId: string) => {
+    setSelectedModelId(modelId);
+    console.log('[OpenClaw] Model selected:', modelId);
+  }, []);
+  
+  const handleAgentSelect = useCallback((agentId: string) => {
+    setSelectedAgentId(agentId);
+    console.log('[OpenClaw] Agent selected:', agentId);
+  }, []);
+
+  // Set openclaw-chat context and pass callbacks to right panel
+  useEffect(() => {
+    setContext('openclaw-chat');
+    setActiveTab('agents'); // Start on Agents tab
+    setCustomData({ 
+      onSelectModel: handleModelSelect,
+      onSelectAgent: handleAgentSelect,
+    });
+    setRightPanelOpen(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const openVoicePanel = useCallback(() => {
+    onVoiceModalOpen();
+  }, [onVoiceModalOpen]);
+  
+  // Theme colors - clean, minimal palette
+  const pageBg = useColorModeValue('white', 'gray.900');
+  const cardBg = useColorModeValue('white', 'gray.900');
+  const borderColor = useColorModeValue('gray.100', 'gray.800');
+  const textPrimary = useColorModeValue('gray.900', 'gray.50');
+  const textSecondary = useColorModeValue('gray.500', 'gray.400');
+  const inputBg = useColorModeValue('gray.50', 'gray.800');
+  const userMsgBg = useColorModeValue('gray.800', 'gray.700');
+  const assistantMsgBg = useColorModeValue('white', 'gray.800');
+  const accentColor = useColorModeValue('gray.900', 'white');
+  const suggestionHoverBg = useColorModeValue('gray.50', 'gray.800');
+  const userMsgText = 'white';
+  const sendBtnActiveColor = useColorModeValue('white', 'gray.900');
+  const glassBorder = useColorModeValue('rgba(0, 0, 0, 0.06)', 'rgba(255, 255, 255, 0.12)');
+  const glassBorderHover = useColorModeValue('rgba(0, 0, 0, 0.12)', 'rgba(255, 255, 255, 0.3)');
+  const glassHoverBg = useColorModeValue('rgba(255, 255, 255, 0.7)', 'rgba(255, 255, 255, 0.1)');
+  const glassHoverShadow = useColorModeValue(
+    '0 8px 32px rgba(0, 0, 0, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.5)',
+    '0 8px 32px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.1)'
+  );
+
+  const [loading, setLoading] = useState(true);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
+    // Try to restore from sessionStorage on mount
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('goosemind-messages');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {}
+      }
+    }
+    return [];
+  });
+  
+  // Persist messages to sessionStorage
+  useEffect(() => {
+    if (chatMessages.length > 0) {
+      sessionStorage.setItem('goosemind-messages', JSON.stringify(chatMessages));
+    }
+  }, [chatMessages]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'online' | 'thinking' | 'offline'>('offline');
+  const [modelName, setModelName] = useState<string>('');
+  const [streamingState, setStreamingState] = useState<StreamingState>({
+    isStreaming: false,
+    currentContent: '',
+    toolProgress: [],
+    images: []
+  });
+  const [useStreaming, setUseStreaming] = useState(false); // Disabled for debugging
+  const [zoomedImage, setZoomedImage] = useState<string | undefined>(undefined);
+  const { isOpen: isImageModalOpen, onOpen: onImageModalOpen, onClose: onImageModalClose } = useDisclosure();
+  const { isOpen: isVoiceModalOpen, onOpen: onVoiceModalOpen, onClose: onVoiceModalClose } = useDisclosure();
+  
+  const handleImageZoom = (imageSrc: string) => {
+    setZoomedImage(imageSrc);
+    onImageModalOpen();
+  };
+  
+  const handleImageDownload = (imageSrc: string, index: number) => {
+    const link = document.createElement('a');
+    link.href = imageSrc;
+    link.download = `goosemind-chart-${Date.now()}-${index}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast({ title: 'Image downloaded', status: 'success', duration: 2000 });
+  };
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [chatMessages, chatLoading]);
+
+  // Check AI Gateway connection
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        
+        const healthRes = await fetch('/api/gateway/status', { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
+        setConnectionStatus(healthRes.ok ? 'online' : 'offline');
+        setModelName(selectedModelId);
+      } catch {
+        setConnectionStatus('offline');
+      }
+      setLoading(false);
+    };
+    init();
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/gateway/status');
+        setConnectionStatus(res.ok ? 'online' : 'offline');
+      } catch {
+        setConnectionStatus('offline');
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [selectedModelId]);
+
+  // Session ID for OpenClaw gateway conversation continuity
+  const [sessionId, setSessionId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('goosemind-sessionId') || null;
+    }
+    return null;
+  });
+
+  // Persist sessionId to sessionStorage
+  useEffect(() => {
+    if (sessionId) {
+      sessionStorage.setItem('goosemind-sessionId', sessionId);
+    } else {
+      sessionStorage.removeItem('goosemind-sessionId');
+    }
+  }, [sessionId]);
+
+  const sendChat = async () => {
+    if (!chatInput.trim() || chatLoading) return;
+    
+    const userMessage = chatInput.trim();
+    setChatInput('');
+    
+    setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setChatLoading(true);
+    setConnectionStatus('thinking');
+    
+    try {
+      console.log('[OpenClaw] Sending to agent gateway:', { agentId: selectedAgentId, sessionId, model: selectedModelId });
+      
+      const t0 = performance.now();
+      let res = await fetch(OPENCLAW_CHAT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userMessage,
+          agentId: selectedAgentId,
+          sessionId: sessionId || undefined,
+          stream: false,
+        }),
+      });
+      let clientLatencyMs = Math.round(performance.now() - t0);
+      let usedFallback = false;
+      
+      // Fallback to AI Gateway if OpenClaw gateway is unavailable
+      if (!res.ok && (res.status === 503 || res.status === 502)) {
+        console.warn('[OpenClaw] Agent gateway unavailable, falling back to AI Gateway');
+        toast({ title: 'Agent gateway unavailable — using direct LLM (no memory)', status: 'warning', duration: 4000, position: 'bottom-right' });
+        
+        const t1 = performance.now();
+        res = await fetch(AI_GATEWAY_CHAT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: selectedModelId,
+            messages: [
+              { role: 'system', content: `You are ${selectedAgentId}, an AI assistant.` },
+              ...chatMessages.map(m => ({ role: m.role, content: m.content })),
+              { role: 'user', content: userMessage },
+            ],
+          }),
+        });
+        clientLatencyMs = Math.round(performance.now() - t1);
+        usedFallback = true;
+      }
+      
+      console.log('[OpenClaw] Response status:', res.status, `(${clientLatencyMs}ms)`, usedFallback ? '(fallback)' : '');
+      
+      if (res.ok) {
+        const data = await res.json();
+        console.log('[OpenClaw] Response data:', data);
+        // OpenClaw proxy: { response, sessionId, model, usage, latencyMs }
+        // AI Gateway proxy: { choices, model, usage }
+        const content = data.response || data.choices?.[0]?.message?.content || 'No response';
+        
+        // Detect OpenClaw framework's built-in rate limit / provider error
+        const isUpstreamError = content.includes('rate limit') || content.includes('API rate limit');
+        
+        if (isUpstreamError && !usedFallback) {
+          console.warn('[OpenClaw] Upstream rate limit detected, falling back to AI Gateway');
+          toast({ title: 'Model rate-limited — retrying via direct LLM', status: 'warning', duration: 3000, position: 'bottom-right' });
+          
+          const t2 = performance.now();
+          const fallbackRes = await fetch(AI_GATEWAY_CHAT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: selectedModelId,
+              messages: [
+                { role: 'system', content: `You are ${selectedAgentId}, an AI assistant.` },
+                ...chatMessages.map(m => ({ role: m.role, content: m.content })),
+                { role: 'user', content: userMessage },
+              ],
+            }),
+          });
+          const fallbackLatency = Math.round(performance.now() - t2);
+          
+          if (fallbackRes.ok) {
+            const fbData = await fallbackRes.json();
+            const fbContent = fbData.choices?.[0]?.message?.content || 'No response';
+            setChatMessages(prev => [...prev, {
+              role: 'assistant',
+              content: fbContent,
+              latencyMs: fallbackLatency,
+              usage: fbData.usage || undefined,
+              model: (fbData.model || selectedModelId) + ' (fallback)',
+            }]);
+            setConnectionStatus('online');
+          } else {
+            // Both paths failed
+            toast({ title: 'All providers unavailable — try again shortly', status: 'error', duration: 4000 });
+            setChatMessages(prev => [...prev, { role: 'assistant', content: '⚠️ All model providers are temporarily unavailable. Please try again in a moment.' }]);
+            setConnectionStatus('offline');
+          }
+        } else {
+          if (data.sessionId) setSessionId(data.sessionId);
+          setChatMessages(prev => [...prev, {
+            role: 'assistant',
+            content,
+            citations: data.citations || undefined,
+            latencyMs: data.latencyMs || clientLatencyMs,
+            usage: data.usage || undefined,
+            model: (data.model || selectedModelId) + (usedFallback ? ' (fallback)' : ''),
+          }]);
+          setConnectionStatus('online');
+        }
+      } else {
+        const errorText = await res.text();
+        console.error('[OpenClaw] Error response:', errorText);
+        throw new Error(`Failed: ${res.status} - ${errorText}`);
+      }
+    } catch (error) {
+      console.error('[OpenClaw] Request error:', error);
+      toast({ title: 'Failed to send message', status: 'error', duration: 3000 });
+      setConnectionStatus('offline');
+    }
+    
+    setChatLoading(false);
+  };
+
+  const clearChat = () => {
+    setChatMessages([]);
+    setSessionId(null);
+    sessionStorage.removeItem('goosemind-messages');
+    sessionStorage.removeItem('goosemind-sessionId');
+  };
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <Box display="flex" alignItems="center" justifyContent="center" minH="60vh">
+          <VStack spacing={3}>
+            <Spinner size="lg" color={accentColor} />
+            <Text color={textSecondary}>Connecting to GooseMind...</Text>
+          </VStack>
+        </Box>
+      </DashboardLayout>
+    );
+  }
+
+  return (
+    <DashboardLayout>
+      <Box bg={pageBg} h="calc(100vh - 70px)" display="flex" flexDirection="column">
+        {/* Header - Minimal, borderless */}
+        <HStack 
+          justify="space-between" 
+          px={{ base: 4, md: 6 }} 
+          py={4} 
+          bg={cardBg}
+          flexShrink={0}
+        >
+          <HStack spacing={3}>
+            <HStack spacing={2}>
+              <Text fontWeight="600" fontSize="lg" color={textPrimary}>OpenClaw</Text>
+              <StatusDot status={chatLoading ? 'thinking' : connectionStatus} />
+            </HStack>
+          </HStack>
+          <HStack spacing={1}>
+            <IconButton
+              aria-label="Voice Assistant"
+              icon={<FiMic size={18} />}
+              size="sm"
+              variant="ghost"
+              color={accentColor}
+              onClick={openVoicePanel}
+              _hover={{ bg: suggestionHoverBg }}
+            />
+            <IconButton
+              aria-label="Clear chat"
+              icon={<FiTrash2 size={16} />}
+              size="sm"
+              variant="ghost"
+              color={textSecondary}
+              onClick={clearChat}
+              isDisabled={chatMessages.length === 0}
+              _hover={{ bg: suggestionHoverBg }}
+              _disabled={{ opacity: 0.3 }}
+            />
+            <IconButton
+              aria-label="Settings"
+              icon={<FiSettings size={16} />}
+              size="sm"
+              variant="ghost"
+              color={textSecondary}
+              onClick={() => setRightPanelOpen(!isRightPanelOpen, true)}
+              _hover={{ bg: suggestionHoverBg }}
+            />
+          </HStack>
+        </HStack>
+
+        {/* Messages Area */}
+        <Box 
+          ref={chatContainerRef}
+          flex={1} 
+          overflowY="auto" 
+          px={{ base: 4, md: 6 }}
+          py={4}
+          sx={{
+            '&::-webkit-scrollbar': { width: '6px' },
+            '&::-webkit-scrollbar-track': { bg: 'transparent' },
+            '&::-webkit-scrollbar-thumb': { bg: borderColor, borderRadius: 'full' },
+          }}
+        >
+          {chatMessages.length === 0 ? (
+            <VStack spacing={8} py={{ base: 12, md: 20 }} textAlign="center" maxW="480px" mx="auto">
+              <VStack spacing={3}>
+                <Text fontSize={{ base: 'xl', md: '2xl' }} fontWeight="500" color={textPrimary}>
+                  How can I help you?
+                </Text>
+                <Text fontSize="sm" color={textSecondary}>
+                  I can help with your calendar, emails, research, and more.
+                </Text>
+              </VStack>
+              <VStack spacing={2} w="full">
+                {[
+                  { text: "What's on my calendar today?", icon: "📅" },
+                  { text: "Check my emails for anything urgent", icon: "📧" },
+                  { text: "What's the weather like today?", icon: "🌤️" },
+                  { text: "Show my pending tasks", icon: "✅" },
+                  { text: "Take a quick note", icon: "📝" },
+                  { text: "Create a chart of my weekly productivity", icon: "📊" },
+                ].map((q) => (
+                  <Box
+                    key={q.text}
+                    as="button"
+                    w="full"
+                    textAlign="left"
+                    px={4}
+                    py={3}
+                    borderRadius="xl"
+                    cursor="pointer"
+                    bg="transparent"
+                    border="1px solid"
+                    borderColor={glassBorder}
+                    backdropFilter="blur(8px)"
+                    onClick={() => setChatInput(q.text)}
+                    _hover={{ 
+                      borderColor: glassBorderHover,
+                      bg: glassHoverBg,
+                      boxShadow: glassHoverShadow,
+                      backdropFilter: 'blur(16px)',
+                      transform: 'translateY(-2px) scale(1.01)'
+                    }}
+                    _active={{
+                      transform: 'translateY(0) scale(0.99)'
+                    }}
+                    transition="all 0.2s cubic-bezier(0.4, 0, 0.2, 1)"
+                  >
+                    <HStack spacing={3}>
+                      <Text fontSize="md">{q.icon}</Text>
+                      <Text fontSize="sm" color={textPrimary}>{q.text}</Text>
+                    </HStack>
+                  </Box>
+                ))}
+              </VStack>
+            </VStack>
+          ) : (
+            <VStack align="stretch" spacing={4} maxW="700px" mx="auto" w="full" px={{ base: 0, md: 4 }}>
+              {chatMessages.map((msg, i) => (
+                  <Box
+                    key={i}
+                    alignSelf={msg.role === 'user' ? 'flex-end' : 'flex-start'}
+                    maxW={{ base: '88%', md: '72%' }}
+                    px={4}
+                    py={3}
+                    bg={msg.role === 'user' ? userMsgBg : assistantMsgBg}
+                    color={msg.role === 'user' ? userMsgText : textPrimary}
+                    borderRadius="xl"
+                    boxShadow={msg.role === 'assistant' ? 'sm' : 'none'}
+                    border={msg.role === 'assistant' ? '1px solid' : 'none'}
+                    borderColor={borderColor}
+                  >
+                    {msg.role === 'assistant' ? (
+                      <Box
+                        fontSize="sm"
+                        lineHeight="1.7"
+                        sx={{
+                          '& p': { mb: 2, '&:last-child': { mb: 0 } },
+                          '& h1': { fontSize: 'lg', fontWeight: '700', mt: 3, mb: 1 },
+                          '& h2': { fontSize: 'md', fontWeight: '700', mt: 3, mb: 1 },
+                          '& h3': { fontSize: 'sm', fontWeight: '700', mt: 2, mb: 1 },
+                          '& ul, & ol': { pl: 5, mb: 2 },
+                          '& li': { mb: 1 },
+                          '& li > ul, & li > ol': { mt: 1, mb: 0 },
+                          '& code': {
+                            bg: 'blackAlpha.200',
+                            px: 1,
+                            py: '1px',
+                            borderRadius: 'sm',
+                            fontSize: 'xs',
+                            fontFamily: 'mono',
+                          },
+                          '& pre': {
+                            bg: 'blackAlpha.200',
+                            p: 3,
+                            borderRadius: 'md',
+                            overflowX: 'auto',
+                            mb: 2,
+                            '& code': { bg: 'transparent', p: 0, fontSize: 'xs' },
+                          },
+                          '& blockquote': {
+                            borderLeft: '3px solid',
+                            borderColor: 'gray.300',
+                            pl: 3,
+                            ml: 0,
+                            mb: 2,
+                            color: 'gray.600',
+                            fontStyle: 'italic',
+                          },
+                          '& a': { color: 'blue.500', textDecoration: 'underline' },
+                          '& strong': { fontWeight: '600' },
+                          '& hr': { my: 3, borderColor: 'gray.200' },
+                          '& table': { w: 'full', mb: 2 },
+                          '& th, & td': { px: 2, py: 1, borderBottom: '1px solid', borderColor: 'gray.200', fontSize: 'xs', textAlign: 'left' },
+                          '& th': { fontWeight: '600' },
+                        }}
+                      >
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                          {msg.images && msg.images.length > 0 && (
+                            <VStack spacing={3} mt={3} align="stretch">
+                              {msg.images.map((img, imgIdx) => {
+                                const imageSrc = `data:${img.type};base64,${img.data}`;
+                                return (
+                                  <Box 
+                                    key={imgIdx} 
+                                    borderRadius="lg" 
+                                    overflow="hidden"
+                                    border="1px solid"
+                                    borderColor={borderColor}
+                                    position="relative"
+                                    role="group"
+                                  >
+                                    <img 
+                                      src={imageSrc} 
+                                      alt={`Generated chart ${imgIdx + 1}`}
+                                      style={{ width: '100%', display: 'block', cursor: 'pointer' }}
+                                      onClick={() => handleImageZoom(imageSrc)}
+                                    />
+                                    <HStack 
+                                      position="absolute" 
+                                      top={2} 
+                                      right={2} 
+                                      spacing={1}
+                                      opacity={0}
+                                      _groupHover={{ opacity: 1 }}
+                                      transition="opacity 0.2s"
+                                    >
+                                      <Tooltip label="Zoom">
+                                        <IconButton
+                                          aria-label="Zoom image"
+                                          icon={<FiMaximize2 size={14} />}
+                                          size="sm"
+                                          bg="blackAlpha.700"
+                                          color="white"
+                                          _hover={{ bg: 'blackAlpha.800' }}
+                                          onClick={() => handleImageZoom(imageSrc)}
+                                        />
+                                      </Tooltip>
+                                      <Tooltip label="Download">
+                                        <IconButton
+                                          aria-label="Download image"
+                                          icon={<FiDownload size={14} />}
+                                          size="sm"
+                                          bg="blackAlpha.700"
+                                          color="white"
+                                          _hover={{ bg: 'blackAlpha.800' }}
+                                          onClick={() => handleImageDownload(imageSrc, imgIdx)}
+                                        />
+                                      </Tooltip>
+                                    </HStack>
+                                  </Box>
+                                );
+                              })}
+                            </VStack>
+                          )}
+                          {msg.citations && msg.citations.length > 0 && (
+                            <Box mt={3} pt={2} borderTop="1px solid" borderColor={borderColor}>
+                              <Text fontSize="2xs" fontWeight="600" color={textSecondary} textTransform="uppercase" letterSpacing="wider" mb={1}>
+                                Sources
+                              </Text>
+                              <VStack align="start" spacing={0.5}>
+                                {msg.citations.map((url, idx) => {
+                                  let hostname = '';
+                                  try { hostname = new URL(url).hostname.replace('www.', ''); } catch { hostname = url.slice(0, 40); }
+                                  return (
+                                    <HStack key={idx} spacing={1.5} as="a" href={url} target="_blank" rel="noopener noreferrer" _hover={{ color: 'blue.500' }} transition="color 0.15s">
+                                      <Text fontSize="2xs" color={textSecondary} fontFamily="mono">[{idx + 1}]</Text>
+                                      <Text fontSize="xs" color="blue.500" isTruncated maxW="300px" _hover={{ textDecoration: 'underline' }}>
+                                        {hostname}
+                                      </Text>
+                                    </HStack>
+                                  );
+                                })}
+                              </VStack>
+                            </Box>
+                          )}
+                          {(msg.latencyMs || msg.usage) && (
+                            <HStack spacing={2} mt={2} opacity={0.5} _hover={{ opacity: 0.8 }} transition="opacity 0.2s">
+                              {msg.latencyMs && (
+                                <Text fontSize="xs" fontFamily="mono" color={textSecondary}>
+                                  {msg.latencyMs >= 1000 ? `${(msg.latencyMs / 1000).toFixed(1)}s` : `${msg.latencyMs}ms`}
+                                </Text>
+                              )}
+                              {msg.usage?.total_tokens && (
+                                <Text fontSize="xs" fontFamily="mono" color={textSecondary}>
+                                  {msg.usage.total_tokens} tok
+                                </Text>
+                              )}
+                              {msg.model && (
+                                <Text fontSize="xs" fontFamily="mono" color={textSecondary}>
+                                  {msg.model}
+                                </Text>
+                              )}
+                            </HStack>
+                          )}
+                        </Box>
+                      ) : (
+                        <Text fontSize="sm" whiteSpace="pre-wrap" lineHeight="1.7">{msg.content}</Text>
+                      )}
+                  </Box>
+                ))}
+              {chatLoading && (
+                <MotionBox
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  alignSelf="flex-start"
+                  maxW={{ base: '88%', md: '72%' }}
+                  px={4}
+                  py={3}
+                  bg={assistantMsgBg}
+                  borderRadius="2xl"
+                  borderTopLeftRadius="6px"
+                  border="1px solid"
+                  borderColor={borderColor}
+                >
+                  {streamingState.isStreaming ? (
+                    <VStack align="stretch" spacing={2}>
+                      {streamingState.toolProgress.length > 0 && (
+                        <VStack align="stretch" spacing={1} mb={2}>
+                          {streamingState.toolProgress.slice(-3).map((progress, idx) => (
+                            <Text key={idx} fontSize="xs" color="blue.400" fontFamily="mono">
+                              {progress}
+                            </Text>
+                          ))}
+                        </VStack>
+                      )}
+                      {streamingState.currentContent ? (
+                        <Box fontSize="sm" lineHeight="1.7">
+                          <ReactMarkdown>{streamingState.currentContent}</ReactMarkdown>
+                        </Box>
+                      ) : (
+                        <TypingIndicator />
+                      )}
+                    </VStack>
+                  ) : (
+                    <TypingIndicator />
+                  )}
+                </MotionBox>
+              )}
+            </VStack>
+          )}
+        </Box>
+
+        {/* Input Area - Clean, minimal, positioned higher */}
+        <Box 
+          px={{ base: 4, md: 6 }} 
+          py={6} 
+          pb={{ base: 8, md: 10 }}
+          bg={cardBg}
+        >
+          <HStack spacing={3} maxW="800px" mx="auto" align="flex-end">
+            <Textarea
+              ref={inputRef}
+              placeholder="Message GooseMind..."
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              rows={2}
+              resize="none"
+              fontSize="md"
+              bg={inputBg}
+              border="none"
+              borderRadius="xl"
+              _hover={{ bg: inputBg }}
+              _focus={{ 
+                bg: inputBg,
+                boxShadow: 'none',
+              }}
+              onKeyDown={(e) => { 
+                if (e.key === 'Enter' && !e.shiftKey) { 
+                  e.preventDefault(); 
+                  sendChat(); 
+                } 
+              }}
+              minH="56px"
+              maxH="150px"
+              py={4}
+              px={4}
+            />
+            <IconButton
+              aria-label="Send message"
+              icon={<FiSend size={16} />}
+              bg={chatInput.trim() ? accentColor : 'transparent'}
+              color={chatInput.trim() ? sendBtnActiveColor : textSecondary}
+              borderRadius="full"
+              size="md"
+              onClick={sendChat}
+              isLoading={chatLoading}
+              isDisabled={!chatInput.trim()}
+              _hover={{ opacity: chatInput.trim() ? 0.8 : 1 }}
+              _disabled={{ opacity: 0.3, cursor: 'not-allowed' }}
+            />
+          </HStack>
+        </Box>
+      </Box>
+      
+      {/* Voice Panel Modal */}
+      <Modal isOpen={isVoiceModalOpen} onClose={onVoiceModalClose} size="4xl" isCentered>
+        <ModalOverlay bg="blackAlpha.800" />
+        <ModalContent bg="transparent" boxShadow="none" maxW="800px" maxH="90vh">
+          <ModalCloseButton color="white" size="lg" top={4} right={4} zIndex={10} />
+          <ModalBody p={0}>
+            <Box h="600px" borderRadius="xl" overflow="hidden">
+              <PipecatVoicePanel />
+            </Box>
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+
+
+      {/* Image Zoom Modal */}
+      <Modal isOpen={isImageModalOpen} onClose={onImageModalClose} size="6xl" isCentered>
+        <ModalOverlay bg="blackAlpha.800" />
+        <ModalContent bg="transparent" boxShadow="none" maxW="90vw" maxH="90vh">
+          <ModalCloseButton color="white" size="lg" top={4} right={4} zIndex={10} />
+          <ModalBody p={0} display="flex" alignItems="center" justifyContent="center">
+            {zoomedImage && (
+              <Image 
+                src={zoomedImage} 
+                alt="Zoomed chart" 
+                maxW="100%" 
+                maxH="85vh" 
+                objectFit="contain"
+                borderRadius="lg"
+              />
+            )}
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+    </DashboardLayout>
+  );
+}
+
+// Server-side account tenancy check - redirect child accounts to child chat
+export { getServerSideProps } from '@/lib/adult-page-guard';

@@ -1,0 +1,1453 @@
+/**
+ * Email Draft Studio
+ * 
+ * Advanced email composition with AI-powered drafting, quick prompts,
+ * workspace integration, and intelligent context awareness.
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  ModalCloseButton,
+  VStack,
+  HStack,
+  Input,
+  Textarea,
+  Button,
+  FormControl,
+  FormLabel,
+  IconButton,
+  Text,
+  useToast,
+  Divider,
+  Box,
+  Tooltip,
+  Badge,
+  useBreakpointValue,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  Wrap,
+  WrapItem,
+  Collapse,
+  Spinner,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuItem,
+  Icon,
+  Flex,
+  Progress,
+} from '@chakra-ui/react';
+import {
+  PaperAirplaneIcon,
+  SparklesIcon,
+  XMarkIcon,
+  PaperClipIcon,
+  DocumentDuplicateIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  LightBulbIcon,
+  PlusIcon,
+  DocumentTextIcon,
+  MagnifyingGlassIcon,
+  MusicalNoteIcon,
+  FolderIcon,
+  ArrowPathIcon,
+  AdjustmentsHorizontalIcon,
+  BookOpenIcon,
+  UserCircleIcon,
+  ChatBubbleLeftRightIcon,
+  BriefcaseIcon,
+  HeartIcon,
+  AcademicCapIcon,
+  CheckCircleIcon,
+} from '@heroicons/react/24/outline';
+import { useSemanticToken } from '@/hooks/useSemanticToken';
+import type { EmailItem } from './EmailList';
+
+// Quick prompt presets for different tones and styles
+const TONE_PRESETS = [
+  { id: 'professional', label: 'Professional', icon: BriefcaseIcon, color: 'blue' },
+  { id: 'friendly', label: 'Friendly', icon: HeartIcon, color: 'pink' },
+  { id: 'casual', label: 'Casual', icon: ChatBubbleLeftRightIcon, color: 'green' },
+  { id: 'formal', label: 'Formal', icon: AcademicCapIcon, color: 'purple' },
+  { id: 'concise', label: 'Concise', icon: CheckCircleIcon, color: 'orange' },
+];
+
+const QUICK_ACTIONS = [
+  { id: 'accept', label: 'Accept/Agree', prompt: 'Express agreement and acceptance', conflicts: ['decline'] },
+  { id: 'decline', label: 'Politely Decline', prompt: 'Politely decline the request with a brief explanation', conflicts: ['accept'] },
+  { id: 'schedule', label: 'Schedule Meeting', prompt: 'Propose scheduling a meeting to discuss further', conflicts: [] },
+  { id: 'clarify', label: 'Ask for Clarification', prompt: 'Request more details or clarification', conflicts: ['info'] },
+  { id: 'delegate', label: 'Delegate/Refer', prompt: 'Refer to another person or team who can help', conflicts: [] },
+  { id: 'followup', label: 'Follow Up', prompt: 'Follow up on a previous conversation or request', conflicts: [] },
+  { id: 'thank', label: 'Thank & Acknowledge', prompt: 'Express gratitude and acknowledge receipt', conflicts: [] },
+  { id: 'info', label: 'Provide Information', prompt: 'Provide the requested information or answer questions', conflicts: ['clarify'] },
+];
+
+// LLM models available via AI Gateway
+const LLM_MODELS = [
+  { id: 'qwen3-32b', label: 'Qwen3 32B', description: 'Fast, local inference', provider: 'local' },
+  { id: 'gemini-3-flash', label: 'Gemini 3 Flash', description: 'Latest Flash - 3x faster with PhD-level reasoning (Preview)', provider: 'google' },
+  { id: 'gemini-2-5-flash', label: 'Gemini 2.5 Flash', description: 'Best price-performance for email drafts', provider: 'google' },
+  { id: 'gemini-2-5-pro', label: 'Gemini 2.5 Pro', description: 'Advanced reasoning for complex emails', provider: 'google' },
+  { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet', description: 'Balanced quality', provider: 'anthropic' },
+];
+
+interface WorkspaceDocument {
+  id: string;
+  name: string;
+  type: 'document' | 'research' | 'podcast' | 'attachment';
+  summary?: string;
+  path?: string;
+}
+
+interface EmailDraftStudioProps {
+  isOpen: boolean;
+  onClose: () => void;
+  originalEmail: EmailItem | null;
+  onSend?: (data: DraftData) => Promise<void>;
+}
+
+export interface DraftData {
+  to: string;
+  cc: string;
+  subject: string;
+  body: string;
+  inReplyTo?: string;
+  attachments?: string[];
+}
+
+export const EmailDraftStudio: React.FC<EmailDraftStudioProps> = ({
+  isOpen,
+  onClose,
+  originalEmail,
+  onSend,
+}) => {
+  const toast = useToast();
+  
+  // Form state
+  const [to, setTo] = useState('');
+  const [cc, setCc] = useState('');
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  
+  // AI generation state
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState(0);
+  const [selectedTone, setSelectedTone] = useState('professional');
+  const [selectedActions, setSelectedActions] = useState<Set<string>>(new Set()); // Multi-select
+  const [selectedModel, setSelectedModel] = useState('gemini-2-5-flash');
+  const [userInstructions, setUserInstructions] = useState(''); // Visible custom input
+  
+  // Focus parameters
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [focusTopic, setFocusTopic] = useState('');
+  const [focusPoints, setFocusPoints] = useState<string[]>(['']);
+  const [excludeTopics, setExcludeTopics] = useState('');
+  const [customInstructions, setCustomInstructions] = useState('');
+  
+  // Workspace integration
+  const [showWorkspace, setShowWorkspace] = useState(false);
+  const [workspaceDocuments, setWorkspaceDocuments] = useState<WorkspaceDocument[]>([]);
+  const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
+  const [loadingWorkspace, setLoadingWorkspace] = useState(false);
+  
+  // Context from backend
+  const [senderContext, setSenderContext] = useState<any>(null);
+  const [threadContext, setThreadContext] = useState<any>(null);
+  const [loadingContext, setLoadingContext] = useState(false);
+  
+  // Reply Intelligence context (research + templates)
+  const [replyIntelligence, setReplyIntelligence] = useState<any>(null);
+  const [loadingReplyIntelligence, setLoadingReplyIntelligence] = useState(false);
+  
+  // Draft feedback state
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
+  const [currentGenerationParams, setCurrentGenerationParams] = useState<any>(null);
+  const [feedbackGiven, setFeedbackGiven] = useState(false);
+  
+  // Sending state
+  const [sending, setSending] = useState(false);
+
+  // Theme tokens
+  const bgColor = useSemanticToken('surface.base');
+  const bgSecondary = useSemanticToken('surface.secondary');
+  const borderColor = useSemanticToken('border.subtle');
+  const textPrimary = useSemanticToken('text.primary');
+  const textSecondary = useSemanticToken('text.secondary');
+  const accentColor = useSemanticToken('accent.primary');
+
+  // Responsive
+  const modalSize = useBreakpointValue({ base: 'full', md: '4xl' });
+  const isMobile = useBreakpointValue({ base: true, md: false });
+
+  // Initialize on open
+  useEffect(() => {
+    if (!isOpen || !originalEmail) return;
+
+    setTo(originalEmail.from_email || '');
+    setSubject(
+      originalEmail.subject?.startsWith('Re:')
+        ? originalEmail.subject
+        : `Re: ${originalEmail.subject || ''}`
+    );
+    setBody('');
+    setSelectedTone('professional');
+    setSelectedActions(new Set());
+    setSelectedModel('qwen3-32b');
+    setUserInstructions('');
+    setFocusTopic('');
+    setFocusPoints(['']);
+    setExcludeTopics('');
+    setCustomInstructions('');
+    setSelectedDocuments([]);
+    
+    // Load context
+    loadEmailContext();
+    loadReplyIntelligence();
+  }, [isOpen, originalEmail]);
+
+  // Load sender and thread context
+  const loadEmailContext = async () => {
+    if (!originalEmail) return;
+    
+    setLoadingContext(true);
+    try {
+      // Fetch sender context
+      const senderRes = await fetch(
+        `/api/hermes-proxy?path=v1/intelligence/sender-context/${encodeURIComponent(originalEmail.from_email)}`
+      );
+      if (senderRes.ok) {
+        const data = await senderRes.json();
+        setSenderContext(data);
+      }
+
+      // Fetch thread context if available
+      if (originalEmail.thread_id) {
+        const threadRes = await fetch(
+          `/api/hermes-proxy?path=v1/emails/thread/${encodeURIComponent(originalEmail.thread_id)}`
+        );
+        if (threadRes.ok) {
+          const data = await threadRes.json();
+          setThreadContext(data);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load context:', error);
+    } finally {
+      setLoadingContext(false);
+    }
+  };
+
+  // Load reply intelligence (research integration + templates)
+  const loadReplyIntelligence = async () => {
+    if (!originalEmail) return;
+    
+    setLoadingReplyIntelligence(true);
+    try {
+      const response = await fetch('/api/hermes-proxy?path=v1/reply/context', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email_id: originalEmail.id,
+          include_research: true,
+          include_templates: true,
+          max_documents: 5,
+          max_conversations: 3,
+        }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setReplyIntelligence(data);
+        
+        // Auto-apply sender profile preferences if available
+        if (data.sender_profile?.communication_style) {
+          const styleToTone: Record<string, string> = {
+            'formal': 'formal',
+            'professional': 'professional',
+            'casual': 'casual',
+          };
+          const mappedTone = styleToTone[data.sender_profile.communication_style];
+          if (mappedTone) {
+            setSelectedTone(mappedTone);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load reply intelligence:', error);
+    } finally {
+      setLoadingReplyIntelligence(false);
+    }
+  };
+
+  // Load workspace documents
+  const loadWorkspaceDocuments = async () => {
+    setLoadingWorkspace(true);
+    try {
+      // Fetch from various sources
+      const [docsRes, researchRes] = await Promise.all([
+        fetch('/api/workspace/documents?limit=20'),
+        fetch('/api/ai-research/recent?limit=10'),
+      ]);
+
+      const documents: WorkspaceDocument[] = [];
+
+      if (docsRes.ok) {
+        const docs = await docsRes.json();
+        documents.push(...(docs.documents || []).map((d: any) => ({
+          id: d.id,
+          name: d.name,
+          type: 'document' as const,
+          summary: d.summary,
+          path: d.path,
+        })));
+      }
+
+      if (researchRes.ok) {
+        const research = await researchRes.json();
+        documents.push(...(research.items || []).map((r: any) => ({
+          id: r.id,
+          name: r.title || r.query,
+          type: 'research' as const,
+          summary: r.summary,
+        })));
+      }
+
+      setWorkspaceDocuments(documents);
+    } catch (error) {
+      console.error('Failed to load workspace:', error);
+    } finally {
+      setLoadingWorkspace(false);
+    }
+  };
+
+  // Generate AI draft
+  const generateDraft = async () => {
+    if (!originalEmail) return;
+
+    setIsGenerating(true);
+    setGenerationProgress(10);
+
+    try {
+      // Build request with all context
+      const requestBody: Record<string, any> = {
+        email_id: originalEmail.id,
+        tone: selectedTone,
+        model: selectedModel, // Route to specific LLM via AI Gateway
+      };
+
+      // Add quick actions if selected (multi-select)
+      if (selectedActions.size > 0) {
+        const actionPrompts = QUICK_ACTIONS
+          .filter(a => selectedActions.has(a.id))
+          .map(a => a.prompt);
+        if (actionPrompts.length > 0) {
+          requestBody.action_prompts = actionPrompts;
+        }
+      }
+
+      // Add user instructions (visible input field)
+      if (userInstructions.trim()) {
+        requestBody.user_instructions = userInstructions.trim();
+      }
+
+      // Add focus parameters
+      if (focusTopic.trim()) {
+        requestBody.focus_topic = focusTopic.trim();
+      }
+      
+      const validPoints = focusPoints.filter(p => p.trim());
+      if (validPoints.length > 0) {
+        requestBody.focus_points = validPoints;
+      }
+
+      if (excludeTopics.trim()) {
+        requestBody.exclude_topics = excludeTopics.split(',').map(t => t.trim());
+      }
+
+      if (customInstructions.trim()) {
+        requestBody.additional_context = customInstructions.trim();
+      }
+
+      // Add workspace document context
+      if (selectedDocuments.length > 0) {
+        const docs = workspaceDocuments.filter(d => selectedDocuments.includes(d.id));
+        requestBody.workspace_context = docs.map(d => ({
+          name: d.name,
+          type: d.type,
+          summary: d.summary,
+        }));
+      }
+
+      setGenerationProgress(30);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 second timeout
+
+      try {
+        const response = await fetch('/api/hermes-proxy?path=v1/intelligence/reply/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+        setGenerationProgress(70);
+
+        if (response.ok) {
+          const data = await response.json();
+          const generatedText = data.body || data.reply || data.draft || '';
+          setBody(generatedText);
+          setGenerationProgress(100);
+          
+          // Store draft ID and generation params for feedback
+          const draftId = `draft-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          setCurrentDraftId(draftId);
+          setCurrentGenerationParams({
+            model: selectedModel,
+            tone: selectedTone,
+            quick_actions: Array.from(selectedActions),
+            user_instructions: userInstructions.trim() || null,
+            focus_topic: focusTopic.trim() || null,
+            focus_points: validPoints,
+            exclude_topics: excludeTopics.split(',').map(t => t.trim()).filter(t => t),
+            additional_context: customInstructions.trim() || null,
+            workspace_context: selectedDocuments.length > 0 ? workspaceDocuments.filter(d => selectedDocuments.includes(d.id)).map(d => ({
+              name: d.name,
+              type: d.type,
+              summary: d.summary,
+            })) : [],
+          });
+          setFeedbackGiven(false);
+          
+          toast({
+            title: 'Draft Generated',
+            description: `${selectedTone} reply ready for review`,
+            status: 'success',
+            duration: 2000,
+          });
+        } else {
+          throw new Error('Generation failed');
+        }
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Generation timed out after 90 seconds');
+        }
+        throw fetchError;
+      }
+    } catch (error) {
+      console.error('Generation error:', error);
+      
+      // Fallback draft
+      const greeting = originalEmail.from_name?.split(' ')[0] || 'there';
+      setBody(`Hi ${greeting},\n\nThank you for your email regarding "${originalEmail.subject}".\n\n[Your response here]\n\nBest regards`);
+      
+      toast({
+        title: 'Using Template',
+        description: 'AI generation unavailable, using template',
+        status: 'warning',
+        duration: 3000,
+      });
+    } finally {
+      setIsGenerating(false);
+      setGenerationProgress(0);
+    }
+  };
+
+  // Submit draft feedback (thumbs up/down)
+  const submitDraftFeedback = async (rating: number) => {
+    if (!originalEmail || !currentDraftId || !currentGenerationParams) {
+      toast({
+        title: 'Cannot submit feedback',
+        description: 'No draft to rate',
+        status: 'warning',
+        duration: 2000,
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/hermes-proxy?path=v1/draft-feedback/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email_id: originalEmail.id,
+          draft_id: currentDraftId,
+          rating: rating,
+          generation_params: currentGenerationParams,
+          generated_text: body,
+        }),
+      });
+
+      if (response.ok) {
+        setFeedbackGiven(true);
+        toast({
+          title: rating === 1 ? '👍 Thanks for the feedback!' : '👎 Feedback recorded',
+          description: 'This helps improve future drafts',
+          status: 'success',
+          duration: 2000,
+        });
+      } else {
+        throw new Error('Failed to submit feedback');
+      }
+    } catch (error) {
+      console.error('Feedback error:', error);
+      toast({
+        title: 'Failed to submit feedback',
+        description: 'Please try again',
+        status: 'error',
+        duration: 2000,
+      });
+    }
+  };
+
+  // Rewrite with different tone
+  const rewriteWithTone = async (newTone: string) => {
+    if (!body.trim()) {
+      toast({
+        title: 'No draft to rewrite',
+        description: 'Generate a draft first',
+        status: 'warning',
+        duration: 2000,
+      });
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const response = await fetch('/api/hermes-proxy?path=v1/intelligence/draft/rewrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          draft_text: body,
+          tone: newTone,
+          model: selectedModel,
+          instructions: userInstructions || customInstructions || undefined,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setBody(data.rewritten_text || data.text || body);
+        setSelectedTone(newTone);
+        toast({
+          title: 'Draft Rewritten',
+          description: `Changed to ${newTone} tone`,
+          status: 'success',
+          duration: 2000,
+        });
+      }
+    } catch (error) {
+      console.error('Rewrite error:', error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Handle send
+  const handleSend = async () => {
+    if (!to.trim()) {
+      toast({
+        title: 'Missing recipient',
+        status: 'warning',
+        duration: 2000,
+      });
+      return;
+    }
+
+    setSending(true);
+    try {
+      if (onSend) {
+        await onSend({
+          to,
+          cc,
+          subject,
+          body,
+          inReplyTo: originalEmail?.id,
+        });
+      }
+      toast({
+        title: 'Email Sent',
+        status: 'success',
+        duration: 2000,
+      });
+      onClose();
+    } catch (error) {
+      toast({
+        title: 'Send Failed',
+        status: 'error',
+        duration: 3000,
+      });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Copy to clipboard
+  const copyToClipboard = async () => {
+    const emailText = `To: ${to}\nCc: ${cc}\nSubject: ${subject}\n\n${body}`;
+    await navigator.clipboard.writeText(emailText);
+    toast({
+      title: 'Copied to Clipboard',
+      status: 'info',
+      duration: 2000,
+    });
+  };
+
+  // Save draft to Mac Mail
+  const [savingDraft, setSavingDraft] = useState(false);
+  
+  const handleSaveDraft = async () => {
+    if (!to.trim() || !subject.trim()) {
+      toast({
+        title: 'Missing required fields',
+        description: 'Please enter recipient and subject',
+        status: 'warning',
+        duration: 2000,
+      });
+      return;
+    }
+
+    setSavingDraft(true);
+    try {
+      // Format draft as email text
+      const draftText = `To: ${to}
+${cc ? `Cc: ${cc}\n` : ''}Subject: ${subject}
+
+${body}`;
+
+      // Copy to clipboard
+      await navigator.clipboard.writeText(draftText);
+      
+      toast({
+        title: 'Draft Copied',
+        description: 'Draft copied to clipboard. Open Mac Mail and paste to create draft.',
+        status: 'success',
+        duration: 4000,
+      });
+      
+      // Also try to save via Mac agent (will fail gracefully if unavailable)
+      try {
+        const response = await fetch('/api/hermes-proxy?path=v1/emails/draft/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to,
+            subject,
+            body,
+            cc: cc || undefined,
+            in_reply_to: originalEmail?.id,
+          }),
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          toast({
+            title: 'Draft Saved',
+            description: 'Draft also saved to Mac Mail',
+            status: 'success',
+            duration: 2000,
+          });
+        }
+      } catch (macError) {
+        // Mac agent unavailable, clipboard copy is sufficient
+        console.log('Mac agent unavailable, using clipboard only');
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Save Failed',
+        description: error.message || 'Could not save draft',
+        status: 'error',
+        duration: 3000,
+      });
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  // Focus point helpers
+  const addFocusPoint = () => setFocusPoints([...focusPoints, '']);
+  const updateFocusPoint = (index: number, value: string) => {
+    const updated = [...focusPoints];
+    updated[index] = value;
+    setFocusPoints(updated);
+  };
+  const removeFocusPoint = (index: number) => {
+    if (focusPoints.length > 1) {
+      setFocusPoints(focusPoints.filter((_, i) => i !== index));
+    }
+  };
+
+  // Toggle document selection
+  const toggleDocument = (docId: string) => {
+    setSelectedDocuments(prev =>
+      prev.includes(docId)
+        ? prev.filter(id => id !== docId)
+        : [...prev, docId]
+    );
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size={modalSize}
+      scrollBehavior="inside"
+    >
+      <ModalOverlay backdropFilter="blur(4px)" />
+      <ModalContent
+        bg={bgColor}
+        maxW={{ base: '100%', md: '1000px' }}
+        m={{ base: 0, md: 4 }}
+        mt={{ base: 0, md: '5vh' }}
+        borderRadius={{ base: 0, md: 'xl' }}
+        h={{ base: '100vh', md: 'auto' }}
+        maxH={{ base: '100vh', md: '80vh' }}
+      >
+        <ModalHeader py={3} borderBottom="1px solid" borderColor={borderColor}>
+          <HStack justify="space-between">
+            <HStack spacing={3}>
+              <Icon as={SparklesIcon} boxSize={5} color="purple.500" />
+              <Text fontSize="lg" fontWeight="600">Email Draft Studio</Text>
+            </HStack>
+            {loadingContext && (
+              <HStack spacing={2}>
+                <Spinner size="xs" color="blue.500" />
+                <Text fontSize="xs" color={textSecondary}>Loading context...</Text>
+              </HStack>
+            )}
+          </HStack>
+        </ModalHeader>
+        <ModalCloseButton />
+
+        <ModalBody p={0}>
+          <Flex direction={{ base: 'column', md: 'row' }} h="full">
+            {/* Left Panel - AI Controls */}
+            <Box
+              w={{ base: 'full', md: '320px' }}
+              borderRight={{ base: 'none', md: '1px solid' }}
+              borderBottom={{ base: '1px solid', md: 'none' }}
+              borderColor={borderColor}
+              p={4}
+              overflowY="auto"
+              maxH={{ base: '300px', md: 'none' }}
+            >
+              <VStack align="stretch" spacing={4}>
+                {/* Quick Actions */}
+                <Box>
+                  <Text fontSize="xs" fontWeight="600" color={textSecondary} mb={2} textTransform="uppercase">
+                    Quick Actions {selectedActions.size > 0 && <Badge ml={1} colorScheme="blue">{selectedActions.size}</Badge>}
+                  </Text>
+                  <Wrap spacing={2}>
+                    {QUICK_ACTIONS.map(action => {
+                      const isSelected = selectedActions.has(action.id);
+                      // Check if this action conflicts with any selected action
+                      const isDisabled = !isSelected && action.conflicts.some(c => selectedActions.has(c));
+                      
+                      return (
+                        <WrapItem key={action.id}>
+                          <Tooltip 
+                            label={isDisabled ? `Conflicts with selected action` : action.prompt}
+                            placement="top"
+                            hasArrow
+                          >
+                            <Button
+                              size="xs"
+                              variant={isSelected ? 'solid' : 'outline'}
+                              colorScheme={isSelected ? 'blue' : 'gray'}
+                              isDisabled={isDisabled}
+                              opacity={isDisabled ? 0.5 : 1}
+                              onClick={() => {
+                                setSelectedActions(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(action.id)) {
+                                    next.delete(action.id);
+                                  } else {
+                                    next.add(action.id);
+                                    // Remove any conflicting actions
+                                    action.conflicts.forEach(c => next.delete(c));
+                                  }
+                                  return next;
+                                });
+                              }}
+                            >
+                              {action.label}
+                            </Button>
+                          </Tooltip>
+                        </WrapItem>
+                      );
+                    })}
+                  </Wrap>
+                </Box>
+
+                <Divider />
+
+                {/* Tone Selection */}
+                <Box>
+                  <Text fontSize="xs" fontWeight="600" color={textSecondary} mb={2} textTransform="uppercase">
+                    Tone
+                  </Text>
+                  <Wrap spacing={2}>
+                    {TONE_PRESETS.map(tone => (
+                      <WrapItem key={tone.id}>
+                        <Button
+                          size="sm"
+                          leftIcon={<Icon as={tone.icon} boxSize={4} />}
+                          variant={selectedTone === tone.id ? 'solid' : 'outline'}
+                          colorScheme={selectedTone === tone.id ? tone.color : 'gray'}
+                          onClick={() => {
+                            if (body.trim() && selectedTone !== tone.id) {
+                              rewriteWithTone(tone.id);
+                            } else {
+                              setSelectedTone(tone.id);
+                            }
+                          }}
+                        >
+                          {tone.label}
+                        </Button>
+                      </WrapItem>
+                    ))}
+                  </Wrap>
+                </Box>
+
+                <Divider />
+
+                {/* User Instructions - Always Visible */}
+                <Box>
+                  <Text fontSize="xs" fontWeight="600" color={textSecondary} mb={2} textTransform="uppercase">
+                    Your Instructions
+                  </Text>
+                  <Textarea
+                    size="sm"
+                    value={userInstructions}
+                    onChange={(e) => setUserInstructions(e.target.value)}
+                    placeholder="Tell the AI how to shape your reply...&#10;&#10;Examples:&#10;• Focus on budget concerns&#10;• Be diplomatic about the timeline delay&#10;• Mention our Q2 goals&#10;• Keep it brief but warm"
+                    minH="120px"
+                    resize="vertical"
+                  />
+                </Box>
+
+                {/* LLM Model Selector */}
+                <Box>
+                  <Text fontSize="xs" fontWeight="600" color={textSecondary} mb={2} textTransform="uppercase">
+                    AI Model
+                  </Text>
+                  <Menu>
+                    <MenuButton
+                      as={Button}
+                      size="sm"
+                      w="full"
+                      variant="outline"
+                      rightIcon={<Icon as={ChevronDownIcon} boxSize={4} />}
+                      textAlign="left"
+                    >
+                      <HStack spacing={2}>
+                        <Icon as={SparklesIcon} boxSize={4} color="purple.500" />
+                        <Text>{LLM_MODELS.find(m => m.id === selectedModel)?.label || 'Select Model'}</Text>
+                      </HStack>
+                    </MenuButton>
+                    <MenuList>
+                      {LLM_MODELS.map(model => (
+                        <MenuItem
+                          key={model.id}
+                          onClick={() => setSelectedModel(model.id)}
+                          bg={selectedModel === model.id ? 'purple.50' : undefined}
+                        >
+                          <VStack align="start" spacing={0}>
+                            <HStack>
+                              <Text fontWeight={selectedModel === model.id ? '600' : '400'}>
+                                {model.label}
+                              </Text>
+                              <Badge size="sm" colorScheme={model.provider === 'local' ? 'green' : 'blue'}>
+                                {model.provider}
+                              </Badge>
+                            </HStack>
+                            <Text fontSize="xs" color={textSecondary}>{model.description}</Text>
+                          </VStack>
+                        </MenuItem>
+                      ))}
+                    </MenuList>
+                  </Menu>
+                </Box>
+
+                <Divider />
+
+                {/* Generate Button */}
+                <Button
+                  colorScheme="purple"
+                  leftIcon={<Icon as={SparklesIcon} boxSize={5} />}
+                  onClick={generateDraft}
+                  isLoading={isGenerating}
+                  loadingText="Generating..."
+                  size="lg"
+                  w="full"
+                >
+                  Generate Smart Draft
+                </Button>
+
+                {isGenerating && (
+                  <Progress
+                    value={generationProgress}
+                    size="xs"
+                    colorScheme="purple"
+                    borderRadius="full"
+                  />
+                )}
+
+                <Divider />
+
+                {/* Advanced Options */}
+                <Box>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    w="full"
+                    justifyContent="space-between"
+                    rightIcon={<Icon as={showAdvanced ? ChevronUpIcon : ChevronDownIcon} boxSize={4} />}
+                    onClick={() => setShowAdvanced(!showAdvanced)}
+                  >
+                    <HStack>
+                      <Icon as={AdjustmentsHorizontalIcon} boxSize={4} />
+                      <Text>Advanced Options</Text>
+                    </HStack>
+                  </Button>
+
+                  <Collapse in={showAdvanced}>
+                    <VStack align="stretch" spacing={3} mt={3}>
+                      <FormControl>
+                        <FormLabel fontSize="xs" color={textSecondary}>
+                          Focus Topic
+                        </FormLabel>
+                        <Input
+                          size="sm"
+                          value={focusTopic}
+                          onChange={(e) => setFocusTopic(e.target.value)}
+                          placeholder="e.g., Project timeline concerns"
+                        />
+                      </FormControl>
+
+                      <FormControl>
+                        <FormLabel fontSize="xs" color={textSecondary}>
+                          Key Points to Include
+                        </FormLabel>
+                        <VStack align="stretch" spacing={1}>
+                          {focusPoints.map((point, index) => (
+                            <HStack key={index}>
+                              <Input
+                                size="sm"
+                                value={point}
+                                onChange={(e) => updateFocusPoint(index, e.target.value)}
+                                placeholder={`Point ${index + 1}`}
+                              />
+                              {focusPoints.length > 1 && (
+                                <IconButton
+                                  aria-label="Remove"
+                                  icon={<Icon as={XMarkIcon} boxSize={4} />}
+                                  size="xs"
+                                  variant="ghost"
+                                  onClick={() => removeFocusPoint(index)}
+                                />
+                              )}
+                            </HStack>
+                          ))}
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            leftIcon={<Icon as={PlusIcon} boxSize={3} />}
+                            onClick={addFocusPoint}
+                          >
+                            Add Point
+                          </Button>
+                        </VStack>
+                      </FormControl>
+
+                      <FormControl>
+                        <FormLabel fontSize="xs" color={textSecondary}>
+                          Exclude Topics
+                        </FormLabel>
+                        <Input
+                          size="sm"
+                          value={excludeTopics}
+                          onChange={(e) => setExcludeTopics(e.target.value)}
+                          placeholder="e.g., pricing, budget (comma separated)"
+                        />
+                      </FormControl>
+
+                      <FormControl>
+                        <FormLabel fontSize="xs" color={textSecondary}>
+                          Custom Instructions
+                        </FormLabel>
+                        <Textarea
+                          size="sm"
+                          value={customInstructions}
+                          onChange={(e) => setCustomInstructions(e.target.value)}
+                          placeholder="Any specific instructions for the AI..."
+                          rows={2}
+                        />
+                      </FormControl>
+                    </VStack>
+                  </Collapse>
+                </Box>
+
+                <Divider />
+
+                {/* Workspace Integration */}
+                <Box>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    w="full"
+                    justifyContent="space-between"
+                    rightIcon={<Icon as={showWorkspace ? ChevronUpIcon : ChevronDownIcon} boxSize={4} />}
+                    onClick={() => {
+                      setShowWorkspace(!showWorkspace);
+                      if (!showWorkspace && workspaceDocuments.length === 0) {
+                        loadWorkspaceDocuments();
+                      }
+                    }}
+                  >
+                    <HStack>
+                      <Icon as={FolderIcon} boxSize={4} />
+                      <Text>Workspace Resources</Text>
+                      {selectedDocuments.length > 0 && (
+                        <Badge colorScheme="blue" size="sm">
+                          {selectedDocuments.length}
+                        </Badge>
+                      )}
+                    </HStack>
+                  </Button>
+
+                  <Collapse in={showWorkspace}>
+                    <VStack align="stretch" spacing={2} mt={3}>
+                      {loadingWorkspace ? (
+                        <HStack justify="center" py={4}>
+                          <Spinner size="sm" />
+                          <Text fontSize="sm" color={textSecondary}>Loading...</Text>
+                        </HStack>
+                      ) : workspaceDocuments.length === 0 ? (
+                        <Text fontSize="sm" color={textSecondary} textAlign="center" py={4}>
+                          No workspace documents found
+                        </Text>
+                      ) : (
+                        workspaceDocuments.map(doc => (
+                          <Box
+                            key={doc.id}
+                            p={2}
+                            borderRadius="md"
+                            border="1px solid"
+                            borderColor={selectedDocuments.includes(doc.id) ? 'blue.500' : borderColor}
+                            bg={selectedDocuments.includes(doc.id) ? 'blue.50' : 'transparent'}
+                            cursor="pointer"
+                            onClick={() => toggleDocument(doc.id)}
+                            _hover={{ borderColor: 'blue.300' }}
+                          >
+                            <HStack spacing={2}>
+                              <Icon
+                                as={
+                                  doc.type === 'research' ? MagnifyingGlassIcon :
+                                  doc.type === 'podcast' ? MusicalNoteIcon :
+                                  DocumentTextIcon
+                                }
+                                boxSize={4}
+                                color={selectedDocuments.includes(doc.id) ? 'blue.500' : textSecondary}
+                              />
+                              <VStack align="start" spacing={0} flex={1}>
+                                <Text fontSize="xs" fontWeight="500" noOfLines={1}>
+                                  {doc.name}
+                                </Text>
+                                {doc.summary && (
+                                  <Text fontSize="xs" color={textSecondary} noOfLines={1}>
+                                    {doc.summary}
+                                  </Text>
+                                )}
+                              </VStack>
+                              {selectedDocuments.includes(doc.id) && (
+                                <Icon as={CheckCircleIcon} boxSize={4} color="blue.500" />
+                              )}
+                            </HStack>
+                          </Box>
+                        ))
+                      )}
+                    </VStack>
+                  </Collapse>
+                </Box>
+
+                {/* Reply Intelligence */}
+                {(loadingReplyIntelligence || replyIntelligence) && (
+                  <>
+                    <Divider />
+                    <Box>
+                      <HStack mb={2}>
+                        <Icon as={LightBulbIcon} boxSize={4} color="yellow.500" />
+                        <Text fontSize="xs" fontWeight="600" color={textSecondary} textTransform="uppercase">
+                          Reply Intelligence
+                        </Text>
+                        {loadingReplyIntelligence && <Spinner size="xs" />}
+                      </HStack>
+                      
+                      {replyIntelligence && (
+                        <VStack align="stretch" spacing={3}>
+                          {/* Detected Scenario */}
+                          {replyIntelligence.detected_scenario && (
+                            <HStack>
+                              <Text fontSize="xs" color={textSecondary}>Scenario:</Text>
+                              <Badge colorScheme="purple" size="sm">
+                                {replyIntelligence.detected_scenario.replace(/_/g, ' ')}
+                              </Badge>
+                            </HStack>
+                          )}
+
+                          {/* Sender Profile */}
+                          {replyIntelligence.sender_profile && (
+                            <Box p={2} bg={bgSecondary} borderRadius="md">
+                              <Text fontSize="xs" fontWeight="500" mb={1}>Your style with this sender:</Text>
+                              <HStack spacing={2} flexWrap="wrap">
+                                <Badge size="sm" colorScheme="blue">
+                                  {replyIntelligence.sender_profile.preferred_greeting}
+                                </Badge>
+                                <Badge size="sm" colorScheme="green">
+                                  {replyIntelligence.sender_profile.preferred_closing}
+                                </Badge>
+                                <Badge size="sm" colorScheme="gray">
+                                  {replyIntelligence.sender_profile.communication_style}
+                                </Badge>
+                              </HStack>
+                            </Box>
+                          )}
+
+                          {/* Key Points to Address */}
+                          {replyIntelligence.key_points_to_address?.length > 0 && (
+                            <Box>
+                              <Text fontSize="xs" fontWeight="500" color={textSecondary} mb={1}>
+                                Points to address:
+                              </Text>
+                              <VStack align="stretch" spacing={1}>
+                                {replyIntelligence.key_points_to_address.slice(0, 3).map((point: string, i: number) => (
+                                  <Text key={i} fontSize="xs" color={textPrimary}>
+                                    • {point}
+                                  </Text>
+                                ))}
+                              </VStack>
+                            </Box>
+                          )}
+
+                          {/* Suggested Templates */}
+                          {replyIntelligence.suggested_templates?.length > 0 && (
+                            <Box>
+                              <Text fontSize="xs" fontWeight="500" color={textSecondary} mb={1}>
+                                Template suggestions:
+                              </Text>
+                              <VStack align="stretch" spacing={1}>
+                                {replyIntelligence.suggested_templates.slice(0, 2).map((template: any, i: number) => (
+                                  <Box
+                                    key={i}
+                                    p={2}
+                                    bg={bgSecondary}
+                                    borderRadius="md"
+                                    cursor="pointer"
+                                    _hover={{ bg: 'blue.50' }}
+                                    onClick={() => setBody(template.template_text)}
+                                  >
+                                    <Text fontSize="xs" noOfLines={2}>
+                                      {template.template_text}
+                                    </Text>
+                                  </Box>
+                                ))}
+                              </VStack>
+                            </Box>
+                          )}
+
+                          {/* Related Documents */}
+                          {replyIntelligence.related_documents?.length > 0 && (
+                            <Box>
+                              <Text fontSize="xs" fontWeight="500" color={textSecondary} mb={1}>
+                                Related from past emails:
+                              </Text>
+                              <VStack align="stretch" spacing={1}>
+                                {replyIntelligence.related_documents.slice(0, 3).map((doc: any, i: number) => (
+                                  <HStack key={i} spacing={2}>
+                                    <Icon as={DocumentTextIcon} boxSize={3} color={textSecondary} />
+                                    <Text fontSize="xs" noOfLines={1} flex={1}>
+                                      {doc.title}
+                                    </Text>
+                                    <Badge size="sm" colorScheme="gray">
+                                      {doc.source.replace(/_/g, ' ')}
+                                    </Badge>
+                                  </HStack>
+                                ))}
+                              </VStack>
+                            </Box>
+                          )}
+
+                          {/* Information Gaps */}
+                          {replyIntelligence.information_gaps?.length > 0 && (
+                            <Box p={2} bg="orange.50" borderRadius="md" borderLeft="3px solid" borderColor="orange.400">
+                              <Text fontSize="xs" fontWeight="500" color="orange.700">
+                                ⚠️ {replyIntelligence.information_gaps[0]}
+                              </Text>
+                            </Box>
+                          )}
+
+                          {/* Confidence */}
+                          {replyIntelligence.confidence && (
+                            <HStack justify="flex-end">
+                              <Text fontSize="xs" color={textSecondary}>
+                                Confidence: {Math.round(replyIntelligence.confidence * 100)}%
+                              </Text>
+                            </HStack>
+                          )}
+                        </VStack>
+                      )}
+                    </Box>
+                  </>
+                )}
+
+                {/* Sender Context */}
+                {senderContext && (
+                  <>
+                    <Divider />
+                    <Box>
+                      <HStack mb={2}>
+                        <Icon as={UserCircleIcon} boxSize={4} color={textSecondary} />
+                        <Text fontSize="xs" fontWeight="600" color={textSecondary} textTransform="uppercase">
+                          Sender Context
+                        </Text>
+                      </HStack>
+                      <VStack align="stretch" spacing={1}>
+                        {senderContext.relationship && (
+                          <Text fontSize="xs" color={textSecondary}>
+                            Relationship: {senderContext.relationship}
+                          </Text>
+                        )}
+                        {senderContext.email_count && (
+                          <Text fontSize="xs" color={textSecondary}>
+                            {senderContext.email_count} previous emails
+                          </Text>
+                        )}
+                        {senderContext.topics && (
+                          <Wrap spacing={1}>
+                            {senderContext.topics.slice(0, 3).map((topic: string, i: number) => (
+                              <WrapItem key={i}>
+                                <Badge size="sm" colorScheme="gray">{topic}</Badge>
+                              </WrapItem>
+                            ))}
+                          </Wrap>
+                        )}
+                      </VStack>
+                    </Box>
+                  </>
+                )}
+              </VStack>
+            </Box>
+
+            {/* Right Panel - Email Composition */}
+            <Box flex={1} p={4} overflowY="auto">
+              <VStack align="stretch" spacing={4}>
+                {/* To/CC/Subject */}
+                <HStack spacing={4}>
+                  <FormControl flex={2}>
+                    <FormLabel fontSize="xs" color={textSecondary}>To</FormLabel>
+                    <Input
+                      size="sm"
+                      value={to}
+                      onChange={(e) => setTo(e.target.value)}
+                      placeholder="recipient@example.com"
+                    />
+                  </FormControl>
+                  <FormControl flex={1}>
+                    <FormLabel fontSize="xs" color={textSecondary}>Cc</FormLabel>
+                    <Input
+                      size="sm"
+                      value={cc}
+                      onChange={(e) => setCc(e.target.value)}
+                      placeholder="cc@example.com"
+                    />
+                  </FormControl>
+                </HStack>
+
+                <FormControl>
+                  <FormLabel fontSize="xs" color={textSecondary}>Subject</FormLabel>
+                  <Input
+                    size="sm"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                  />
+                </FormControl>
+
+                {/* Email Body */}
+                <FormControl flex={1}>
+                  <HStack justify="space-between" mb={1}>
+                    <FormLabel fontSize="xs" color={textSecondary} mb={0}>Message</FormLabel>
+                    {body && (
+                      <HStack spacing={1}>
+                        <Tooltip label="Regenerate">
+                          <IconButton
+                            aria-label="Regenerate"
+                            icon={<Icon as={ArrowPathIcon} boxSize={4} />}
+                            size="xs"
+                            variant="ghost"
+                            onClick={generateDraft}
+                            isLoading={isGenerating}
+                          />
+                        </Tooltip>
+                        <Menu>
+                          <MenuButton
+                            as={IconButton}
+                            aria-label="Change tone"
+                            icon={<Icon as={AdjustmentsHorizontalIcon} boxSize={4} />}
+                            size="xs"
+                            variant="ghost"
+                          />
+                          <MenuList>
+                            {TONE_PRESETS.map(tone => (
+                              <MenuItem
+                                key={tone.id}
+                                icon={<Icon as={tone.icon} boxSize={4} />}
+                                onClick={() => rewriteWithTone(tone.id)}
+                              >
+                                Make {tone.label}
+                              </MenuItem>
+                            ))}
+                          </MenuList>
+                        </Menu>
+                      </HStack>
+                    )}
+                  </HStack>
+                  <Textarea
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                    placeholder={isGenerating ? 'Generating smart draft...' : 'Click "Generate Smart Draft" or start typing...'}
+                    minH="300px"
+                    fontSize="sm"
+                    fontFamily="inherit"
+                    resize="vertical"
+                  />
+                  
+                  {/* Draft Feedback - Thumbs Up/Down */}
+                  {currentDraftId && body.trim() && !isGenerating && (
+                    <HStack spacing={2} mt={2} justify="flex-end">
+                      <Text fontSize="xs" color={textSecondary}>
+                        Rate this draft:
+                      </Text>
+                      <Tooltip label="Thumbs up - Good draft!" placement="top">
+                        <IconButton
+                          aria-label="Thumbs up"
+                          icon={<Icon as={feedbackGiven ? CheckCircleIcon : HeartIcon} boxSize={4} />}
+                          size="sm"
+                          variant={feedbackGiven ? 'solid' : 'ghost'}
+                          colorScheme="green"
+                          onClick={() => submitDraftFeedback(1)}
+                          isDisabled={feedbackGiven}
+                        />
+                      </Tooltip>
+                      <Tooltip label="Thumbs down - Needs improvement" placement="top">
+                        <IconButton
+                          aria-label="Thumbs down"
+                          icon={<Icon as={XMarkIcon} boxSize={4} />}
+                          size="sm"
+                          variant="ghost"
+                          colorScheme="red"
+                          onClick={() => submitDraftFeedback(-1)}
+                          isDisabled={feedbackGiven}
+                        />
+                      </Tooltip>
+                      {feedbackGiven && (
+                        <Badge colorScheme="green" fontSize="xs">
+                          Feedback recorded
+                        </Badge>
+                      )}
+                    </HStack>
+                  )}
+                </FormControl>
+
+                {/* Original Email Reference */}
+                {originalEmail && (
+                  <Box
+                    p={3}
+                    borderRadius="md"
+                    bg={bgSecondary}
+                    border="1px solid"
+                    borderColor={borderColor}
+                  >
+                    <Text fontSize="xs" fontWeight="600" color={textSecondary} mb={1}>
+                      Replying to:
+                    </Text>
+                    <Text fontSize="sm" fontWeight="500" noOfLines={1}>
+                      {originalEmail.subject}
+                    </Text>
+                    <Text fontSize="xs" color={textSecondary}>
+                      From: {originalEmail.from_name || originalEmail.from_email}
+                    </Text>
+                  </Box>
+                )}
+              </VStack>
+            </Box>
+          </Flex>
+        </ModalBody>
+
+        <ModalFooter borderTop="1px solid" borderColor={borderColor}>
+          <HStack w="full" justify="space-between">
+            <HStack>
+              <Tooltip label="Attach file (coming soon)">
+                <IconButton
+                  aria-label="Attach"
+                  icon={<Icon as={PaperClipIcon} boxSize={5} />}
+                  size="sm"
+                  variant="ghost"
+                  isDisabled
+                />
+              </Tooltip>
+              <Tooltip label="Copy to clipboard">
+                <IconButton
+                  aria-label="Copy"
+                  icon={<Icon as={DocumentDuplicateIcon} boxSize={5} />}
+                  size="sm"
+                  variant="ghost"
+                  onClick={copyToClipboard}
+                />
+              </Tooltip>
+            </HStack>
+
+            <HStack>
+              <Button variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                colorScheme="gray"
+                onClick={handleSaveDraft}
+                isLoading={savingDraft}
+                loadingText="Saving..."
+              >
+                Save Draft
+              </Button>
+              <Button
+                colorScheme="blue"
+                leftIcon={<Icon as={PaperAirplaneIcon} boxSize={5} />}
+                onClick={handleSend}
+                isLoading={sending}
+                loadingText="Sending..."
+              >
+                Send
+              </Button>
+            </HStack>
+          </HStack>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+  );
+};
+
+export default EmailDraftStudio;

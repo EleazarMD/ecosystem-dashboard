@@ -1,0 +1,404 @@
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
+
+const RL_ORCHESTRATOR_PATH = '/home/eleazar/clinical-agentic-orchestrator';
+const PYTHON_ENV = `${RL_ORCHESTRATOR_PATH}/venv/bin/python3`;
+const CONTROL_SCRIPT = `${RL_ORCHESTRATOR_PATH}/rl_control.py`;
+
+interface RLControlRequest {
+  action: 'start' | 'stop' | 'status' | 'history' | 'monitor';
+  params?: {
+    mode?: 'development' | 'production';
+    continuous?: boolean;
+    target?: number;
+    maxCycles?: number;
+    force?: boolean;
+    limit?: number;
+  };
+}
+
+interface RLCycleStatus {
+  status: 'idle' | 'running' | 'stopped' | 'error';
+  pid?: number;
+  mode?: string;
+  started_at?: string;
+  cycles_completed?: number;
+  current_score?: number;
+  stopped_at?: string;
+  stopped_by?: string;
+  message?: string;
+  error?: string;
+}
+
+interface RLCycleHistory {
+  cycle_id: string;
+  started_at: string;
+  mode: string;
+  initial_score: number;
+  final_score: number;
+  improvement: number;
+  status: string;
+}
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  if (req.method !== 'POST' && req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    const { action, params }: RLControlRequest = req.method === 'POST' 
+      ? req.body 
+      : { action: req.query.action as string, params: {} };
+
+    switch (action) {
+      case 'start':
+        return await handleStart(req, res, params);
+      
+      case 'stop':
+        return await handleStop(req, res, params);
+      
+      case 'status':
+        return await handleStatus(req, res);
+      
+      case 'history':
+        return await handleHistory(req, res, params);
+      
+      default:
+        return res.status(400).json({ error: 'Invalid action' });
+    }
+  } catch (error: any) {
+    console.error('RL Control API error:', error);
+    return res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+}
+
+async function handleStart(
+  req: NextApiRequest,
+  res: NextApiResponse,
+  params?: any
+) {
+  const mode = params?.mode || 'development';
+  const continuous = params?.continuous || false;
+  const target = params?.target || 8.5;
+  const maxCycles = params?.maxCycles || 1;
+
+  let cmd = `cd ${RL_ORCHESTRATOR_PATH} && ${PYTHON_ENV} ${CONTROL_SCRIPT} start --mode ${mode}`;
+  
+  if (continuous) {
+    cmd += ` --continuous --target ${target} --max-cycles ${maxCycles}`;
+  }
+
+  try {
+    const { stdout, stderr } = await execAsync(cmd);
+    
+    // Parse output to extract PID and status
+    const pidMatch = stdout.match(/PID:\s*(\d+)/);
+    const pid = pidMatch ? parseInt(pidMatch[1]) : null;
+    
+    const success = stdout.includes('Cycle started successfully');
+    
+    if (success) {
+      return res.status(200).json({
+        success: true,
+        message: 'RL cycle started',
+        pid,
+        mode,
+        continuous,
+        target,
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: stderr || 'Failed to start cycle',
+      });
+    }
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+}
+
+async function handleStop(
+  req: NextApiRequest,
+  res: NextApiResponse,
+  params?: any
+) {
+  const force = params?.force || false;
+  
+  const cmd = `cd ${RL_ORCHESTRATOR_PATH} && ${PYTHON_ENV} ${CONTROL_SCRIPT} stop${force ? ' --force' : ''}`;
+
+  try {
+    const { stdout, stderr } = await execAsync(cmd);
+    
+    const success = stdout.includes('Cycle stopped') || stdout.includes('already stopped');
+    
+    if (success) {
+      return res.status(200).json({
+        success: true,
+        message: 'RL cycle stopped',
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: stderr || 'Failed to stop cycle',
+      });
+    }
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+}
+
+async function handleStatus(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  try {
+    // Check if v2 training process is running (on DGX or local)
+    let isV2Running = false;
+    let pid: number | undefined;
+
+    // Try DGX first (check for v3 or v2 training)
+    try {
+      const { stdout: pgrepOut } = await execAsync(
+        'ssh -o ConnectTimeout=3 eleazar@100.111.219.30 "pgrep -af \'training_v[23]\'" 2>/dev/null || echo ""'
+      );
+      isV2Running = pgrepOut.trim().includes('autonomous_training');
+      const pidMatch = pgrepOut.trim().match(/^(\d+)/);
+      pid = pidMatch ? parseInt(pidMatch[1]) : undefined;
+    } catch {
+      // SSH failed, try local
+      try {
+        const { stdout: pgrepOut } = await execAsync(
+          'pgrep -af "autonomous_training" 2>/dev/null || echo ""'
+        );
+        isV2Running = pgrepOut.trim().includes('autonomous_training');
+        const pidMatch = pgrepOut.trim().match(/^(\d+)/);
+        pid = pidMatch ? parseInt(pidMatch[1]) : undefined;
+      } catch {
+        // Neither available
+      }
+    }
+
+    // Read current session status from rl_cycle_status.json
+    let cyclesCompleted = 0;
+    let currentScore = 0;
+    let startedAt: string | undefined;
+
+    try {
+      const { stdout: statusOut } = await execAsync(
+        `cat ${RL_ORCHESTRATOR_PATH}/rl_cycle_status.json 2>/dev/null || echo "{}"`
+      );
+      const statusData = JSON.parse(statusOut.trim() || "{}");
+      cyclesCompleted = statusData.cycles_completed || 0;
+      currentScore = statusData.current_score || 0;
+      startedAt = statusData.started_at;
+      
+      // Trust status file if it says running and has a valid PID
+      if (statusData.status === "running" && statusData.pid) {
+        isV2Running = true;
+        pid = statusData.pid;
+      }
+    } catch {
+      // No status file yet
+    }
+
+    if (isV2Running) {
+      return res.status(200).json({
+        status: 'running',
+        pid,
+        mode: 'development',
+        started_at: startedAt,
+        cycles_completed: cyclesCompleted,
+        current_score: currentScore,
+        message: `V2 training active, ${cyclesCompleted} cycles completed`,
+      });
+    }
+
+    // Fallback: try old rl_control.py
+    try {
+      const { stdout } = await execAsync(
+        `cd ${RL_ORCHESTRATOR_PATH} && ${PYTHON_ENV} ${CONTROL_SCRIPT} status --json 2>/dev/null || echo '{}'`
+      );
+      const jsonMatch = stdout.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.status === 'running') {
+          return res.status(200).json(parsed);
+        }
+      }
+    } catch {
+      // rl_control.py not available, that's ok
+    }
+
+    // No training detected
+    return res.status(200).json({
+      status: cyclesCompleted > 0 ? 'stopped' : 'idle',
+      cycles_completed: cyclesCompleted,
+      current_score: currentScore,
+      message: cyclesCompleted > 0
+        ? `Training stopped. ${cyclesCompleted} cycles completed, best score: ${currentScore.toFixed(2)}`
+        : 'No RL cycles currently running',
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      status: 'error',
+      error: error.message,
+    });
+  }
+}
+
+async function handleHistory(
+  req: NextApiRequest,
+  res: NextApiResponse,
+  params?: any
+) {
+  const limit = params?.limit || 10;
+
+  try {
+    // Read live v2 cycle result files
+    const { stdout: filesOut } = await execAsync(
+      `ls -1t ${RL_ORCHESTRATOR_PATH}/training_results/v2_cycle_*.json 2>/dev/null | head -${limit}`
+    );
+
+    const files = filesOut.trim().split('\n').filter(Boolean);
+    const history: RLCycleHistory[] = [];
+
+    for (const file of files) {
+      try {
+        const { stdout: jsonOut } = await execAsync(`cat "${file}"`);
+        const data = JSON.parse(jsonOut);
+        const cycleNum = file.match(/v2_cycle_(\d+)/)?.[1] || '0';
+
+        history.push({
+          cycle_id: `v2_cycle_${cycleNum}`,
+          started_at: data.timestamp || '',
+          mode: 'development',
+          initial_score: history.length > 0 ? (history[history.length - 1]?.final_score || 0) : 0,
+          final_score: data.overall_score || 0,
+          improvement: data.overall_score && history.length > 0
+            ? data.overall_score - (history[history.length - 1]?.final_score || 0)
+            : 0,
+          status: 'completed',
+        });
+      } catch {
+        // Skip unreadable files
+      }
+    }
+
+    // Reverse so most recent is first
+    return res.status(200).json({ history: history.reverse() });
+  } catch (error: any) {
+    return res.status(200).json({ history: [] });
+  }
+}
+
+function parseStatusText(text: string): RLCycleStatus {
+  const lines = text.split('\n');
+  const status: RLCycleStatus = {
+    status: 'idle',
+  };
+  
+  for (const line of lines) {
+    if (line.includes('Status:')) {
+      const statusMatch = line.match(/Status:\s*(\w+)/i);
+      if (statusMatch) {
+        status.status = statusMatch[1].toLowerCase() as any;
+      }
+    } else if (line.includes('PID:')) {
+      const pidMatch = line.match(/PID:\s*(\d+)/);
+      if (pidMatch) {
+        status.pid = parseInt(pidMatch[1]);
+      }
+    } else if (line.includes('Mode:')) {
+      const modeMatch = line.match(/Mode:\s*(\w+)/);
+      if (modeMatch) {
+        status.mode = modeMatch[1];
+      }
+    } else if (line.includes('Started:')) {
+      const startedMatch = line.match(/Started:\s*(.+)/);
+      if (startedMatch) {
+        status.started_at = startedMatch[1].trim();
+      }
+    } else if (line.includes('Cycles completed:')) {
+      const cyclesMatch = line.match(/Cycles completed:\s*(\d+)/);
+      if (cyclesMatch) {
+        status.cycles_completed = parseInt(cyclesMatch[1]);
+      }
+    } else if (line.includes('Current score:')) {
+      const scoreMatch = line.match(/Current score:\s*([\d.]+)/);
+      if (scoreMatch) {
+        status.current_score = parseFloat(scoreMatch[1]);
+      }
+    } else if (line.includes('No cycles running')) {
+      status.status = 'idle';
+      status.message = 'No cycles running';
+    }
+  }
+  
+  return status;
+}
+
+function parseHistoryText(text: string): RLCycleHistory[] {
+  const history: RLCycleHistory[] = [];
+  const lines = text.split('\n');
+  
+  let currentCycle: Partial<RLCycleHistory> = {};
+  
+  for (const line of lines) {
+    if (line.match(/^\d+\.\s+Cycle/)) {
+      if (currentCycle.cycle_id) {
+        history.push(currentCycle as RLCycleHistory);
+      }
+      const cycleMatch = line.match(/Cycle\s+(\S+)/);
+      currentCycle = {
+        cycle_id: cycleMatch ? cycleMatch[1] : 'unknown',
+      };
+    } else if (line.includes('Started:')) {
+      const startedMatch = line.match(/Started:\s*(.+)/);
+      if (startedMatch) {
+        currentCycle.started_at = startedMatch[1].trim();
+      }
+    } else if (line.includes('Mode:')) {
+      const modeMatch = line.match(/Mode:\s*(\w+)/);
+      if (modeMatch) {
+        currentCycle.mode = modeMatch[1];
+      }
+    } else if (line.includes('Score:')) {
+      const scoreMatch = line.match(/Score:\s*([\d.]+)\s*→\s*([\d.]+)/);
+      if (scoreMatch) {
+        currentCycle.initial_score = parseFloat(scoreMatch[1]);
+        currentCycle.final_score = parseFloat(scoreMatch[2]);
+      }
+    } else if (line.includes('Improvement:')) {
+      const improvementMatch = line.match(/Improvement:\s*([+-]?[\d.]+)/);
+      if (improvementMatch) {
+        currentCycle.improvement = parseFloat(improvementMatch[1]);
+      }
+    } else if (line.includes('Status:')) {
+      const statusMatch = line.match(/Status:\s*(\w+)/);
+      if (statusMatch) {
+        currentCycle.status = statusMatch[1];
+      }
+    }
+  }
+  
+  if (currentCycle.cycle_id) {
+    history.push(currentCycle as RLCycleHistory);
+  }
+  
+  return history;
+}

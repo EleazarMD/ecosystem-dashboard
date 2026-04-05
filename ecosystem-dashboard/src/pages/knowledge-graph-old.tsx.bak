@@ -1,0 +1,491 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Container,
+  Heading,
+  Input,
+  Button,
+  VStack,
+  HStack,
+  Text,
+  Card,
+  CardBody,
+  Badge,
+  SimpleGrid,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  Spinner,
+  Select,
+  useToast,
+  Flex,
+  Icon,
+  Divider,
+  Code,
+  Accordion,
+  AccordionItem,
+  AccordionButton,
+  AccordionPanel,
+  AccordionIcon,
+} from '@chakra-ui/react';
+import {
+  SearchIcon,
+  InfoIcon,
+  CheckCircleIcon,
+  WarningIcon,
+} from '@chakra-ui/icons';
+import { FaBook, FaProjectDiagram, FaRobot, FaChartLine } from 'react-icons/fa';
+
+interface SearchResult {
+  title: string;
+  file: string;
+  project: string;
+  relevance: string;
+  preview: string;
+  content?: string;
+}
+
+interface Project {
+  project: string;
+  description?: string;
+  document_count: number;
+  file_count: number;
+}
+
+interface AgentMetrics {
+  queriesProcessed: number;
+  documentsRetrieved: number;
+  avgRelevanceScore: string;
+  avgResponseTime: string;
+  documentCount: number;
+  projectsIndexed: string[];
+}
+
+export default function KnowledgeGraphPage() {
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProject, setSelectedProject] = useState<string>('');
+  const [metrics, setMetrics] = useState<AgentMetrics | null>(null);
+  const [activeTab, setActiveTab] = useState(0);
+  const toast = useToast();
+
+  // Load projects on mount
+  useEffect(() => {
+    loadProjects();
+    loadMetrics();
+  }, []);
+
+  const loadProjects = async () => {
+    try {
+      const response = await fetch('http://localhost:41247/a2a/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'list_projects',
+          payload: {},
+          requestId: `list-projects-${Date.now()}`,
+          sender: 'dashboard-ui'
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.result?.success) {
+        setProjects(data.result.projects || []);
+      }
+    } catch (error) {
+      console.error('Error loading projects:', error);
+      toast({
+        title: 'Error loading projects',
+        description: 'Could not connect to RAG agent',
+        status: 'warning',
+        duration: 3000,
+      });
+    }
+  };
+
+  const loadMetrics = async () => {
+    try {
+      const response = await fetch('http://localhost:41247/a2a/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'get_metrics',
+          payload: {},
+          requestId: `metrics-${Date.now()}`,
+          sender: 'dashboard-ui'
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.result?.success) {
+        setMetrics(data.result.metrics);
+      }
+    } catch (error) {
+      console.error('Error loading metrics:', error);
+    }
+  };
+
+  const handleSearch = async () => {
+    if (!query.trim()) {
+      toast({
+        title: 'Empty query',
+        description: 'Please enter a search query',
+        status: 'warning',
+        duration: 2000,
+      });
+      return;
+    }
+
+    setLoading(true);
+    setResults([]);
+
+    try {
+      const response = await fetch('http://localhost:41247/a2a/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: activeTab === 0 ? 'document_query' : 'semantic_search',
+          payload: {
+            question: query,
+            query: query,
+            project: selectedProject || undefined,
+            limit: activeTab === 0 ? 3 : 5,
+            includeContext: true
+          },
+          requestId: `search-${Date.now()}`,
+          sender: 'dashboard-ui'
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.result?.success) {
+        setResults(data.result.results || []);
+        
+        // Reload metrics after search
+        setTimeout(loadMetrics, 1000);
+        
+        toast({
+          title: 'Search complete',
+          description: `Found ${data.result.results?.length || 0} results`,
+          status: 'success',
+          duration: 2000,
+        });
+      } else {
+        toast({
+          title: 'Search failed',
+          description: data.result?.error || 'Unknown error',
+          status: 'error',
+          duration: 3000,
+        });
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      toast({
+        title: 'Search failed',
+        description: 'Could not connect to RAG agent',
+        status: 'error',
+        duration: 3000,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSearch();
+    }
+  };
+
+  return (
+    <Container maxW="container.xl" py={8}>
+      <VStack spacing={6} align="stretch">
+        {/* Header */}
+        <Box>
+          <Heading size="xl" mb={2}>Knowledge Graph</Heading>
+          <Text color="gray.600">
+            Search and explore indexed documentation across all AI Homelab projects
+          </Text>
+        </Box>
+
+        {/* Stats Cards */}
+        {metrics && (
+          <SimpleGrid columns={{ base: 1, md: 4 }} spacing={4}>
+            <Card>
+              <CardBody>
+                <HStack>
+                  <Icon as={FaBook} color="blue.500" boxSize={6} />
+                  <Box>
+                    <Text fontSize="sm" color="gray.600">Documents</Text>
+                    <Text fontSize="2xl" fontWeight="bold">{metrics.documentCount}</Text>
+                  </Box>
+                </HStack>
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardBody>
+                <HStack>
+                  <Icon as={FaProjectDiagram} color="green.500" boxSize={6} />
+                  <Box>
+                    <Text fontSize="sm" color="gray.600">Projects</Text>
+                    <Text fontSize="2xl" fontWeight="bold">{metrics.projectsIndexed.length}</Text>
+                  </Box>
+                </HStack>
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardBody>
+                <HStack>
+                  <Icon as={FaRobot} color="purple.500" boxSize={6} />
+                  <Box>
+                    <Text fontSize="sm" color="gray.600">Queries</Text>
+                    <Text fontSize="2xl" fontWeight="bold">{metrics.queriesProcessed}</Text>
+                  </Box>
+                </HStack>
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardBody>
+                <HStack>
+                  <Icon as={FaChartLine} color="orange.500" boxSize={6} />
+                  <Box>
+                    <Text fontSize="sm" color="gray.600">Avg Relevance</Text>
+                    <Text fontSize="2xl" fontWeight="bold">{metrics.avgRelevanceScore}</Text>
+                  </Box>
+                </HStack>
+              </CardBody>
+            </Card>
+          </SimpleGrid>
+        )}
+
+        {/* Search Interface */}
+        <Card>
+          <CardBody>
+            <Tabs index={activeTab} onChange={setActiveTab}>
+              <TabList>
+                <Tab>
+                  <Icon as={SearchIcon} mr={2} />
+                  Document Query
+                </Tab>
+                <Tab>
+                  <Icon as={FaBook} mr={2} />
+                  Semantic Search
+                </Tab>
+              </TabList>
+
+              <TabPanels>
+                <TabPanel>
+                  <VStack spacing={4} align="stretch">
+                    <Text fontSize="sm" color="gray.600">
+                      Ask questions and get answers from your documentation with context
+                    </Text>
+                    
+                    <Select
+                      placeholder="All Projects"
+                      value={selectedProject}
+                      onChange={(e) => setSelectedProject(e.target.value)}
+                    >
+                      {projects.map((p) => (
+                        <option key={p.project} value={p.project}>
+                          {p.project} ({p.document_count} docs)
+                        </option>
+                      ))}
+                    </Select>
+
+                    <HStack>
+                      <Input
+                        placeholder="How do I deploy the dashboard?"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        size="lg"
+                      />
+                      <Button
+                        colorScheme="blue"
+                        onClick={handleSearch}
+                        isLoading={loading}
+                        leftIcon={<SearchIcon />}
+                        size="lg"
+                      >
+                        Ask
+                      </Button>
+                    </HStack>
+                  </VStack>
+                </TabPanel>
+
+                <TabPanel>
+                  <VStack spacing={4} align="stretch">
+                    <Text fontSize="sm" color="gray.600">
+                      Search for documents by semantic similarity
+                    </Text>
+                    
+                    <Select
+                      placeholder="All Projects"
+                      value={selectedProject}
+                      onChange={(e) => setSelectedProject(e.target.value)}
+                    >
+                      {projects.map((p) => (
+                        <option key={p.project} value={p.project}>
+                          {p.project} ({p.document_count} docs)
+                        </option>
+                      ))}
+                    </Select>
+
+                    <HStack>
+                      <Input
+                        placeholder="deployment architecture voice assistant"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        size="lg"
+                      />
+                      <Button
+                        colorScheme="blue"
+                        onClick={handleSearch}
+                        isLoading={loading}
+                        leftIcon={<SearchIcon />}
+                        size="lg"
+                      >
+                        Search
+                      </Button>
+                    </HStack>
+                  </VStack>
+                </TabPanel>
+              </TabPanels>
+            </Tabs>
+          </CardBody>
+        </Card>
+
+        {/* Loading State */}
+        {loading && (
+          <Flex justify="center" py={8}>
+            <VStack>
+              <Spinner size="xl" color="blue.500" />
+              <Text color="gray.600">Searching knowledge graph...</Text>
+            </VStack>
+          </Flex>
+        )}
+
+        {/* Results */}
+        {!loading && results.length > 0 && (
+          <VStack spacing={4} align="stretch">
+            <Heading size="md">
+              Results ({results.length})
+            </Heading>
+
+            <Accordion allowMultiple>
+              {results.map((result, idx) => (
+                <AccordionItem key={idx}>
+                  <AccordionButton>
+                    <Box flex="1" textAlign="left">
+                      <HStack spacing={3}>
+                        <Badge colorScheme="blue" fontSize="md">
+                          {result.relevance}
+                        </Badge>
+                        <Heading size="sm">{result.title}</Heading>
+                      </HStack>
+                      <HStack mt={2} spacing={2}>
+                        <Badge colorScheme="green">{result.project}</Badge>
+                        <Text fontSize="sm" color="gray.600">
+                          {result.file}
+                        </Text>
+                      </HStack>
+                    </Box>
+                    <AccordionIcon />
+                  </AccordionButton>
+
+                  <AccordionPanel>
+                    <VStack align="stretch" spacing={3}>
+                      <Text fontSize="sm" color="gray.700">
+                        {result.preview}
+                      </Text>
+                      
+                      {result.content && (
+                        <>
+                          <Divider />
+                          <Box>
+                            <Text fontSize="sm" fontWeight="bold" mb={2}>
+                              Full Content:
+                            </Text>
+                            <Code
+                              display="block"
+                              whiteSpace="pre-wrap"
+                              p={3}
+                              borderRadius="md"
+                              fontSize="sm"
+                              maxH="400px"
+                              overflowY="auto"
+                            >
+                              {result.content}
+                            </Code>
+                          </Box>
+                        </>
+                      )}
+                    </VStack>
+                  </AccordionPanel>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </VStack>
+        )}
+
+        {/* No Results */}
+        {!loading && results.length === 0 && query && (
+          <Card>
+            <CardBody>
+              <VStack spacing={3}>
+                <Icon as={InfoIcon} boxSize={12} color="gray.400" />
+                <Heading size="md" color="gray.600">
+                  No results found
+                </Heading>
+                <Text color="gray.500" textAlign="center">
+                  Try a different query or select a specific project
+                </Text>
+              </VStack>
+            </CardBody>
+          </Card>
+        )}
+
+        {/* Projects List */}
+        {projects.length > 0 && (
+          <Card>
+            <CardBody>
+              <Heading size="md" mb={4}>Indexed Projects</Heading>
+              <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={4}>
+                {projects.map((project) => (
+                  <Card key={project.project} variant="outline">
+                    <CardBody>
+                      <VStack align="stretch" spacing={2}>
+                        <Heading size="sm">{project.project}</Heading>
+                        {project.description && (
+                          <Text fontSize="xs" color="gray.600">
+                            {project.description}
+                          </Text>
+                        )}
+                        <HStack>
+                          <Badge>{project.document_count} docs</Badge>
+                          <Badge colorScheme="green">{project.file_count} files</Badge>
+                        </HStack>
+                      </VStack>
+                    </CardBody>
+                  </Card>
+                ))}
+              </SimpleGrid>
+            </CardBody>
+          </Card>
+        )}
+      </VStack>
+    </Container>
+  );
+}

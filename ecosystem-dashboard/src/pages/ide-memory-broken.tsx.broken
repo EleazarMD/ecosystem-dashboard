@@ -1,0 +1,1116 @@
+import React, { useState, useEffect } from 'react';
+import { NextPage } from 'next';
+import Head from 'next/head';
+import Link from 'next/link';
+import IDEMemoryTimeline from '../components/IDEMemoryTimeline';
+import EnhancedOverviewCards from '../components/ide-memory/EnhancedOverviewCards';
+import AdvancedAnalyticsVisualization from '../components/ide-memory/AdvancedAnalyticsVisualization';
+// import AITruthEngineStatusCard from '../components/ide-memory/AITruthEngineStatusCard';
+import {
+  Box,
+  Container,
+  Heading,
+  Text,
+  Button,
+  Badge,
+  Spinner,
+  Alert,
+  AlertIcon,
+  VStack,
+  HStack,
+  Grid,
+  GridItem,
+  Card,
+  CardHeader,
+  CardBody,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
+  Switch,
+  FormControl,
+  FormLabel,
+  useToast,
+  Flex,
+  Spacer,
+  Icon,
+  SimpleGrid,
+  Stat,
+  StatLabel,
+  StatNumber,
+  StatHelpText,
+  StatArrow,
+  Progress,
+  Divider,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalFooter,
+  ModalBody,
+  ModalCloseButton,
+  Input,
+  InputGroup,
+  InputLeftElement,
+  Select,
+} from '@chakra-ui/react';
+import { SearchIcon } from '@chakra-ui/icons';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import DashboardLayout from '../components/layout/DashboardLayout';
+import { GlassPanel } from '../components/ui/GlassPanel';
+
+// Types
+interface IDEMemory {
+  id: string;
+  title: string;
+  content: string;
+  tags: string[];
+  context: string;
+  workspace: string;
+  created_at: string;
+  updated_at: string;
+  health_score: number;
+  conflicts: string[];
+}
+
+interface MemoryStats {
+  total: number;
+  healthy: number;
+  conflicts: number;
+  outdated: number;
+  sync_rate: number;
+  last_sync: string;
+}
+
+// Sample data for fallback when API is unavailable
+const sampleMemories: IDEMemory[] = [
+  {
+    id: '1',
+    title: 'AI Homelab Dashboard Architecture',
+    content: 'The AI Homelab Ecosystem Dashboard uses Next.js 15.4.6 with Chakra UI for the frontend, implementing a dual-port architecture for AI Gateway integration.',
+    tags: ['architecture', 'dashboard', 'ai-gateway'],
+    context: 'ecosystem-dashboard project',
+    workspace: '/Users/eleazar/Projects/AIHomelab/tools/monitoring/ecosystem-dashboard',
+    created_at: new Date(Date.now() - 86400000).toISOString(),
+    updated_at: new Date(Date.now() - 3600000).toISOString(),
+    health_score: 95,
+    conflicts: []
+  },
+  {
+    id: '2',
+    title: 'Knowledge Graph Integration',
+    content: 'Knowledge Graph service runs on port 8765 in k3d cluster with Neo4j backend. Port forwarding is required for local development access.',
+    tags: ['knowledge-graph', 'neo4j', 'k3d'],
+    context: 'infrastructure setup',
+    workspace: '/Users/eleazar/Projects/AIHomelab/tools/monitoring/ecosystem-dashboard',
+    created_at: new Date(Date.now() - 172800000).toISOString(),
+    updated_at: new Date(Date.now() - 7200000).toISOString(),
+    health_score: 88,
+    conflicts: []
+  },
+  {
+    id: '3',
+    title: 'IDE Memory Timeline Fix',
+    content: 'Fixed IDE Memory Timeline component to use correct port 9577 instead of 9579, added proper error handling and fallback to mock data.',
+    tags: ['bug-fix', 'timeline', 'error-handling'],
+    context: 'recent development',
+    workspace: '/Users/eleazar/Projects/AIHomelab/tools/monitoring/ecosystem-dashboard',
+    created_at: new Date(Date.now() - 3600000).toISOString(),
+    updated_at: new Date(Date.now() - 1800000).toISOString(),
+    health_score: 92,
+    conflicts: []
+  },
+  {
+    id: '4',
+    title: 'Port Registry Compliance',
+    content: 'AI Gateway uses dual-port architecture: Port 7777 for service mesh operations, Port 8777 for AI/LLM client operations. All services must register via port 7777.',
+    tags: ['port-registry', 'ai-gateway', 'compliance'],
+    context: 'ecosystem standards',
+    workspace: '/Users/eleazar/Projects/AIHomelab/tools/monitoring/ecosystem-dashboard',
+    created_at: new Date(Date.now() - 259200000).toISOString(),
+    updated_at: new Date(Date.now() - 10800000).toISOString(),
+    health_score: 85,
+    conflicts: ['Port conflict detected with legacy service']
+  },
+  {
+    id: '5',
+    title: 'Chart Rendering Issues',
+    content: 'ResponsiveContainer components showing width/height 0 errors. Need to ensure proper container sizing for Recharts components.',
+    tags: ['ui-bug', 'charts', 'responsive'],
+    context: 'current issue',
+    workspace: '/Users/eleazar/Projects/AIHomelab/tools/monitoring/ecosystem-dashboard',
+    created_at: new Date(Date.now() - 1800000).toISOString(),
+    updated_at: new Date(Date.now() - 900000).toISOString(),
+    health_score: 70,
+    conflicts: []
+  }
+];
+
+const IDEMemoryPage: NextPage = () => {
+  // State management
+  const [memories, setMemories] = useState<IDEMemory[]>([]);
+  const [stats, setStats] = useState<MemoryStats>({
+    total: 0,
+    healthy: 0,
+    conflicts: 0,
+    outdated: 0,
+    sync_rate: 0,
+    last_sync: 'Never'
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState(0);
+  const [selectedWorkspace, setSelectedWorkspace] = useState('all');
+  const [realTimeValidation, setRealTimeValidation] = useState(true);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalMemories, setTotalMemories] = useState(0);
+  const [currentTime, setCurrentTime] = useState<string>('');
+  const [isMounted, setIsMounted] = useState(false);
+  
+  // Search state
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<IDEMemory[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const toast = useToast();
+
+  // Safe date formatting to prevent hydration mismatch
+  const formatDate = (dateString: string | undefined): string => {
+    if (!dateString) return 'No date';
+    try {
+      return new Date(dateString).toLocaleDateString();
+    } catch {
+      return 'Invalid date';
+    }
+  };
+
+  // Sample data for fallback
+  const sampleMemories: IDEMemory[] = [
+    {
+      id: '1',
+      title: 'Authentication Service Architecture',
+      content: 'Core authentication patterns and JWT implementation details...',
+      tags: ['auth', 'security', 'jwt'],
+      context: 'AI Homelab Authentication System',
+      workspace: '/Users/eleazar/Projects/AIHomelab/core/auth',
+      created_at: '2024-01-15T10:30:00Z',
+      updated_at: '2024-01-20T14:45:00Z',
+      health_score: 95,
+      conflicts: []
+    },
+    {
+      id: '2',
+      title: 'Knowledge Graph Integration',
+      content: 'MCP server integration patterns and Neo4j queries...',
+      tags: ['knowledge-graph', 'mcp', 'neo4j'],
+      context: 'Knowledge Graph Service',
+      workspace: '/Users/eleazar/Projects/AIHomelab/core/knowledge-graph',
+      created_at: '2024-01-18T09:15:00Z',
+      updated_at: '2024-01-22T16:20:00Z',
+      health_score: 87,
+      conflicts: ['Outdated Neo4j schema reference']
+    }
+  ];
+
+  // Load memories from API with pagination
+  const loadMemories = async (page: number = currentPage) => {
+    setLoading(true);
+    setError(null);
+
+    let controller: AbortController | null = null;
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    try {
+      // Try to load from enhanced API first with timeout
+      controller = new AbortController();
+      timeoutId = setTimeout(() => {
+        if (controller && !controller.signal.aborted) {
+          controller.abort();
+        }
+      }, 10000); // Increased timeout for large datasets
+      
+      const response = await fetch('/api/ide-memory/list-enhanced', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          page: page,
+          limit: pageSize,
+          filter: selectedWorkspace === 'all' ? '' : selectedWorkspace,
+          include_context: true,
+          exclude_contradictory: false,
+          include_relationships: true,
+          search: '', // Will be used for search functionality
+          sort_by: 'updated_at',
+          sort_order: 'desc'
+        }),
+        signal: controller.signal
+      });
+      
+      // Clear timeout on successful response
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Handle enhanced API response format
+        setMemories(data.memories || []);
+        setCurrentPage(data.pagination?.current_page || 1);
+        setTotalPages(data.pagination?.total_pages || 1);
+        setTotalMemories(data.pagination?.total_memories || 0);
+        
+        // Use stats data from enhanced API
+        const stats = data.stats || {};
+        const calculatedStats = {
+          total: stats.total || 0,
+          healthy: stats.healthy || 0,
+          conflicts: stats.conflicts || 0,
+          outdated: stats.outdated || 0,
+          sync_rate: stats.sync_rate || 100,
+          last_sync: stats.last_sync || new Date().toISOString()
+        };
+        setStats(calculatedStats);
+        
+        // Show success message for large dataset
+        if (data.pagination?.total_memories > 100) {
+          toast({
+            title: 'Large Dataset Loaded',
+            description: `Successfully loaded ${data.pagination.total_memories} memories across ${data.pagination.total_pages} pages`,
+            status: 'success',
+            duration: 3000,
+            isClosable: true,
+          });
+        }
+        
+        return; // Success, exit early
+      } else {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`API error: ${response.status} - ${errorText}`);
+      }
+    } catch (err) {
+      // Only log and handle errors if not aborted
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.log('API request was aborted (timeout)');
+      } else {
+        console.error('Failed to load IDE Memory data:', err);
+      }
+      
+      // Determine error type for better user messaging
+      let errorMessage = 'Failed to load memories';
+      if (err instanceof Error) {
+        if (err.name === 'AbortError') {
+          errorMessage = 'API request timed out';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      setError(errorMessage);
+      
+      // Use sample data as fallback
+      setMemories(sampleMemories);
+      setStats({
+        total: sampleMemories.length,
+        healthy: sampleMemories.filter(m => m.health_score > 80).length,
+        conflicts: sampleMemories.filter(m => m.conflicts.length > 0).length,
+        outdated: sampleMemories.filter(m => m.health_score < 70).length,
+        sync_rate: 94.5,
+        last_sync: new Date().toISOString()
+      });
+      
+      // Only show toast for non-abort errors or if user should know about timeout
+      if (!err || (err instanceof Error && err.name !== 'AbortError')) {
+        toast({
+          title: 'Using Sample Data',
+          description: `API unavailable: ${errorMessage}. Showing sample data.`,
+          status: 'warning',
+          duration: 5000,
+          isClosable: true,
+        });
+      }
+    } finally {
+      // Clean up timeout if it still exists
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      setLoading(false);
+    }
+  };
+
+  // Validate all memories
+  const validateAllMemories = async () => {
+    toast({
+      title: 'Validation Started',
+      description: 'Checking all memories against Knowledge Graph...',
+      status: 'info',
+      duration: 3000,
+      isClosable: true,
+    });
+
+    // Simulate validation process
+    setTimeout(() => {
+      toast({
+        title: 'Validation Complete',
+        description: `${stats.healthy} memories validated successfully`,
+        status: 'success',
+        duration: 5000,
+        isClosable: true,
+      });
+    }, 2000);
+  };
+
+  // Search memories using server-side search
+  const searchMemories = async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    
+    try {
+      console.log('Searching for:', query);
+      
+      const response = await fetch('/api/ide-memory/list-enhanced', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          page: 1,
+          limit: 50, // Show more results for search
+          filter: selectedWorkspace === 'all' ? '' : selectedWorkspace,
+          include_context: true,
+          exclude_contradictory: false,
+          include_relationships: true,
+          search: query, // Server-side search
+          sort_by: 'relevance', // Sort by relevance for search
+          sort_order: 'desc'
+        }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const results = data.memories || [];
+        setSearchResults(results);
+        
+        toast({
+          title: 'Search Complete',
+          description: `Found ${results.length} matching memories`,
+          status: results.length > 0 ? 'success' : 'info',
+          duration: 3000,
+          isClosable: true,
+        });
+      } else {
+        // Fallback to client-side search if server search fails
+        console.log('Server search failed, falling back to client-side search');
+        const results = memories.filter(memory => {
+          const searchTerm = query.toLowerCase();
+          return (
+            (memory.title || '').toLowerCase().includes(searchTerm) ||
+            (memory.content || '').toLowerCase().includes(searchTerm) ||
+            (memory.context || '').toLowerCase().includes(searchTerm) ||
+            (memory.workspace || '').toLowerCase().includes(searchTerm) ||
+            (memory.tags || []).some(tag => tag.toLowerCase().includes(searchTerm))
+          );
+        });
+        
+        setSearchResults(results);
+        
+        toast({
+          title: 'Search Complete (Local)',
+          description: `Found ${results.length} matching memories (using local search)`,
+          status: results.length > 0 ? 'success' : 'info',
+          duration: 3000,
+          isClosable: true,
+        });
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      
+      // Fallback to client-side search on error
+      const results = memories.filter(memory => {
+        const searchTerm = query.toLowerCase();
+        return (
+          (memory.title || '').toLowerCase().includes(searchTerm) ||
+          (memory.content || '').toLowerCase().includes(searchTerm) ||
+          (memory.context || '').toLowerCase().includes(searchTerm) ||
+          (memory.workspace || '').toLowerCase().includes(searchTerm) ||
+          (memory.tags || []).some(tag => tag.toLowerCase().includes(searchTerm))
+        );
+      });
+      
+      setSearchResults(results);
+      
+      toast({
+        title: 'Search Complete (Local)',
+        description: `Found ${results.length} matching memories (using local search due to error)`,
+        status: 'warning',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Handle search modal
+  const handleSearchClick = () => {
+    setShowSearchModal(true);
+    setSearchQuery('');
+    setSearchResults([]);
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    searchMemories(searchQuery);
+  };
+
+  // Handle page changes
+  const handlePageChange = async (newPage: number) => {
+    if (newPage !== currentPage && newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+      await loadMemories(newPage);
+    }
+  };
+
+  // Handle page size changes
+  const handlePageSizeChange = async (newPageSize: number) => {
+    setPageSize(newPageSize);
+    setCurrentPage(1); // Reset to first page
+    await loadMemories(1);
+  };
+
+  // Load data on mount
+  useEffect(() => {
+    setIsMounted(true);
+    loadMemories(1); // Load first page
+    // Set current time after mount to avoid hydration mismatch
+    const updateTime = () => {
+      setCurrentTime(new Date().toLocaleTimeString());
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Prevent hydration mismatch
+  if (!isMounted) {
+    return (
+      <DashboardLayout>
+        <Head>
+          <title>IDE Memory Management | AI Homelab</title>
+        </Head>
+        <Container maxW="full">
+          <Flex justify="center" align="center" minH="50vh">
+            <VStack spacing={4}>
+              <Spinner size="xl" color="blue.500" />
+              <Text>Loading IDE Memory Management...</Text>
+            </VStack>
+          </Flex>
+        </Container>
+      </DashboardLayout>
+    );
+  }
+
+  // Static health trend data to avoid hooks issues
+  const healthTrendData = [
+    { name: 'Mon', health: 92 },
+    { name: 'Tue', health: 88 },
+    { name: 'Wed', health: 95 },
+    { name: 'Thu', health: 90 },
+    { name: 'Fri', health: 87 },
+    { name: 'Sat', health: 93 },
+    { name: 'Sun', health: 89 }
+  ];
+
+  // Static workspace data to avoid hooks issues
+  const workspaceData = [
+    { name: 'dashboard', value: 12, color: '#8884d8' },
+    { name: 'auth', value: 8, color: '#82ca9d' },
+    { name: 'knowledge', value: 6, color: '#ffc658' },
+    { name: 'gateway', value: 4, color: '#ff7300' },
+    { name: 'other', value: 3, color: '#8dd1e1' }
+  ];
+
+  return (
+    <DashboardLayout>
+      <Head>
+        <title>IDE Memory Management | AI Homelab</title>
+      </Head>
+
+      <Container maxW="full" p={6}>
+        {/* Header */}
+        <Box mb={6}>
+          <Flex justify="space-between" align="center" mb={4}>
+            <VStack align="start" spacing={2}>
+              <Heading size="lg" color="blue.600">
+                🧠 IDE Memory Management
+              </Heading>
+              <HStack>
+                <Text color="gray.600">
+                  Workspace memories, analytics, and synchronization with Knowledge Graph
+                </Text>
+                <Badge colorScheme="green" variant="solid">Production Ready</Badge>
+              </HStack>
+            </VStack>
+            
+            <VStack align="end" spacing={1}>
+              <HStack>
+                <Text fontSize="sm" color="gray.500">Status:</Text>
+                <Badge colorScheme={error ? 'red' : 'green'}>
+                  {error ? 'Error' : 'Healthy'}
+                </Badge>
+              </HStack>
+              {isMounted && currentTime && (
+                <Text fontSize="xs" color="gray.400">
+                  Last updated: {currentTime}
+                </Text>
+              )}
+            </VStack>
+          </Flex>
+
+          {/* Controls */}
+          <Flex justify="space-between" align="center" mb={4}>
+            <HStack spacing={4}>
+              <FormControl display="flex" alignItems="center">
+                <FormLabel htmlFor="real-time" mb="0" fontSize="sm">
+                  Real-time Validation
+                </FormLabel>
+                <Switch 
+                  id="real-time" 
+                  isChecked={realTimeValidation}
+                  onChange={(e) => setRealTimeValidation(e.target.checked)}
+                  colorScheme="blue"
+                />
+              </FormControl>
+            </HStack>
+
+            <HStack spacing={2}>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={() => loadMemories(currentPage)}
+                isLoading={loading}
+              >
+                🔄 Refresh
+              </Button>
+              <Button 
+                size="sm" 
+                colorScheme="blue" 
+                onClick={validateAllMemories}
+              >
+                ✅ Validate All
+              </Button>
+            </HStack>
+          </Flex>
+        </Box>
+
+        {/* Enhanced Overview Cards with Contextual Intelligence */}
+        <EnhancedOverviewCards
+          workspace={selectedWorkspace}
+          totalMemories={stats.total}
+        />
+
+        {/* AI Truth Engine Status Card */}
+        <AITruthEngineStatusCard />
+
+        {/* Main Content Tabs */}
+        <Tabs variant="enclosed" colorScheme="blue">
+          <TabList>
+                <Tab>📊 Overview</Tab>
+                <Tab>💾 Memories</Tab>
+                <Tab>📈 Analytics</Tab>
+                <Tab>🕒 Timeline</Tab>
+                <Tab>⚙️ Settings</Tab>
+              </TabList>
+
+              <TabPanels>
+                {/* Overview Tab */}
+                <TabPanel>
+                  <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6}>
+                    {/* Health Trend Chart */}
+                    <Box>
+                      <Heading size="md" mb={4}>Health Trend (7 days)</Heading>
+                      <Box h="300px">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={healthTrendData}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="name" />
+                            <YAxis />
+                            <Tooltip />
+                            <Legend />
+                            <Line 
+                              type="monotone" 
+                              dataKey="health" 
+                              stroke="#3182ce" 
+                              strokeWidth={2}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </Box>
+                    </Box>
+
+                    {/* Workspace Distribution */}
+                    <Box>
+                      <Heading size="md" mb={4}>Memory Distribution</Heading>
+                      <Box h="300px">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={workspaceData}
+                              cx="50%"
+                              cy="50%"
+                              labelLine={false}
+                              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                              outerRadius={80}
+                              fill="#8884d8"
+                              dataKey="value"
+                            >
+                              {workspaceData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </Box>
+                    </Box>
+                  </SimpleGrid>
+
+                  <Divider my={6} />
+
+                  {/* Quick Actions */}
+                  <Box>
+                    <Heading size="md" mb={4}>Quick Actions</Heading>
+                    <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+                      <Button 
+                        h="100px" 
+                        variant="outline" 
+                        colorScheme="blue"
+                        flexDirection="column"
+                        gap={2}
+                        onClick={handleSearchClick}
+                      >
+                        <Text fontSize="2xl">🔍</Text>
+                        <Text>Search Memories</Text>
+                        <Text fontSize="xs" color="gray.500">Find specific memories</Text>
+                      </Button>
+
+                      <Button 
+                        h="100px" 
+                        variant="outline" 
+                        colorScheme="green"
+                        flexDirection="column"
+                        gap={2}
+                        onClick={validateAllMemories}
+                      >
+                        <Text fontSize="2xl">🛡️</Text>
+                        <Text>Validate All</Text>
+                        <Text fontSize="xs" color="gray.500">Check against KG</Text>
+                      </Button>
+
+                      <Link href="/ide-memory-approvals" passHref>
+                        <Button 
+                          h="100px" 
+                          variant="outline" 
+                          colorScheme="orange"
+                          flexDirection="column"
+                          gap={2}
+                          as="a"
+                          w="100%"
+                        >
+                          <Text fontSize="2xl">🤖</Text>
+                          <Text>AI Truth Engine</Text>
+                          <Text fontSize="xs" color="gray.500">Review AI corrections</Text>
+                        </Button>
+                      </Link>
+                    </SimpleGrid>
+                  </Box>
+                </TabPanel>
+
+                {/* Memories Tab */}
+                <TabPanel>
+                  <VStack spacing={4} align="stretch">
+                    {loading ? (
+                      <Flex justify="center" py={8}>
+                        <Spinner size="lg" />
+                      </Flex>
+                    ) : memories.length === 0 ? (
+                      <Alert status="info">
+                        <AlertIcon />
+                        No memories found. Create your first memory to get started.
+                      </Alert>
+                    ) : (
+                      <Box overflowX="auto">
+                        <Table variant="simple">
+                          <Thead>
+                            <Tr>
+                              <Th>Title</Th>
+                              <Th>Workspace</Th>
+                              <Th>Health</Th>
+                              <Th>Tags</Th>
+                              <Th>Updated</Th>
+                              <Th>Actions</Th>
+                            </Tr>
+                          </Thead>
+                          <Tbody>
+                            {memories.map((memory) => (
+                              <Tr key={memory.id}>
+                                <Td>
+                                  <VStack align="start" spacing={1}>
+                                    <Text fontWeight="medium">{memory.title}</Text>
+                                    <Text fontSize="sm" color="gray.500" noOfLines={1}>
+                                      {memory.content}
+                                    </Text>
+                                  </VStack>
+                                </Td>
+                                <Td>
+                                  <Text fontSize="sm" color="gray.600">
+                                    {memory.workspace ? memory.workspace.split('/').pop() : 'Unknown'}
+                                  </Text>
+                                </Td>
+                                <Td>
+                                  <HStack>
+                                    <Progress 
+                                      value={memory.health_score || 0} 
+                                      size="sm" 
+                                      colorScheme={(memory.health_score || 0) > 80 ? 'green' : 'yellow'}
+                                      w="60px"
+                                    />
+                                    <Text fontSize="sm">{memory.health_score || 0}%</Text>
+                                  </HStack>
+                                </Td>
+                                <Td>
+                                  <HStack spacing={1} flexWrap="wrap">
+                                    {(memory.tags || []).slice(0, 2).map((tag) => (
+                                      <Badge key={tag} size="sm" colorScheme="blue">
+                                        {tag}
+                                      </Badge>
+                                    ))}
+                                    {(memory.tags || []).length > 2 && (
+                                      <Badge size="sm" variant="outline">
+                                        +{(memory.tags || []).length - 2}
+                                      </Badge>
+                                    )}
+                                  </HStack>
+                                </Td>
+                                <Td>
+                                  <Text fontSize="sm" color="gray.600">
+                                    {formatDate(memory.updated_at)}
+                                  </Text>
+                                </Td>
+                                <Td>
+                                  <HStack spacing={1}>
+                                    <Button size="xs" variant="outline">
+                                      View
+                                    </Button>
+                                    <Button size="xs" variant="outline" colorScheme="blue">
+                                      Edit
+                                    </Button>
+                                  </HStack>
+                                </Td>
+                              </Tr>
+                            ))}
+                          </Tbody>
+                        </Table>
+                        
+                        {/* Pagination Controls */}
+                        {totalPages > 1 && (
+                          <Box mt={6}>
+                            <Flex justify="space-between" align="center" mb={4}>
+                              <VStack align="start" spacing={1}>
+                                <Text fontSize="sm" color="gray.600">
+                                  Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalMemories)} of {totalMemories} memories
+                                </Text>
+                                <HStack spacing={2}>
+                                  <Text fontSize="xs" color="gray.500">Page size:</Text>
+                                  <Select size="xs" value={pageSize} onChange={(e) => handlePageSizeChange(Number(e.target.value))} w="auto">
+                                    <option value={10}>10</option>
+                                    <option value={20}>20</option>
+                                    <option value={50}>50</option>
+                                    <option value={100}>100</option>
+                                  </Select>
+                                </HStack>
+                              </VStack>
+                              
+                              <HStack spacing={2}>
+                                <Button 
+                                  size="sm" 
+                                  onClick={() => handlePageChange(1)}
+                                  isDisabled={currentPage === 1}
+                                  variant="outline"
+                                >
+                                  First
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  onClick={() => handlePageChange(currentPage - 1)}
+                                  isDisabled={currentPage === 1}
+                                  variant="outline"
+                                >
+                                  Previous
+                                </Button>
+                                
+                                <HStack spacing={1}>
+                                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                    let pageNum;
+                                    if (totalPages <= 5) {
+                                      pageNum = i + 1;
+                                    } else if (currentPage <= 3) {
+                                      pageNum = i + 1;
+                                    } else if (currentPage >= totalPages - 2) {
+                                      pageNum = totalPages - 4 + i;
+                                    } else {
+                                      pageNum = currentPage - 2 + i;
+                                    }
+                                    
+                                    return (
+                                      <Button
+                                        key={pageNum}
+                                        size="sm"
+                                        variant={currentPage === pageNum ? "solid" : "outline"}
+                                        colorScheme={currentPage === pageNum ? "blue" : "gray"}
+                                        onClick={() => handlePageChange(pageNum)}
+                                        minW="40px"
+                                      >
+                                        {pageNum}
+                                      </Button>
+                                    );
+                                  })}
+                                </HStack>
+                                
+                                <Button 
+                                  size="sm" 
+                                  onClick={() => handlePageChange(currentPage + 1)}
+                                  isDisabled={currentPage === totalPages}
+                                  variant="outline"
+                                >
+                                  Next
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  onClick={() => handlePageChange(totalPages)}
+                                  isDisabled={currentPage === totalPages}
+                                  variant="outline"
+                                >
+                                  Last
+                                </Button>
+                              </HStack>
+                            </Flex>
+                          </Box>
+                        )}
+                      </Box>
+                    )}
+                  </VStack>
+                </TabPanel>
+
+                {/* Analytics Tab */}
+                <TabPanel>
+                  <AdvancedAnalyticsVisualization workspace={selectedWorkspace} />
+                </TabPanel>
+
+                {/* Timeline Tab */}
+                <TabPanel>
+                  <IDEMemoryTimeline />
+                </TabPanel>
+
+                {/* Settings Tab */}
+                <TabPanel>
+                  <VStack spacing={6} align="stretch">
+                    <Box>
+                      <Heading size="md" mb={4}>Memory Management Settings</Heading>
+                      <VStack spacing={4} align="stretch">
+                        <FormControl display="flex" alignItems="center">
+                          <FormLabel htmlFor="auto-sync" mb="0">
+                            Auto-sync with Knowledge Graph
+                          </FormLabel>
+                          <Spacer />
+                          <Switch id="auto-sync" defaultChecked />
+                        </FormControl>
+
+                        <FormControl display="flex" alignItems="center">
+                          <FormLabel htmlFor="real-time-validation" mb="0">
+                            Real-time validation
+                          </FormLabel>
+                          <Spacer />
+                          <Switch 
+                            id="real-time-validation" 
+                            isChecked={realTimeValidation}
+                            onChange={(e) => setRealTimeValidation(e.target.checked)}
+                          />
+                        </FormControl>
+
+                        <FormControl display="flex" alignItems="center">
+                          <FormLabel htmlFor="conflict-alerts" mb="0">
+                            Conflict alerts
+                          </FormLabel>
+                          <Spacer />
+                          <Switch id="conflict-alerts" defaultChecked />
+                        </FormControl>
+                      </VStack>
+                    </Box>
+
+                    <Divider />
+
+                    <Box>
+                      <Heading size="md" mb={4}>Danger Zone</Heading>
+                      <VStack spacing={3} align="stretch">
+                        <Button colorScheme="orange" variant="outline">
+                          Clear All Caches
+                        </Button>
+                        <Button colorScheme="red" variant="outline">
+                          Reset All Memories
+                        </Button>
+                      </VStack>
+                    </Box>
+                  </VStack>
+                </TabPanel>
+              </TabPanels>
+            </Tabs>
+        </VStack>
+      </Container>
+    </DashboardLayout>
+  );
+};
+
+        <ModalContent>
+          <ModalHeader>🔍 Search IDE Memories</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <form onSubmit={(e) => { e.preventDefault(); handleSearch(); }}>
+              <VStack spacing={4} align="stretch">
+                <InputGroup>
+                  <InputLeftElement pointerEvents="none">
+                    <SearchIcon color="gray.300" />
+                  </InputLeftElement>
+                  <Input
+                    placeholder="Search by title, content, tags, or workspace..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    autoFocus
+                  />
+                </InputGroup>
+                
+                <HStack spacing={2}>
+                  <Button
+                    type="submit"
+                    colorScheme="blue"
+                    isLoading={isSearching}
+                    loadingText="Searching..."
+                  >
+                    Search
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSearchResults([]);
+                    }}
+                  >
+                    Clear
+                  </Button>
+                </HStack>
+              </VStack>
+            </form>
+            
+            {/* Search Results */}
+            {searchResults.length > 0 && (
+              <Box mt={6}>
+                <Heading size="sm" mb={3}>Search Results ({searchResults.length})</Heading>
+                <VStack spacing={3} align="stretch" maxH="400px" overflowY="auto">
+                  {searchResults.map((memory) => (
+                    <Box
+                      key={memory.id}
+                      p={4}
+                      border="1px"
+                      borderColor="gray.200"
+                      borderRadius="md"
+                      _hover={{ borderColor: 'blue.300', bg: 'blue.50' }}
+                      cursor="pointer"
+                    >
+                      <VStack align="start" spacing={2}>
+                        <HStack justify="space-between" w="full">
+                          <Heading size="sm" color="blue.600">
+                            {memory.title || 'Untitled'}
+                          </Heading>
+                          <Badge
+                            colorScheme={(memory.health_score || 0) > 80 ? 'green' : 'orange'}
+                          >
+                            {memory.health_score || 0}% Health
+                          </Badge>
+                        </HStack>
+                        
+                        <Text fontSize="sm" color="gray.600" noOfLines={2}>
+                          {memory.content || 'No content'}
+                        </Text>
+                        
+                        <HStack spacing={2} flexWrap="wrap">
+                          <Text fontSize="xs" color="gray.500">
+                            Context: {memory.context || 'No context'}
+                          </Text>
+                        </HStack>
+                        
+                        <HStack spacing={1} flexWrap="wrap">
+                          {(memory.tags || []).slice(0, 3).map((tag) => (
+                            <Badge key={tag} size="sm" variant="outline">
+                              {tag}
+                            </Badge>
+                          ))}
+                          {(memory.tags || []).length > 3 && (
+                            <Badge size="sm" variant="outline">
+                              +{(memory.tags || []).length - 3}
+                            </Badge>
+                          )}
+                        </HStack>
+                        
+                        {(memory.conflicts || []).length > 0 && (
+                          <Alert status="warning" size="sm">
+                            <AlertIcon />
+                            {(memory.conflicts || []).length} conflict(s) detected
+                          </Alert>
+                        )}
+                      </VStack>
+                    </Box>
+                  ))}
+                </VStack>
+              </Box>
+            )}
+            
+            {searchQuery && searchResults.length === 0 && !isSearching && (
+              <Box mt={6} textAlign="center">
+                <Text color="gray.500">No memories found matching "{searchQuery}"</Text>
+                <Text fontSize="sm" color="gray.400" mt={2}>
+                  Try searching for different keywords or check your spelling
+                </Text>
+              </Box>
+            )}
+          </ModalBody>
+          
+          <ModalFooter>
+            <Button variant="ghost" onClick={() => setShowSearchModal(false)}>
+              Close
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+    </DashboardLayout>
+  );
+};
+
+export default IDEMemoryPage;

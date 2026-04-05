@@ -1,0 +1,723 @@
+/**
+ * Panel Registry - Single source of truth for all right panel components
+ * Each panel is registered with its metadata and component reference
+ */
+
+import dynamic from 'next/dynamic';
+import { PanelMetadata } from '../types';
+import { OpenClawChatRightPanel } from '@/components/openclaw/OpenClawChatRightPanel';
+
+// No static imports - all components loaded dynamically for better code splitting
+
+// Loading fallback component
+const LoadingFallback = () => null;
+
+// Dynamic imports for panels that need client-side only rendering
+const AgentNotificationCenter = dynamic(
+  () => import('@/components/agent/AgentNotificationCenter').then(mod => ({ default: mod.AgentNotificationCenter })),
+  { ssr: false, loading: LoadingFallback }
+);
+const ChatSettingsPanel = dynamic(() => import('@/components/podcast-studio/ChatSettingsPanel'), {
+  ssr: false,
+  loading: LoadingFallback,
+});
+const VoiceConfigurationPanel = dynamic(() => import('@/components/podcast-studio/VoiceConfigurationPanel'), {
+  ssr: false,
+  loading: LoadingFallback,
+});
+const SourceMetadataPanel = dynamic(() => import('@/components/podcast-studio/SourceMetadataPanel'), {
+  ssr: false,
+  loading: LoadingFallback,
+});
+const AgentGraphVisualization = dynamic(() => import('@/components/agentic-control/AgentGraphVisualization'), {
+  ssr: false,
+  loading: LoadingFallback,
+});
+const TraceTimelineVisualization = dynamic(() => import('@/components/agentic-control/TraceTimelineVisualization'), {
+  ssr: false,
+  loading: LoadingFallback,
+});
+
+// Panel Registry Map
+export const PANEL_REGISTRY: Record<string, PanelMetadata> = {
+  // ===== UNIVERSAL PANELS =====
+  'agent-notifications': {
+    id: 'agent-notifications',
+    displayName: 'Agent Notifications',
+    description: 'System-wide agent activity and notifications',
+    icon: 'FiBell',
+    iconColor: 'orange.500',
+    component: AgentNotificationCenter,
+  },
+
+  // ===== AI INFERENCING PANELS =====
+  'key-details': {
+    id: 'key-details',
+    displayName: 'API Key Details',
+    description: 'Manage and validate API keys',
+    icon: 'FiKey',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('@/components/ai-inferencing/KeyDetailsPanel')),
+  },
+
+  'model-details': {
+    id: 'model-details',
+    displayName: 'Model Details',
+    description: 'Model specifications and pricing',
+    icon: 'FiCpu',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/ai-inferencing/ModelDetailsPanel').then(mod => ({ default: mod.ModelDetailsPanel }))),
+  },
+
+  'provider-details': {
+    id: 'provider-details',
+    displayName: 'Provider Details',
+    description: 'Provider configuration and status',
+    icon: 'FiServer',
+    iconColor: 'green.500',
+    component: dynamic(() => import('@/components/ai-inferencing/ProviderDetailsPanel').then(mod => ({ default: mod.ProviderDetailsPanel }))),
+  },
+
+  'provider-performance': {
+    id: 'provider-performance',
+    displayName: 'Performance Controls',
+    description: 'Monitor and analyze provider performance',
+    icon: 'FiActivity',
+    iconColor: 'green.500',
+    component: dynamic(() => import('@/components/ai-inferencing/ProviderPerformanceControlsPanel').then(mod => ({ default: mod.ProviderPerformanceControlsPanel }))),
+  },
+
+  'model-filters': {
+    id: 'model-filters',
+    displayName: 'Model Filters',
+    description: 'Filter and sort available models',
+    icon: 'FiFilter',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('@/components/ai-inferencing/ModelFiltersPanel').then(mod => ({ default: mod.ModelFiltersPanel }))),
+  },
+
+  'activity-logs': {
+    id: 'activity-logs',
+    displayName: 'Activity Logs',
+    description: 'Filter and export API activity logs',
+    icon: 'FiFileText',
+    iconColor: 'gray.500',
+    component: dynamic(() => import('@/components/ai-inferencing/ActivityLogsFiltersPanel').then(mod => ({ default: mod.ActivityLogsFiltersPanel }))),
+  },
+
+  'savings-calculator': {
+    id: 'savings-calculator',
+    displayName: 'Cost Optimization',
+    description: 'Cost savings recommendations',
+    icon: 'FiDollarSign',
+    iconColor: 'orange.500',
+    component: dynamic(() => import('@/components/ai-inferencing/SavingsCalculatorPanel').then(mod => ({ default: mod.SavingsCalculatorPanel }))),
+  },
+
+  // ===== WORKSPACE PANELS =====
+  'workspace-ai-settings': {
+    id: 'workspace-ai-settings',
+    displayName: 'Workspace AI Settings',
+    description: 'Configure AI behavior for workspace',
+    icon: 'FiSettings',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('@/components/workspace/WorkspaceAISettingsPanel').catch(err => {
+      console.error('[PanelRegistry] Failed to load WorkspaceAISettingsPanel:', err);
+      // Fallback to AI Settings Panel
+      return import('@/components/shared/AISettingsPanel');
+    })),
+  },
+
+  'goose-agent': {
+    id: 'goose-agent',
+    displayName: 'Goose Page Agent',
+    description: 'Interactive AI agent for current page',
+    icon: 'FiMessageSquare',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/workspace/GooseSidebarPanel').then(mod => ({ default: mod.GooseSidebarPanel }))),
+  },
+
+  'goose-settings': {
+    id: 'goose-settings',
+    displayName: 'Goose Settings',
+    description: 'Configure Goose agent behavior',
+    icon: 'FiSettings',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/goose/settings').then(mod => ({ default: mod.ModernGooseSettingsPanel }))),
+  },
+
+  'workspace-files': {
+    id: 'workspace-files',
+    displayName: 'Files',
+    description: 'Workspace file management',
+    icon: 'FiFolder',
+    iconColor: 'gray.500',
+    component: dynamic(() => import('@/components/workspace/FilesTabContent').then(mod => ({ default: mod.FilesTabContent }))),
+  },
+
+  'home-settings': {
+    id: 'home-settings',
+    displayName: 'Homepage Settings',
+    description: 'Customize workspace homepage',
+    icon: 'FiHome',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('@/components/workspace/WorkspaceHomeSettings').then(mod => ({ default: mod.WorkspaceHomeSettings }))),
+  },
+
+  // ===== AI RESEARCH PANELS =====
+  'research-settings': {
+    id: 'research-settings',
+    displayName: 'Research Settings',
+    description: 'Configure deep research parameters',
+    icon: 'FiSettings',
+    iconColor: 'orange.500',
+    component: dynamic(() => import('@/components/research/DeepResearchSettingsPanel')),
+  },
+
+  'research-memory': {
+    id: 'research-memory',
+    displayName: 'Research Memory',
+    description: 'Knowledge base of past research findings',
+    icon: 'FiDatabase',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/research/ResearchMemoryPanel')),
+  },
+
+  'research-sources': {
+    id: 'research-sources',
+    displayName: 'Sources & Citations',
+    description: 'Source quality scoring and citation verification',
+    icon: 'FiLink',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('@/components/research/ResearchSourcesPanel')),
+  },
+
+  'research-costs': {
+    id: 'research-costs',
+    displayName: 'Research Costs',
+    description: 'Cumulative spend tracking and budget alerts',
+    icon: 'FiDollarSign',
+    iconColor: 'green.500',
+    component: dynamic(() => import('@/components/research/ResearchCostsPanel')),
+  },
+
+  'research-analyzer': {
+    id: 'research-analyzer',
+    displayName: 'Analyzer Settings',
+    description: 'Topic analysis controls and follow-up research settings',
+    icon: 'FiTarget',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/research/ResearchAnalyzerSettingsPanel')),
+  },
+
+  // ===== PODCAST STUDIO PANELS =====
+  'podcast-llm-config': {
+    id: 'podcast-llm-config',
+    displayName: 'LLM Configuration',
+    description: 'AI model and TTS settings',
+    icon: 'FiCpu',
+    iconColor: 'blue.500',
+    component: ChatSettingsPanel,
+  },
+
+  'podcast-insights': {
+    id: 'podcast-insights',
+    displayName: 'Research Insights',
+    description: 'Analysis and insights from research',
+    icon: 'FiTrendingUp',
+    iconColor: 'orange.500',
+    component: dynamic(() => import('@/components/podcast-studio/InsightsPanel')),
+  },
+
+  'source-metadata': {
+    id: 'source-metadata',
+    displayName: 'Source Metadata',
+    description: 'Token counts, character counts, and LLM capacity analysis',
+    icon: 'FiDatabase',
+    iconColor: 'teal.500',
+    component: SourceMetadataPanel,
+  },
+
+  'podcast-notes': {
+    id: 'podcast-notes',
+    displayName: 'Episode Notes',
+    description: 'Notes and annotations',
+    icon: 'FiFileText',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/podcast-studio/NotesPanel')),
+  },
+
+  'podcast-export': {
+    id: 'podcast-export',
+    displayName: 'Export Options',
+    description: 'Export podcast in various formats',
+    icon: 'FiDownload',
+    iconColor: 'teal.500',
+    component: dynamic(() => import('@/components/podcast-studio/ExportPanel')),
+  },
+
+  'podcast-workflow': {
+    id: 'podcast-workflow',
+    displayName: 'Script Workflow',
+    description: 'Script generation and management',
+    icon: 'FiLayers',
+    iconColor: 'green.500',
+    component: dynamic(() => import('@/components/podcast-studio/WorkflowPanel')),
+  },
+
+  'podcast-audio-controls': {
+    id: 'podcast-audio-controls',
+    displayName: 'Audio Controls',
+    description: 'Audio mixing and effects',
+    icon: 'FiMusic',
+    iconColor: 'pink.500',
+    component: dynamic(() => import('@/components/podcast-studio/AudioControlsPanel')),
+  },
+
+  'voice-configuration': {
+    id: 'voice-configuration',
+    displayName: 'Voice Configuration',
+    description: 'Configure speaker voices',
+    icon: 'FiMic',
+    iconColor: 'purple.500',
+    component: VoiceConfigurationPanel,
+  },
+
+  'multi-stage-production': {
+    id: 'multi-stage-production',
+    displayName: 'Production Pipeline',
+    description: 'Multi-stage production controls',
+    icon: 'FiLayers',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/podcast-studio/MultiStageProductionPanel')),
+  },
+
+  'podcast-controls': {
+    id: 'podcast-controls',
+    displayName: 'Podcast Controls',
+    description: 'Playback and transcript controls',
+    icon: 'FiPlay',
+    iconColor: 'green.500',
+    component: dynamic(() => import('@/components/podcast-studio/PodcastControlPanel')),
+  },
+
+  'podcast-playback': {
+    id: 'podcast-playback',
+    displayName: 'Playback Controls',
+    description: 'Audio playback controls',
+    icon: 'FiMusic',
+    iconColor: 'green.500',
+    component: dynamic(() => import('@/components/podcast-studio/PodcastPlaybackControls')),
+  },
+
+  'playback-review': {
+    id: 'playback-review',
+    displayName: 'Playback Review',
+    description: 'QA review and annotation of audio turns',
+    icon: 'FiCheckCircle',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('@/components/podcast-studio/PlaybackReviewPanel')),
+  },
+
+  // ===== AGENTIC CONTROL PANELS =====
+  'agent-timeline': {
+    id: 'agent-timeline',
+    displayName: 'Event Timeline',
+    description: 'Visualize agent events over time',
+    icon: 'FiClock',
+    iconColor: 'blue.500',
+    component: TraceTimelineVisualization,
+  },
+
+  'agent-graph': {
+    id: 'agent-graph',
+    displayName: 'Agent Graph',
+    description: 'Agent relationship visualization',
+    icon: 'FiShare2',
+    iconColor: 'purple.500',
+    component: AgentGraphVisualization,
+  },
+
+  'agent-events': {
+    id: 'agent-events',
+    displayName: 'Event Trace',
+    description: 'Detailed agent event logs',
+    icon: 'FiActivity',
+    iconColor: 'green.500',
+    component: dynamic(() => import('@/components/agentic-control/EventTracePanel')),
+  },
+
+  'agent-actions': {
+    id: 'agent-actions',
+    displayName: 'Agent Actions',
+    description: 'Manage agent actions and triggers',
+    icon: 'FiZap',
+    iconColor: 'cyan.500',
+    component: dynamic(() => import('@/components/agentic-control/AgentActionsPanel')),
+  },
+
+  // ===== VOICE STUDIO PANELS =====
+  'voice-profiles': {
+    id: 'voice-profiles',
+    displayName: 'Voice Profiles',
+    description: 'Manage and select voice profiles',
+    icon: 'FiUser',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/right-panel/VoiceStudioPanel')),
+    defaultProps: { activeTab: 'voice-profiles' },
+  },
+
+  'voice-library': {
+    id: 'voice-library',
+    displayName: 'Voice Library',
+    description: 'Browse all saved voice profiles',
+    icon: 'FiFolder',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('@/components/right-panel/VoiceStudioPanel')),
+    defaultProps: { activeTab: 'voice-library' },
+  },
+
+  'voice-settings': {
+    id: 'voice-settings',
+    displayName: 'Voice Settings',
+    description: 'Configure voice generation defaults',
+    icon: 'FiSettings',
+    iconColor: 'gray.500',
+    component: dynamic(() => import('@/components/right-panel/VoiceStudioPanel')),
+    defaultProps: { activeTab: 'voice-settings' },
+  },
+
+  // ===== IMAGE STUDIO PANELS =====
+  'image-generation-settings': {
+    id: 'image-generation-settings',
+    displayName: 'Generation Settings',
+    description: 'HiDream I1 text-to-image settings',
+    icon: 'FiSettings',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/image-studio/ImageGenerationSettingsPanel').then(mod => ({ default: mod.ImageGenerationSettingsPanel }))),
+  },
+
+  'image-editing-settings': {
+    id: 'image-editing-settings',
+    displayName: 'Editing Settings',
+    description: 'HiDream E1.1 image-to-image settings',
+    icon: 'FiSettings',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('@/components/image-studio/ImageEditingSettingsPanel').then(mod => ({ default: mod.ImageEditingSettingsPanel }))),
+  },
+
+  // ===== CALENDAR PANELS =====
+  'calendar-intelligence': {
+    id: 'calendar-intelligence',
+    displayName: 'Calendar Intelligence',
+    description: 'AI settings and calendar management',
+    icon: 'FiCalendar',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('@/components/calendar/CalendarIntelligencePanel').then(mod => ({ default: mod.CalendarIntelligencePanel }))),
+  },
+
+  'calendar-briefing': {
+    id: 'calendar-briefing',
+    displayName: 'Daily Briefing',
+    description: 'Audio briefing and schedule overview',
+    icon: 'FiRadio',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('@/components/calendar/CalendarBriefingPanel').then(mod => ({ default: mod.CalendarBriefingPanel }))),
+  },
+
+  'event-details': {
+    id: 'event-details',
+    displayName: 'Event Details',
+    description: 'View and manage calendar event details',
+    icon: 'FiCalendar',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/calendar/CalendarEventDetailsPanel').then(mod => ({ default: mod.CalendarEventDetailsPanel }))),
+  },
+
+  // ===== EMAIL INTELLIGENCE DASHBOARD PANELS =====
+  'dashboard-briefing': {
+    id: 'dashboard-briefing',
+    displayName: 'Daily Briefing',
+    description: 'Audio briefing player and intelligence summary',
+    icon: 'FiRadio',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/email-agent/DashboardBriefingPanel')),
+  },
+
+  // ===== EMAIL INSIGHTS PANELS =====
+  'insights-actions': {
+    id: 'insights-actions',
+    displayName: 'Email Actions',
+    description: 'Quick actions and email intelligence',
+    icon: 'FiZap',
+    iconColor: 'orange.500',
+    component: dynamic(() => import('@/components/email-agent/InsightsActionsPanel').then(mod => ({ default: mod.InsightsActionsPanel }))),
+  },
+
+  'insights-settings': {
+    id: 'insights-settings',
+    displayName: 'Email Settings',
+    description: 'Configure email intelligence settings',
+    icon: 'FiSettings',
+    iconColor: 'gray.500',
+    component: dynamic(() => import('@/components/email-agent/InsightsSettingsPanel').then(mod => ({ default: mod.InsightsSettingsPanel }))),
+  },
+
+  'audio-settings': {
+    id: 'audio-settings',
+    displayName: 'Audio Settings',
+    description: 'Configure audio briefing settings',
+    icon: 'FiMusic',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/email-agent/AudioTTSControlsPanel').then(mod => ({ default: mod.AudioTTSControlsPanel }))),
+  },
+
+  'email-intelligence': {
+    id: 'email-intelligence',
+    displayName: 'Email Intelligence',
+    description: 'AI-powered email analysis and actions',
+    icon: 'FiZap',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/email-agent/EmailIntelligencePanel').then(mod => ({ default: mod.EmailIntelligencePanel }))),
+  },
+
+  // ===== NEWS STUDIO PANELS =====
+  'story-details': {
+    id: 'story-details',
+    displayName: 'Story Details',
+    description: 'View and edit selected news story',
+    icon: 'FiFileText',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('@/components/news-studio/NewsStudioRightPanel').then(mod => ({ default: mod.NewsStudioRightPanel }))),
+  },
+
+  'pipeline-settings': {
+    id: 'pipeline-settings',
+    displayName: 'Pipeline Settings',
+    description: 'Configure news generation pipeline',
+    icon: 'FiSettings',
+    iconColor: 'gray.500',
+    component: dynamic(() => import('@/components/news-studio/NewsStudioRightPanel').then(mod => ({ default: mod.NewsStudioRightPanel }))),
+  },
+
+  'news-llm-config': {
+    id: 'news-llm-config',
+    displayName: 'LLM Configuration',
+    description: 'Model selection and parameters',
+    icon: 'FiCpu',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/news-studio/NewsStudioRightPanel').then(mod => ({ default: mod.NewsStudioRightPanel }))),
+  },
+
+  'news-sources': {
+    id: 'news-sources',
+    displayName: 'News Sources',
+    description: 'Manage RSS feeds and sources',
+    icon: 'FiLink',
+    iconColor: 'green.500',
+    component: dynamic(() => import('@/components/news-studio/NewsStudioRightPanel').then(mod => ({ default: mod.NewsStudioRightPanel }))),
+  },
+
+  'news-export': {
+    id: 'news-export',
+    displayName: 'Export Story',
+    description: 'Export to various formats',
+    icon: 'FiShare2',
+    iconColor: 'orange.500',
+    component: dynamic(() => import('@/components/news-studio/NewsStudioRightPanel').then(mod => ({ default: mod.NewsStudioRightPanel }))),
+  },
+
+  // ===== CHILD PORTAL PANELS =====
+  'child-dictionary': {
+    id: 'child-dictionary',
+    displayName: 'Dictionary Helper',
+    description: 'Word helper, favorites, and quiz',
+    icon: 'FiBook',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/child/ChildDictionaryPanel')),
+  },
+
+  'child-journal': {
+    id: 'child-journal',
+    displayName: 'Journal Helper',
+    description: 'Writing tips, prompts, and progress',
+    icon: 'FiEdit',
+    iconColor: 'green.500',
+    component: dynamic(() => import('@/components/child/ChildJournalPanel')),
+  },
+
+  'child-home': {
+    id: 'child-home',
+    displayName: 'Home Helper',
+    description: 'Daily guide and progress',
+    icon: 'FiStar',
+    iconColor: 'yellow.500',
+    component: dynamic(() => import('@/components/child/ChildHomePanel')),
+  },
+
+  'child-chat': {
+    id: 'child-chat',
+    displayName: 'Chat Helper',
+    description: 'Characters and learning',
+    icon: 'FiMessageCircle',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('@/components/child/ChildChatPanel')),
+  },
+
+  'child-art': {
+    id: 'child-art',
+    displayName: 'Art Helper',
+    description: 'Art tools and gallery',
+    icon: 'FiImage',
+    iconColor: 'pink.500',
+    component: dynamic(() => import('@/components/child/ChildArtStudioPanel')),
+  },
+
+  'child-workspace': {
+    id: 'child-workspace',
+    displayName: 'Writing Helper',
+    description: 'Writing, books, and math',
+    icon: 'FiEdit',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('@/components/child/ChildWorkspacePanel')),
+  },
+
+  'child-email': {
+    id: 'child-email',
+    displayName: 'Email Helper',
+    description: 'Email templates and tips',
+    icon: 'FiMail',
+    iconColor: 'orange.500',
+    component: dynamic(() => import('@/components/child/ChildEmailPanel')),
+  },
+
+  'child-planner': {
+    id: 'child-planner',
+    displayName: 'Planner Helper',
+    description: 'Study buddy and goals',
+    icon: 'FiCalendar',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/child/ChildPlannerPanel')),
+  },
+
+  'child-books': {
+    id: 'child-books',
+    displayName: 'Book Helper',
+    description: 'Reading buddy and vocabulary',
+    icon: 'FiBook',
+    iconColor: 'green.500',
+    component: dynamic(() => import('@/components/child/ChildBookExplorerPanel')),
+  },
+
+  // ===== MONITORING PANELS =====
+  'monitoring-alerts': {
+    id: 'monitoring-alerts',
+    displayName: 'Alerts',
+    description: 'Thermal and system alerts',
+    icon: 'FiAlertTriangle',
+    iconColor: 'orange.500',
+    component: dynamic(() => import('@/components/monitoring/MonitoringRightPanel')),
+  },
+
+  'monitoring-gpu-settings': {
+    id: 'monitoring-gpu-settings',
+    displayName: 'GPU Settings',
+    description: 'GPU threshold and alert settings',
+    icon: 'FiCpu',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/monitoring/MonitoringRightPanel')),
+  },
+
+  'monitoring-display-settings': {
+    id: 'monitoring-display-settings',
+    displayName: 'Display Settings',
+    description: 'Dashboard display options',
+    icon: 'FiSettings',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('@/components/monitoring/MonitoringRightPanel')),
+  },
+  // ===== ML TRAINING PANELS =====
+  'rl-settings': {
+    id: 'rl-settings',
+    displayName: 'RL Training Settings',
+    description: 'Configure RL training hyperparameters and optimization settings',
+    icon: 'FiSettings',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/ml-training/RLTrainingContextPanel')),
+  },
+
+  // ===== ADMIN PANELS =====
+  'admin-tenant': {
+    id: 'admin-tenant',
+    displayName: 'Tenant Details',
+    description: 'View and manage workspace details',
+    icon: 'FiGrid',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('../AdminTenantPanel')),
+  },
+
+  'admin-user-profile': {
+    id: 'admin-user-profile',
+    displayName: 'User Profile',
+    description: 'View and manage user details',
+    icon: 'FiUser',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('../AdminUserProfilePanel')),
+  },
+
+  'admin-quota': {
+    id: 'admin-quota',
+    displayName: 'Quota Details',
+    description: 'View and manage quota settings',
+    icon: 'FiPieChart',
+    iconColor: 'orange.500',
+    component: dynamic(() => import('../AdminQuotaPanel')),
+  },
+
+  'admin-security': {
+    id: 'admin-security',
+    displayName: 'Security Overview',
+    description: 'Security status and audit logs',
+    icon: 'FiShield',
+    iconColor: 'red.500',
+    component: dynamic(() => import('../AdminSecurityPanel')),
+  },
+
+  'admin-family': {
+    id: 'admin-family',
+    displayName: 'Family Controls',
+    description: 'Child account management',
+    icon: 'FiUsers',
+    iconColor: 'green.500',
+    component: dynamic(() => import('../AdminFamilyPanel')),
+  },
+
+  'admin-dashboard': {
+    id: 'admin-dashboard',
+    displayName: 'Admin Overview',
+    description: 'Quick stats and recent activity',
+    icon: 'FiActivity',
+    iconColor: 'blue.500',
+    component: dynamic(() => import('../AdminDashboardPanel')),
+  },
+
+  'openclaw-chat': {
+    id: 'openclaw-chat',
+    displayName: 'OpenClaw Agents',
+    description: 'Agent selector, session browser, and context tools',
+    icon: 'FiMessageCircle',
+    iconColor: 'blue.500',
+    component: OpenClawChatRightPanel,
+  },
+};
+
+// Helper function to get panel by ID
+export function getPanel(panelId: string): PanelMetadata | undefined {
+  return PANEL_REGISTRY[panelId];
+}
+
+// Helper function to list all panels for a context
+export function getPanelsForContext(context: string): PanelMetadata[] {
+  // This will be enhanced with routing rules
+  return Object.values(PANEL_REGISTRY);
+}

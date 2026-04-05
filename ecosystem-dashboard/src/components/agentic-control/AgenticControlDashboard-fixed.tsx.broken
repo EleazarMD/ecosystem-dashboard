@@ -1,0 +1,1033 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Box,
+  VStack,
+  HStack,
+  Text,
+  Button,
+  Input,
+  Card,
+  CardBody,
+  Badge,
+  Spinner,
+  Alert,
+  AlertIcon,
+  AlertDescription,
+  AlertTitle,
+  useColorModeValue,
+  useToast,
+  Flex,
+  IconButton,
+  Tooltip,
+  Grid,
+  GridItem,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  Select,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalCloseButton,
+  ModalFooter,
+  Code,
+  Divider,
+  SimpleGrid,
+  Avatar,
+  Textarea,
+} from '@chakra-ui/react';
+import { 
+  FiSend, 
+  FiRefreshCcw, 
+  FiPlay, 
+  FiActivity, 
+  FiClock, 
+  FiZap,
+  FiMessageSquare,
+  FiSettings,
+  FiMonitor,
+  FiMic,
+  FiMicOff
+} from 'react-icons/fi';
+
+interface Agent {
+  id: string;
+  name: string;
+  status: 'active' | 'inactive' | 'error';
+  type: string;
+  endpoint?: string;
+  port?: number;
+  lastSeen: string;
+  capabilities?: string[];
+  version?: string;
+  uptime?: number;
+  health?: {
+    status: string;
+    score: number;
+    memory_usage?: number;
+    cpu_usage?: number;
+  };
+}
+
+interface ChatMessage {
+  id: string;
+  type: 'user' | 'agent' | 'system';
+  content: string;
+  timestamp: Date;
+  agentId?: string;
+  metadata?: {
+    action?: string;
+    duration?: number;
+    status?: 'success' | 'error' | 'pending';
+    protocol?: string;
+    trace_id?: string;
+  };
+}
+
+interface EventTrace {
+  id: string;
+  timestamp: Date;
+  event_type: 'function_call' | 'response' | 'error' | 'trace';
+  agent_id: string;
+  function_name?: string;
+  input?: any;
+  output?: any;
+  duration?: number;
+  status: 'success' | 'error' | 'pending';
+  trace_logs?: string[];
+}
+
+const AgenticControlDashboard: React.FC = () => {
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [currentMessage, setCurrentMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isTyping, setIsTyping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [events, setEvents] = useState<EventTrace[]>([]);
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [agentConfig, setAgentConfig] = useState<any>(null);
+  const [selectedProject, setSelectedProject] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const toast = useToast();
+
+  const bg = useColorModeValue('white', 'gray.800');
+  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const sidebarBg = useColorModeValue('gray.50', 'gray.900');
+  const inputBg = useColorModeValue('white', 'gray.700');
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  // Voice recording functionality
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      
+      const audioChunks: BlobPart[] = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        audioChunks.push(event.data);
+      };
+      
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+        // TODO: Implement speech-to-text conversion
+        toast({
+          title: 'Voice recorded',
+          description: 'Speech-to-text conversion not yet implemented',
+          status: 'info',
+          duration: 3000,
+        });
+        stream.getTracks().forEach(track => track.stop());
+      };
+      
+      mediaRecorder.start();
+      setIsRecording(true);
+      
+      toast({
+        title: 'Recording started',
+        description: 'Speak your message now',
+        status: 'success',
+        duration: 2000,
+      });
+    } catch (error) {
+      toast({
+        title: 'Microphone access denied',
+        description: 'Please allow microphone access to use voice input',
+        status: 'error',
+        duration: 4000,
+      });
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const toggleVoiceRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  const loadAgentConfig = async (agent: Agent) => {
+    try {
+      const response = await fetch(`${agent.endpoint}/config`);
+      if (response.ok) {
+        const config = await response.json();
+        setAgentConfig(config);
+      } else {
+        // Fallback config structure
+        setAgentConfig({
+          agent_id: agent.id,
+          name: agent.name,
+          type: agent.type,
+          description: `${agent.name} - Specialized agent for ${agent.type} operations`,
+          instructions: [
+            "Process user queries according to agent specialization",
+            "Maintain conversational context and memory",
+            "Coordinate with other agents when necessary",
+            "Provide structured responses with metadata"
+          ],
+          capabilities: agent.capabilities || [],
+          memory: {
+            persistent_memory: "Enabled",
+            context_window: "4096 tokens",
+            memory_retention: "Session-based with persistent storage"
+          },
+          configuration: {
+            model: "mistral:latest",
+            temperature: 0.2,
+            max_tokens: 1500,
+            timeout: 60000
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load agent config:', error);
+      setAgentConfig({
+        agent_id: agent.id,
+        name: agent.name,
+        type: agent.type,
+        description: `${agent.name} - Configuration unavailable`,
+        instructions: ["Configuration could not be loaded"],
+        capabilities: [],
+        memory: {},
+        configuration: {}
+      });
+    }
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const loadAgents = async (silent = false) => {
+    if (!silent) {
+      setIsLoading(true);
+    }
+    setError(null);
+    
+    try {
+      const response = await fetch('/api/agentic-control/agents');
+      if (response.ok) {
+        const data = await response.json();
+        setAgents(data.agents || []);
+        
+        // Auto-select first available agent
+        if (data.agents && data.agents.length > 0 && !selectedAgent) {
+          setSelectedAgent(data.agents[0]);
+        }
+      } else {
+        throw new Error(`Failed to load agents: ${response.statusText}`);
+      }
+    } catch (error) {
+      console.error('Failed to load agents:', error);
+      setError('Failed to load agents from API');
+      setAgents([]);
+    } finally {
+      if (!silent) {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    loadAgents();
+    // Removed auto-refresh to prevent cycling interference with agent communication
+  }, []);
+
+  const getStatusColor = (status: Agent['status']) => {
+    switch (status) {
+      case 'active': return 'green';
+      case 'inactive': return 'yellow';
+      case 'error': return 'red';
+      default: return 'gray';
+    }
+  };
+
+  const addEvent = (event: Omit<EventTrace, 'id' | 'timestamp'>) => {
+    const newEvent: EventTrace = {
+      ...event,
+      id: `event-${Date.now()}-${Math.random()}`,
+      timestamp: new Date(),
+    };
+    setEvents(prev => [newEvent, ...prev].slice(0, 100)); // Keep last 100 events
+  };
+
+  const handleSendMessage = async () => {
+    if (!currentMessage.trim() || !selectedAgent) return;
+
+    const userMessage: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      type: 'user',
+      content: currentMessage,
+      timestamp: new Date(),
+      agentId: selectedAgent.id,
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    const messageContent = currentMessage;
+    setCurrentMessage('');
+    setIsTyping(true);
+
+    // Add user message event
+    addEvent({
+      event_type: 'function_call',
+      agent_id: selectedAgent.id,
+      function_name: 'chat_request',
+      input: { message: messageContent },
+      status: 'pending',
+    });
+
+    try {
+      if (selectedAgent.endpoint) {
+        const a2aResponse = await fetch(`${selectedAgent.endpoint}/a2a/message`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            type: selectedAgent.type === 'orchestrator' ? 'task_request' : 'query_request',
+            payload: {
+              query: messageContent,
+              context: {
+                userId: 'dashboard-user',
+                sessionId: `session-${Date.now()}`,
+                agentType: selectedAgent.type,
+              },
+              response_format: 'natural_language'
+            },
+            requestId: `req-${Date.now()}`,
+            sender: 'agentic-control-dashboard',
+            timestamp: new Date().toISOString(),
+          }),
+        });
+
+        if (a2aResponse.ok) {
+          const a2aData = await a2aResponse.json();
+          
+          // Handle direct text responses (new format)
+          let formattedContent = '';
+          if (a2aData.success && typeof a2aData.result === 'string') {
+            // Simple text response from agent
+            formattedContent = a2aData.result;
+          } else if (a2aData.success && a2aData.result && typeof a2aData.result === 'object') {
+            // Handle structured result object
+            const data = a2aData.result;
+            if (typeof data === 'string') {
+              formattedContent = data;
+            } else if (data.analysis && typeof data.analysis === 'string') {
+              formattedContent = data.analysis;
+            } else {
+              formattedContent = JSON.stringify(data, null, 2);
+            }
+          } else if (a2aData.data && typeof a2aData.data === 'object') {
+            const data = a2aData.data;
+            
+            // Handle orchestrator responses (complex workflow analysis)
+            if (data.response && typeof data.response === 'object') {
+              const response = data.response;
+              
+              // Format task decomposition
+              if (response.task_decomposition_and_analysis) {
+                formattedContent += '**Task Analysis:**\n';
+                if (response.task_decomposition_and_analysis.steps) {
+                  response.task_decomposition_and_analysis.steps.forEach((step: string, i: number) => {
+                    formattedContent += `${i + 1}. ${step}\n`;
+                  });
+                }
+                formattedContent += '\n';
+              }
+              
+              // Format agent capabilities
+              if (response.required_agent_capabilities_and_selection_rationale) {
+                formattedContent += '**Agent Capabilities:**\n';
+                const agents = response.required_agent_capabilities_and_selection_rationale.agents;
+                if (agents && Array.isArray(agents)) {
+                  agents.forEach((agent: any) => {
+                    formattedContent += `• **${agent.agent_id}**: ${agent.role}\n`;
+                  });
+                }
+                formattedContent += '\n';
+              }
+              
+              // Format execution strategy
+              if (response.execution_strategy) {
+                formattedContent += '**Execution Strategy:**\n';
+                formattedContent += `Type: ${response.execution_strategy.type}\n`;
+                if (response.execution_strategy.reasoning) {
+                  formattedContent += `Reasoning: ${response.execution_strategy.reasoning}\n`;
+                }
+                formattedContent += '\n';
+              }
+              
+              // Format success criteria
+              if (response.success_criteria_and_validation_approach) {
+                formattedContent += '**Success Criteria:**\n';
+                const criteria = response.success_criteria_and_validation_approach.criteria;
+                if (criteria && Array.isArray(criteria)) {
+                  criteria.forEach((criterion: string) => {
+                    formattedContent += `• ${criterion}\n`;
+                  });
+                }
+              }
+            }
+            // Handle graph-query agent responses
+            else if (data.type === 'query_response') {
+              formattedContent += `**Query Response:**\n${data.response}\n\n`;
+              
+              if (data.data) {
+                if (data.data.success === false && data.data.error) {
+                  formattedContent += `**Error:** ${data.data.error}\n`;
+                }
+                if (data.data.query) {
+                  formattedContent += `**Query:** \`${data.data.query}\`\n`;
+                }
+                if (data.data.parameters) {
+                  formattedContent += `**Parameters:**\n`;
+                  Object.entries(data.data.parameters).forEach(([key, value]) => {
+                    formattedContent += `• ${key}: ${value}\n`;
+                  });
+                }
+              }
+            }
+            // Handle vector-search agent responses
+            else if (data.type === 'search_response') {
+              formattedContent += `**Search Results:**\n${data.response}\n\n`;
+              if (data.results && Array.isArray(data.results)) {
+                formattedContent += `**Found ${data.results.length} results:**\n`;
+                data.results.forEach((result: any, i: number) => {
+                  formattedContent += `${i + 1}. ${result.title || result.content || 'Result'}\n`;
+                });
+              }
+            }
+            // Handle documentation agent responses
+            else if (data.type === 'documentation_response') {
+              formattedContent += `**Documentation:**\n${data.response}\n\n`;
+              if (data.documents) {
+                formattedContent += `**Related Documents:** ${data.documents.length} found\n`;
+              }
+            }
+            // Handle reasoning agent responses
+            else if (data.type === 'reasoning_response') {
+              formattedContent += `**Analysis:**\n${data.response}\n\n`;
+              if (data.reasoning_steps) {
+                formattedContent += `**Reasoning Steps:**\n`;
+                data.reasoning_steps.forEach((step: string, i: number) => {
+                  formattedContent += `${i + 1}. ${step}\n`;
+                });
+              }
+            }
+            // Handle enhanced-memory agent responses
+            else if (data.type === 'memory_response') {
+              formattedContent += `**Memory Operation:**\n${data.response}\n\n`;
+              if (data.memories_found) {
+                formattedContent += `**Memories Found:** ${data.memories_found}\n`;
+              }
+            }
+            // Handle integration agent responses
+            else if (data.type === 'integration_response') {
+              formattedContent += `**Integration Status:**\n${data.response}\n\n`;
+              if (data.services_connected) {
+                formattedContent += `**Connected Services:** ${data.services_connected.join(', ')}\n`;
+              }
+            }
+            // Generic structured response fallback
+            else if (typeof data.response === 'string') {
+              formattedContent = data.response;
+            }
+            else {
+              // Fallback for other structured data
+              formattedContent = JSON.stringify(data, null, 2);
+            }
+          } else {
+            // Handle simple string responses
+            formattedContent = a2aData.response || a2aData.result || 'Agent processed your request successfully.';
+          }
+          
+          const agentResponse: ChatMessage = {
+            id: `msg-${Date.now()}-agent`,
+            type: 'agent',
+            content: formattedContent,
+            timestamp: new Date(),
+            agentId: selectedAgent.id,
+            metadata: {
+              action: 'a2a_response',
+              duration: a2aData.metadata?.processing_time_ms || 1000,
+              status: 'success',
+              protocol: 'A2A',
+              trace_id: a2aData.trace_id,
+              agent_capabilities: a2aData.metadata?.capabilities_used,
+              llm_provider: a2aData.metadata?.llm_provider,
+              model: a2aData.metadata?.model,
+            },
+          };
+
+          setMessages(prev => [...prev, agentResponse]);
+          
+          // Add successful response event
+          addEvent({
+            event_type: 'response',
+            agent_id: selectedAgent.id,
+            output: a2aData,
+            duration: a2aData.processingTime || 1000,
+            status: 'success',
+          });
+
+          setIsTyping(false);
+          return;
+        }
+      }
+
+      // Fallback to mock response
+      throw new Error('A2A communication failed, using fallback');
+      
+    } catch (error) {
+      console.log(`[Dashboard] A2A communication failed for ${selectedAgent.name}, using mock response`);
+      
+      // Add error event
+      addEvent({
+        event_type: 'error',
+        agent_id: selectedAgent.id,
+        output: typeof error.message === 'object' ? JSON.stringify(error.message, null, 2) : String(error.message || error),
+        status: 'error',
+      });
+
+      // Generate mock response
+      setTimeout(() => {
+        const mockResponses = {
+          'knowledge-graph': 'I can help you query and analyze the knowledge graph. What would you like to explore?',
+          'documentation': 'I can assist with documentation management and content enhancement. How can I help?',
+          'reasoning': 'I provide logical analysis and decision support. What problem should we work on?',
+          'enhanced-memory': 'I manage persistent memory and learning patterns. What information do you need?',
+          'default': `I'm ${selectedAgent.name} and I'm ready to assist you. What can I do for you today?`,
+        };
+
+        const responseKey = selectedAgent.type.toLowerCase().includes('knowledge') ? 'knowledge-graph' :
+                           selectedAgent.type.toLowerCase().includes('documentation') ? 'documentation' :
+                           selectedAgent.type.toLowerCase().includes('reasoning') ? 'reasoning' :
+                           selectedAgent.type.toLowerCase().includes('memory') ? 'enhanced-memory' : 'default';
+
+        const mockContent = mockResponses[responseKey];
+        const agentResponse: ChatMessage = {
+          id: `msg-${Date.now()}-agent`,
+          type: 'agent',
+          content: typeof mockContent === 'object' ? JSON.stringify(mockContent, null, 2) : mockContent,
+          timestamp: new Date(),
+          agentId: selectedAgent.id,
+          metadata: {
+            action: 'mock_response',
+            duration: 1500,
+            status: 'success',
+            protocol: 'Mock',
+          },
+        };
+
+        setMessages(prev => [...prev, agentResponse]);
+        
+        // Add mock response event
+        addEvent({
+          event_type: 'response',
+          agent_id: selectedAgent.id,
+          output: typeof mockContent === 'object' ? JSON.stringify(mockContent, null, 2) : mockContent,
+          duration: 1500,
+          status: 'success',
+        });
+
+        setIsTyping(false);
+      }, 1500);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <Box p={6} display="flex" justifyContent="center" alignItems="center" minH="600px">
+        <VStack spacing={4}>
+          <Spinner size="xl" color="blue.500" />
+          <Text fontSize="lg">Discovering ADK agents...</Text>
+        </VStack>
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box p={6}>
+        <Alert status="error">
+          <AlertIcon />
+          <AlertTitle>Connection Error!</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </Box>
+    );
+  }
+
+  return (
+    <Grid templateColumns="300px 1fr 350px" h="calc(100vh - 80px)" gap={0}>
+      {/* Left Sidebar - Agent Selection */}
+      <GridItem bg={sidebarBg} borderRight="1px" borderColor={borderColor} p={4}>
+        <VStack spacing={4} align="stretch" h="full">
+          <HStack justify="space-between">
+            <Text fontSize="lg" fontWeight="bold">Available Agents</Text>
+            <Tooltip label="Refresh agents">
+              <IconButton
+                aria-label="Refresh agents"
+                icon={<FiRefreshCcw />}
+                size="sm"
+                variant="ghost"
+                onClick={() => loadAgents(true)}
+              />
+            </Tooltip>
+          </HStack>
+
+          <Select
+            placeholder="Filter by project"
+            value={selectedProject}
+            onChange={(e) => setSelectedProject(e.target.value)}
+            size="sm"
+          >
+            {Array.from(projectTypes).map(project => (
+              <option key={project} value={project}>
+                {project.charAt(0).toUpperCase() + project.slice(1)}
+              </option>
+            ))}
+          </Select>
+
+          <Divider />
+
+          <VStack spacing={3} align="stretch" flex={1} overflowY="auto">
+            {filteredAgents.map((agent) => (
+              <Card
+                key={agent.id}
+                cursor="pointer"
+                bg={selectedAgent?.id === agent.id ? 'blue.50' : bg}
+                borderColor={selectedAgent?.id === agent.id ? 'blue.200' : borderColor}
+                borderWidth="1px"
+                _hover={{ bg: useColorModeValue('gray.50', 'gray.700') }}
+                onClick={() => setSelectedAgent(agent)}
+              >
+                <CardBody p={3}>
+                  <HStack spacing={3}>
+                    <Avatar size="sm" name={agent.name} bg="blue.500" />
+                    <VStack align="start" spacing={0} flex={1}>
+                      <Text fontSize="sm" fontWeight="medium">{agent.name}</Text>
+                      <Text fontSize="xs" color="gray.500">{agent.type}</Text>
+                      <Badge
+                        size="xs"
+                        colorScheme={agent.status === 'healthy' ? 'green' : 'red'}
+                      >
+                        {agent.status}
+                      </Badge>
+                    </VStack>
+                  </HStack>
+                </CardBody>
+              </Card>
+            ))}
+          </VStack>
+
+          {agents.length === 0 && (
+            <Alert status="info" size="sm">
+              <AlertIcon />
+              <Box>
+                <AlertTitle fontSize="sm">No agents found</AlertTitle>
+                <AlertDescription fontSize="xs">
+                  Check that ADK agents are running
+                </AlertDescription>
+              </Box>
+            </Alert>
+          )}
+        </VStack>
+      </GridItem>
+
+      {/* Center Panel - Chat Interface */}
+      <GridItem bg={bg} display="flex" flexDirection="column">
+        {selectedAgent ? (
+          <>
+            {/* Agent Header */}
+            <HStack p={4} borderBottom="1px" borderColor={borderColor} bg={sidebarBg}>
+              <Avatar size="sm" name={selectedAgent.name} />
+              <VStack align="start" spacing={0} flex={1}>
+                <Text fontWeight="bold">{selectedAgent.name}</Text>
+                <HStack spacing={2}>
+                  <Badge size="sm" colorScheme={getStatusColor(selectedAgent.status)}>
+                    {selectedAgent.status}
+                  </Badge>
+                  <Text fontSize="xs" color="gray.500">
+                    {selectedAgent.type}
+                  </Text>
+                </HStack>
+              </VStack>
+              <HStack>
+                <Tooltip label={isVoiceEnabled ? "Disable voice" : "Enable voice"}>
+                  <IconButton
+                    aria-label="Toggle voice"
+                    icon={isVoiceEnabled ? <FiMic /> : <FiMicOff />}
+                    size="sm"
+                    variant={isVoiceEnabled ? "solid" : "ghost"}
+                    colorScheme={isVoiceEnabled ? "green" : "gray"}
+                    onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
+                  />
+                </Tooltip>
+                <Tooltip label="Agent settings">
+                  <IconButton
+                    aria-label="Settings"
+                    icon={<FiSettings />}
+                    size="sm"
+                    variant="ghost"
+                  />
+                </Tooltip>
+              </HStack>
+            </HStack>
+
+            {/* Messages Area */}
+            <VStack flex={1} overflowY="auto" p={4} spacing={4} align="stretch">
+              {messages.length === 0 && (
+                <Box textAlign="center" py={8}>
+                  <FiMessageSquare size={48} color="gray" />
+                  <Text mt={4} color="gray.500">
+                    Start a conversation with {selectedAgent.name}
+                  </Text>
+                  <Text fontSize="sm" color="gray.400">
+                    Type a message below to begin
+                  </Text>
+                </Box>
+              )}
+
+              {messages.map((message) => (
+                <Flex
+                  key={message.id}
+                  justify={message.type === 'user' ? 'flex-end' : 'flex-start'}
+                >
+                  <Box
+                    maxW="70%"
+                    bg={message.type === 'user' ? 'blue.500' : 'gray.100'}
+                    color={message.type === 'user' ? 'white' : 'black'}
+                    px={4}
+                    py={2}
+                    borderRadius="lg"
+                    borderBottomRightRadius={message.type === 'user' ? 'sm' : 'lg'}
+                    borderBottomLeftRadius={message.type === 'agent' ? 'sm' : 'lg'}
+                  >
+                    <Text fontSize="sm">
+                      {typeof message.content === 'object' 
+                        ? JSON.stringify(message.content, null, 2) 
+                        : String(message.content)
+                      }
+                    </Text>
+                    <HStack justify="space-between" mt={1}>
+                      <Text fontSize="xs" opacity={0.7}>
+                        {message.timestamp.toLocaleTimeString()}
+                      </Text>
+                      {message.metadata && (
+                        <Badge size="xs" colorScheme={message.metadata.status === 'success' ? 'green' : 'red'}>
+                          {message.metadata.protocol}
+                        </Badge>
+                      )}
+                    </HStack>
+                  </Box>
+                </Flex>
+              ))}
+
+              {isTyping && (
+                <Flex justify="flex-start">
+                  <Box bg="gray.100" px={4} py={2} borderRadius="lg">
+                    <HStack spacing={1}>
+                      <Text fontSize="sm">{selectedAgent.name} is typing</Text>
+                      <Spinner size="xs" />
+                    </HStack>
+                  </Box>
+                </Flex>
+              )}
+
+              <div ref={messagesEndRef} />
+            </VStack>
+
+            {/* Input Area */}
+            <HStack p={4} borderTop="1px" borderColor={borderColor} bg={sidebarBg}>
+              <Textarea
+                placeholder={`Message ${selectedAgent.name}...`}
+                value={currentMessage}
+                onChange={(e) => setCurrentMessage(e.target.value)}
+                onKeyPress={handleKeyPress}
+                resize="none"
+                minH="unset"
+                rows={1}
+                bg={inputBg}
+                flex={1}
+              />
+              <IconButton
+                aria-label="Send message"
+                icon={<FiSend />}
+                colorScheme="blue"
+                onClick={handleSendMessage}
+                isDisabled={!currentMessage.trim() || isTyping}
+              />
+            </HStack>
+          </>
+        ) : (
+          <Box display="flex" alignItems="center" justifyContent="center" h="full">
+            <VStack spacing={4}>
+              <FiMonitor size={64} color="gray" />
+              <Text fontSize="xl" color="gray.500">Select an AI Agent</Text>
+              <Text fontSize="sm" color="gray.400" textAlign="center">
+                Choose an agent from the sidebar to start an interactive<br />
+                conversation and manage your AI interactions
+              </Text>
+            </VStack>
+          </Box>
+        )}
+      </GridItem>
+
+      {/* Right Sidebar - Events & Actions */}
+      <GridItem bg={sidebarBg} borderLeft="1px" borderColor={borderColor} p={4}>
+        <Tabs size="sm" variant="enclosed">
+          <TabList>
+            <Tab fontSize="xs">Events</Tab>
+            <Tab fontSize="xs">Actions</Tab>
+          </TabList>
+
+          <TabPanels h="calc(100% - 40px)">
+            <TabPanel p={0} pt={4} h="full">
+              <VStack spacing={3} align="stretch" h="full">
+                <HStack justify="space-between">
+                  <Text fontSize="sm" fontWeight="bold">Event Trace</Text>
+                  <IconButton
+                    aria-label="Clear events"
+                    icon={<FiRefreshCcw />}
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => setEvents([])}
+                  />
+                </HStack>
+
+                <VStack spacing={2} align="stretch" flex={1} overflowY="auto">
+                  {events.length === 0 ? (
+                    <Box textAlign="center" py={8}>
+                      <FiActivity size={32} color="gray" />
+                      <Text mt={2} fontSize="sm" color="gray.500">
+                        No events yet
+                      </Text>
+                    </Box>
+                  ) : (
+                    events.map((event) => (
+                      <Card key={event.id} size="sm">
+                        <CardBody>
+                          <VStack spacing={1} align="start">
+                            <HStack justify="space-between" w="full">
+                              <Badge size="xs" colorScheme={event.status === 'success' ? 'green' : event.status === 'error' ? 'red' : 'yellow'}>
+                                {event.event_type}
+                              </Badge>
+                              <Text fontSize="xs" color="gray.500">
+                                {event.timestamp.toLocaleTimeString()}
+                              </Text>
+                            </HStack>
+                            
+                            {event.function_name && (
+                              <Text fontSize="xs" fontWeight="medium">
+                                {event.function_name}
+                              </Text>
+                            )}
+                            
+                            {event.duration && (
+                              <HStack spacing={1}>
+                                <FiClock size={10} />
+                                <Text fontSize="xs" color="gray.500">
+                                  {event.duration}ms
+                                </Text>
+                              </HStack>
+                            )}
+                            
+                            {event.output && (
+                              <Code fontSize="xs" p={1} bg="gray.50" borderRadius="sm" noOfLines={2}>
+                                {typeof event.output === 'object' 
+                                  ? JSON.stringify(event.output, null, 2)
+                                  : String(event.output)
+                                }
+                              </Code>
+                            )}
+                          </VStack>
+                        </CardBody>
+                      </Card>
+                    ))
+                  )}
+                </VStack>
+              </VStack>
+            </TabPanel>
+
+            <TabPanel p={0} pt={4} h="full">
+              <VStack spacing={3} align="stretch">
+                <Text fontSize="sm" fontWeight="bold">Agent Actions</Text>
+                
+                {selectedAgent ? (
+                  <VStack spacing={2} align="stretch">
+                    <Button size="sm" leftIcon={<FiZap />} variant="outline">
+                      Quick Actions
+                    </Button>
+                    <Button size="sm" leftIcon={<FiPlay />} variant="outline">
+                      Run Workflow
+                    </Button>
+                    <Button size="sm" leftIcon={<FiActivity />} variant="outline">
+                      View Metrics
+                    </Button>
+                    
+                    <Divider />
+                    
+                    <Box>
+                      <Text fontSize="xs" fontWeight="medium" mb={2}>Agent Status</Text>
+                      <VStack spacing={1} align="start">
+                        <HStack justify="space-between" w="full">
+                          <Text fontSize="xs">Health</Text>
+                          <Badge size="xs" colorScheme="green">Good</Badge>
+                        </HStack>
+                        <HStack justify="space-between" w="full">
+                          <Text fontSize="xs">Uptime</Text>
+                          <Text fontSize="xs">{selectedAgent.uptime || 0}s</Text>
+                        </HStack>
+                        {selectedAgent.version && (
+                          <HStack justify="space-between" w="full">
+                            <Text fontSize="xs">Version</Text>
+                            <Text fontSize="xs">{selectedAgent.version}</Text>
+                          </HStack>
+                        )}
+                      </VStack>
+                    </Box>
+                  </VStack>
+                ) : (
+                  <Box textAlign="center" py={8}>
+                    <Text fontSize="sm" color="gray.500">
+                      Select an agent to view actions
+                    </Text>
+                  </Box>
+                )}
+              </VStack>
+            </TabPanel>
+          </TabPanels>
+        </Tabs>
+      </GridItem>
+    </Grid>
+
+    {/* Agent Settings Modal */}
+    <Modal isOpen={showSettings} onClose={() => setShowSettings(false)} size="xl">
+      <ModalOverlay />
+      <ModalContent>
+        <ModalHeader>Agent Configuration - {selectedAgent?.name}</ModalHeader>
+        <ModalCloseButton />
+        <ModalBody>
+          {agentConfig && (
+            <VStack spacing={6} align="stretch">
+              <Box>
+                <Text fontWeight="bold" mb={2}>Description</Text>
+                <Text fontSize="sm" color="gray.600">{agentConfig.description}</Text>
+              </Box>
+
+              <Divider />
+
+              <Box>
+                <Text fontWeight="bold" mb={3}>Instructions</Text>
+                <VStack spacing={2} align="stretch">
+                  {agentConfig.instructions?.map((instruction: string, i: number) => (
+                    <Text key={i} fontSize="sm" pl={4} borderLeft="2px" borderColor="blue.200">
+                      {instruction}
+                    </Text>
+                  ))}
+                </VStack>
+              </Box>
+
+              <Divider />
+
+              <Box>
+                <Text fontWeight="bold" mb={3}>Capabilities</Text>
+                <SimpleGrid columns={2} spacing={2}>
+                  {agentConfig.capabilities?.map((capability: string, i: number) => (
+                    <Badge key={i} colorScheme="green" variant="subtle">
+                      {capability}
+                    </Badge>
+                  ))}
+                </SimpleGrid>
+              </Box>
+
+              <Divider />
+
+              <Box>
+                <Text fontWeight="bold" mb={3}>Memory Configuration</Text>
+                <VStack spacing={2} align="stretch">
+                  {Object.entries(agentConfig.memory || {}).map(([key, value]) => (
+                    <HStack key={key} justify="space-between">
+                      <Text fontSize="sm" fontWeight="medium">{key.replace(/_/g, ' ')}</Text>
+                      <Code fontSize="xs">{String(value)}</Code>
+                    </HStack>
+                  ))}
+                </VStack>
+              </Box>
+
+              <Divider />
+
+              <Box>
+                <Text fontWeight="bold" mb={3}>Runtime Configuration</Text>
+                <VStack spacing={2} align="stretch">
+                  {Object.entries(agentConfig.configuration || {}).map(([key, value]) => (
+                    <HStack key={key} justify="space-between">
+                      <Text fontSize="sm" fontWeight="medium">{key}</Text>
+                      <Code fontSize="xs">{String(value)}</Code>
+                    </HStack>
+                  ))}
+                </VStack>
+              </Box>
+            </VStack>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <Button onClick={() => setShowSettings(false)}>Close</Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+    </Box>
+  );
+};
+
+export default AgenticControlDashboard;

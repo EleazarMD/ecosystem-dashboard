@@ -1,0 +1,323 @@
+/**
+ * AI Gateway Client Provider for Ecosystem Dashboard
+ * 
+ * Fixed implementation with working SDK integration
+ */
+
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+
+// Connection states
+export enum ConnectionState {
+  DISCONNECTED = 'disconnected',
+  CONNECTING = 'connecting', 
+  CONNECTED = 'connected',
+  RECONNECTING = 'reconnecting',
+  FAILED = 'failed',
+  TIMEOUT = 'timeout'
+}
+
+// Error class
+export class AIGatewayClientError extends Error {
+  constructor(message: string, public code?: string) {
+    super(message);
+    this.name = 'AIGatewayClientError';
+  }
+}
+
+// Local types
+export interface ChatCompletionRequest {
+  model: string;
+  messages: Array<{ role: string; content: string }>;
+  temperature?: number;
+  max_tokens?: number;
+}
+
+export interface ChatCompletionResponse {
+  choices: Array<{
+    message: { content: string };
+  }>;
+}
+
+export interface Model {
+  id: string;
+  name: string;
+  description?: string;
+  provider?: string;
+}
+
+export interface ModelsResponse {
+  data: Model[];
+}
+
+export interface HealthStatus {
+  status: 'healthy' | 'unhealthy' | 'degraded' | string;
+  uptime: number;
+  version?: string;
+  timestamp?: string;
+  service?: string;
+  port?: string;
+}
+
+export interface AIGatewayConfig {
+  url: string;
+  apiKey: string;
+  timeout?: number;
+}
+
+// Client context interface
+interface AIGatewayClientContextType {
+  // Connection state
+  isConnected: boolean;
+  connectionState: ConnectionState;
+  isLoading: boolean;
+  
+  // Health and status
+  healthStatus: HealthStatus | null;
+  lastHealthCheck: Date | null;
+  
+  // Available models
+  models: Model[];
+  lastModelsUpdate: Date | null;
+  
+  // Error handling
+  error: AIGatewayClientError | null;
+  fallbackMode: boolean;
+  
+  // Actions
+  connect: () => Promise<void>;
+  checkHealth: () => Promise<void>;
+  loadModels: () => Promise<void>;
+  clearError: () => void;
+  
+  // Chat methods (basic)
+  sendBasicChat: (message: string, model?: string) => Promise<string>;
+}
+
+// Create context
+const AIGatewayClientContext = createContext<AIGatewayClientContextType | null>(null);
+
+// Default configuration
+const DEFAULT_CONFIG: AIGatewayConfig = {
+  url: process.env.NEXT_PUBLIC_AI_GATEWAY_URL || 'http://localhost:8777',
+  apiKey: process.env.NEXT_PUBLIC_AI_GATEWAY_API_KEY || 'ai-gateway-api-key-2024',
+  timeout: 10000
+};
+
+// Provider component
+export function AIGatewayClientProvider({ 
+  children, 
+  config = DEFAULT_CONFIG 
+}: { 
+  children: ReactNode;
+  config?: Partial<AIGatewayConfig>;
+}) {
+  // State
+  const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.DISCONNECTED);
+  const [isLoading, setIsLoading] = useState(false);
+  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
+  const [lastHealthCheck, setLastHealthCheck] = useState<Date | null>(null);
+  const [models, setModels] = useState<Model[]>([]);
+  const [lastModelsUpdate, setLastModelsUpdate] = useState<Date | null>(null);
+  const [error, setError] = useState<AIGatewayClientError | null>(null);
+  const [fallbackMode, setFallbackMode] = useState(false);
+  const [clientInstance, setClientInstance] = useState<any>(null);
+
+  // Merge config
+  const finalConfig = { ...DEFAULT_CONFIG, ...config };
+
+  // Initialize SDK client
+  const initializeClient = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      setConnectionState(ConnectionState.CONNECTING);
+
+      // Dynamic import of the working SDK
+      const SDK = await import('../../../../../core/orchestrator/libraries/ai-gateway-client-sdk/typescript/dist/index.js');
+      
+      // Create client instance using the working pattern
+      const client = SDK.createSimpleClient(finalConfig.apiKey, finalConfig.url);
+      
+      setClientInstance(client);
+      setConnectionState(ConnectionState.CONNECTED);
+      setFallbackMode(false);
+      
+      return client;
+    } catch (err: any) {
+      console.error('Failed to initialize AI Gateway client:', err);
+      setError(new AIGatewayClientError(err.message, 'INIT_FAILED'));
+      setConnectionState(ConnectionState.FAILED);
+      setFallbackMode(true);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Connect function
+  const connect = async () => {
+    try {
+      const client = await initializeClient();
+      // Test the connection
+      await checkHealthInternal(client);
+    } catch (err: any) {
+      console.error('Connection failed:', err);
+      setFallbackMode(true);
+    }
+  };
+
+  // Internal health check
+  const checkHealthInternal = async (client?: any) => {
+    const activeClient = client || clientInstance;
+    if (!activeClient) {
+      throw new Error('No client available');
+    }
+
+    try {
+      const health = await activeClient.checkHealth();
+      setHealthStatus(health);
+      setLastHealthCheck(new Date());
+      setError(null);
+      
+      return health;
+    } catch (err: any) {
+      console.error('Health check failed:', err);
+      setError(new AIGatewayClientError(err.message, 'HEALTH_FAILED'));
+      throw err;
+    }
+  };
+
+  // Public health check
+  const checkHealth = async () => {
+    setIsLoading(true);
+    try {
+      await checkHealthInternal();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Load models
+  const loadModels = async () => {
+    if (!clientInstance) {
+      throw new Error('Client not initialized');
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await clientInstance.listModels();
+      const modelData = response?.data || [];
+      
+      setModels(modelData);
+      setLastModelsUpdate(new Date());
+      setError(null);
+    } catch (err: any) {
+      console.error('Failed to load models:', err);
+      setError(new AIGatewayClientError(err.message, 'MODELS_FAILED'));
+      
+      // Set fallback models
+      setModels([
+        { id: 'llama3.1:8b', name: 'Llama 3.1 8B', provider: 'Ollama' },
+        { id: 'gpt-4', name: 'GPT-4', provider: 'OpenAI' },
+        { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'Anthropic' }
+      ]);
+      setLastModelsUpdate(new Date());
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Basic chat function (safe implementation)
+  const sendBasicChat = async (message: string, model = 'llama3.1:8b'): Promise<string> => {
+    if (!clientInstance) {
+      throw new Error('Client not initialized');
+    }
+
+    try {
+      // Use a safe, direct HTTP approach to avoid SDK chat completion issues
+      const response = await fetch(`${finalConfig.url}/api/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': finalConfig.apiKey
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: message }],
+          max_tokens: 150,
+          temperature: 0.7
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.choices?.[0]?.message?.content || 'No response';
+      
+    } catch (err: any) {
+      console.error('Chat completion failed:', err);
+      setError(new AIGatewayClientError(err.message, 'CHAT_FAILED'));
+      throw err;
+    }
+  };
+
+  // Clear error
+  const clearError = () => {
+    setError(null);
+  };
+
+  // Auto-connect on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      connect().catch(console.error);
+    }
+  }, []);
+
+  // Context value
+  const contextValue: AIGatewayClientContextType = {
+    // Connection state
+    isConnected: connectionState === ConnectionState.CONNECTED,
+    connectionState,
+    isLoading,
+    
+    // Health and status
+    healthStatus,
+    lastHealthCheck,
+    
+    // Models
+    models,
+    lastModelsUpdate,
+    
+    // Error handling
+    error,
+    fallbackMode,
+    
+    // Actions
+    connect,
+    checkHealth,
+    loadModels,
+    clearError,
+    
+    // Chat
+    sendBasicChat
+  };
+
+  return (
+    <AIGatewayClientContext.Provider value={contextValue}>
+      {children}
+    </AIGatewayClientContext.Provider>
+  );
+}
+
+// Hook to use the context
+export function useAIGatewayClient() {
+  const context = useContext(AIGatewayClientContext);
+  if (!context) {
+    throw new Error('useAIGatewayClient must be used within AIGatewayClientProvider');
+  }
+  return context;
+}
+
+export default AIGatewayClientProvider;

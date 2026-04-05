@@ -1,0 +1,443 @@
+/**
+ * Pipecat Voice Panel - WebRTC-based voice agent
+ * 
+ * Connects to Nova agent via Pipecat SmallWebRTCTransport with:
+ * - Server-side STT (Whisper) + TTS (Qwen)
+ * - Full tool calling and OpenClaw delegation
+ */
+
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import {
+  Box,
+  VStack,
+  HStack,
+  Text,
+  IconButton,
+  Flex,
+  useToast,
+  Spinner,
+  Badge,
+} from '@chakra-ui/react';
+import { keyframes } from '@emotion/react';
+import { FiMic, FiMicOff, FiPhone, FiPhoneOff, FiVolume2, FiVolumeX } from 'react-icons/fi';
+import { PipecatClient, RTVIEvent, TransportState } from '@pipecat-ai/client-js';
+import { SmallWebRTCTransport } from '@pipecat-ai/small-webrtc-transport';
+
+// Nova agent WebRTC endpoint
+const NOVA_WEBRTC_URL = process.env.NEXT_PUBLIC_NOVA_URL || 'https://rtx-workstation.tailb64e64.ts.net:18800';
+
+type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+interface ThinkingActivity {
+  id: string;
+  type: 'tool_call' | 'search' | 'thinking' | 'delegation';
+  name: string;
+  status: 'pending' | 'running' | 'completed' | 'error';
+  detail?: string;
+  timestamp: Date;
+}
+
+interface ConversationTurn {
+  role: 'user' | 'assistant';
+  text: string;
+  timestamp: Date;
+}
+
+// Animations
+const pulseRing = keyframes`
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.8); opacity: 0; }
+`;
+
+const breathe = keyframes`
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+`;
+
+const listeningPulse = keyframes`
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+  50% { box-shadow: 0 0 20px 8px rgba(59, 130, 246, 0.2); }
+`;
+
+export function PipecatVoicePanel() {
+  const toast = useToast();
+  
+  // Connection state
+  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
+  const [isMuted, setIsMuted] = useState(false);
+  const [isSpeakerMuted, setIsSpeakerMuted] = useState(false);
+  
+  // Conversation state
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [currentTranscript, setCurrentTranscript] = useState('');
+  const [conversation, setConversation] = useState<ConversationTurn[]>([]);
+  
+  // Thinking state
+  const [activities, setActivities] = useState<ThinkingActivity[]>([]);
+  const [thinkingText, setThinkingText] = useState('');
+  const thinkingTextRef = useRef('');
+  
+  // Refs
+  const clientRef = useRef<PipecatClient | null>(null);
+  const conversationEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll conversation
+  useEffect(() => {
+    conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [conversation]);
+
+  // Connect to Nova
+  const connect = useCallback(async () => {
+    if (clientRef.current) {
+      await clientRef.current.disconnect();
+    }
+
+    setConnectionState('connecting');
+
+    try {
+      // Create SmallWebRTC transport for Nova
+      const transport = new SmallWebRTCTransport({
+        webrtcRequestParams: {
+          endpoint: `${NOVA_WEBRTC_URL}/offer`,
+          requestData: {
+            user_id: 'dashboard',
+            audio_mode: 'server',
+          },
+        },
+      });
+
+      const client = new PipecatClient({
+        transport,
+        enableMic: true,
+        enableCam: false,
+        callbacks: {
+          onConnected: () => {
+            setConnectionState('connected');
+            toast({
+              title: 'Connected to Nova',
+              status: 'success',
+              duration: 2000,
+            });
+          },
+          onDisconnected: () => {
+            setConnectionState('disconnected');
+            setIsListening(false);
+            setIsSpeaking(false);
+          },
+          onError: () => {
+            setConnectionState('error');
+            toast({
+              title: 'Connection error',
+              status: 'error',
+              duration: 5000,
+            });
+          },
+          onUserStartedSpeaking: () => {
+            setIsListening(true);
+          },
+          onUserStoppedSpeaking: () => {
+            setIsListening(false);
+          },
+          onUserTranscript: (data) => {
+            if (data.final) {
+              setConversation(prev => [...prev, {
+                role: 'user',
+                text: data.text,
+                timestamp: new Date(),
+              }]);
+              setCurrentTranscript('');
+            } else {
+              setCurrentTranscript(data.text);
+            }
+          },
+          onBotStartedSpeaking: () => {
+            setIsSpeaking(true);
+          },
+          onBotStoppedSpeaking: () => {
+            setIsSpeaking(false);
+          },
+          onBotLlmText: (data) => {
+            thinkingTextRef.current += data.text;
+            setThinkingText(thinkingTextRef.current);
+          },
+          onBotLlmStarted: () => {
+            thinkingTextRef.current = '';
+            setThinkingText('');
+            setActivities([]);
+          },
+          onBotLlmStopped: () => {
+            const text = thinkingTextRef.current;
+            if (text) {
+              setConversation(prev => [...prev, {
+                role: 'assistant',
+                text: text,
+                timestamp: new Date(),
+              }]);
+            }
+          },
+          onLLMFunctionCall: (data) => {
+            const activity: ThinkingActivity = {
+              id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              type: data.function_name.includes('search') ? 'search' : 
+                    data.function_name.includes('openclaw') ? 'delegation' : 'tool_call',
+              name: data.function_name,
+              status: 'running',
+              detail: JSON.stringify(data.args).slice(0, 100),
+              timestamp: new Date(),
+            };
+            setActivities(prev => [...prev, activity]);
+          },
+        },
+      });
+
+      // Connect
+      await client.connect();
+      clientRef.current = client;
+
+    } catch (error) {
+      console.error('Failed to connect:', error);
+      setConnectionState('error');
+      toast({
+        title: 'Failed to connect',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error',
+        duration: 5000,
+      });
+    }
+  }, [toast]);
+
+  // Disconnect
+  const disconnect = useCallback(async () => {
+    if (clientRef.current) {
+      await clientRef.current.disconnect();
+      clientRef.current = null;
+    }
+    setConnectionState('disconnected');
+    setIsListening(false);
+    setIsSpeaking(false);
+  }, []);
+
+  // Toggle mute
+  const toggleMute = useCallback(() => {
+    if (clientRef.current) {
+      clientRef.current.enableMic(!isMuted);
+      setIsMuted(!isMuted);
+    }
+  }, [isMuted]);
+
+  // Get orb color based on state
+  const getOrbColor = () => {
+    if (connectionState !== 'connected') return 'gray.500';
+    if (isSpeaking) return 'purple.500';
+    if (isListening) return 'blue.500';
+    return 'green.500';
+  };
+
+  const getOrbAnimation = () => {
+    if (connectionState !== 'connected') return undefined;
+    if (isSpeaking) return `${breathe} 0.5s ease-in-out infinite`;
+    if (isListening) return `${listeningPulse} 1.5s ease-in-out infinite`;
+    return `${breathe} 3s ease-in-out infinite`;
+  };
+
+  return (
+    <Flex
+      direction="column"
+      h="100%"
+      bg="gray.900"
+      color="white"
+      p={4}
+    >
+      {/* Header */}
+      <HStack justify="space-between" mb={4}>
+        <Text fontSize="lg" fontWeight="bold">Nova Voice Agent</Text>
+        <Badge
+          colorScheme={
+            connectionState === 'connected' ? 'green' :
+            connectionState === 'connecting' ? 'yellow' :
+            connectionState === 'error' ? 'red' : 'gray'
+          }
+        >
+          {connectionState}
+        </Badge>
+      </HStack>
+
+      {/* Orb */}
+      <Flex justify="center" align="center" flex={1} minH="200px">
+        <Box position="relative">
+          {/* Pulse rings */}
+          {(isListening || isSpeaking) && connectionState === 'connected' && (
+            <>
+              <Box
+                position="absolute"
+                top="50%"
+                left="50%"
+                transform="translate(-50%, -50%)"
+                w="120px"
+                h="120px"
+                borderRadius="full"
+                bg={getOrbColor()}
+                opacity={0.3}
+                animation={`${pulseRing} 2s ease-out infinite`}
+              />
+              <Box
+                position="absolute"
+                top="50%"
+                left="50%"
+                transform="translate(-50%, -50%)"
+                w="120px"
+                h="120px"
+                borderRadius="full"
+                bg={getOrbColor()}
+                opacity={0.3}
+                animation={`${pulseRing} 2s ease-out infinite 0.5s`}
+              />
+            </>
+          )}
+          
+          {/* Main orb */}
+          <Box
+            w="120px"
+            h="120px"
+            borderRadius="full"
+            bg={getOrbColor()}
+            animation={getOrbAnimation()}
+            boxShadow={`0 0 40px ${getOrbColor()}`}
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+          >
+            {connectionState === 'connecting' ? (
+              <Spinner size="lg" color="white" />
+            ) : (
+              <FiMic size={32} />
+            )}
+          </Box>
+        </Box>
+      </Flex>
+
+      {/* Current transcript */}
+      {currentTranscript && (
+        <Box
+          bg="whiteAlpha.100"
+          p={3}
+          borderRadius="md"
+          mb={4}
+          textAlign="center"
+        >
+          <Text fontSize="sm" color="gray.400">Listening...</Text>
+          <Text>{currentTranscript}</Text>
+        </Box>
+      )}
+
+      {/* Thinking activities */}
+      {activities.length > 0 && (
+        <Box
+          bg="purple.900"
+          p={3}
+          borderRadius="md"
+          mb={4}
+          maxH="150px"
+          overflowY="auto"
+        >
+          <Text fontSize="sm" fontWeight="bold" mb={2}>Working...</Text>
+          <VStack align="stretch" spacing={1}>
+            {activities.map(activity => (
+              <HStack key={activity.id} fontSize="xs">
+                <Box
+                  w={2}
+                  h={2}
+                  borderRadius="full"
+                  bg={
+                    activity.status === 'completed' ? 'green.400' :
+                    activity.status === 'running' ? 'yellow.400' :
+                    activity.status === 'error' ? 'red.400' : 'gray.400'
+                  }
+                />
+                <Text color="gray.300">{activity.name}</Text>
+                {activity.status === 'running' && <Spinner size="xs" />}
+              </HStack>
+            ))}
+          </VStack>
+        </Box>
+      )}
+
+      {/* Conversation history */}
+      <Box
+        flex={1}
+        overflowY="auto"
+        mb={4}
+        maxH="300px"
+      >
+        <VStack align="stretch" spacing={2}>
+          {conversation.map((turn, i) => (
+            <Box
+              key={i}
+              bg={turn.role === 'user' ? 'blue.800' : 'gray.700'}
+              p={3}
+              borderRadius="md"
+              alignSelf={turn.role === 'user' ? 'flex-end' : 'flex-start'}
+              maxW="85%"
+            >
+              <Text fontSize="sm">{turn.text}</Text>
+            </Box>
+          ))}
+          <div ref={conversationEndRef} />
+        </VStack>
+      </Box>
+
+      {/* Controls */}
+      <HStack justify="center" spacing={4}>
+        {connectionState === 'disconnected' || connectionState === 'error' ? (
+          <IconButton
+            aria-label="Connect"
+            icon={<FiPhone />}
+            size="lg"
+            colorScheme="green"
+            borderRadius="full"
+            onClick={connect}
+          />
+        ) : connectionState === 'connecting' ? (
+          <IconButton
+            aria-label="Connecting"
+            icon={<Spinner />}
+            size="lg"
+            colorScheme="yellow"
+            borderRadius="full"
+            isDisabled
+          />
+        ) : (
+          <>
+            <IconButton
+              aria-label={isMuted ? 'Unmute' : 'Mute'}
+              icon={isMuted ? <FiMicOff /> : <FiMic />}
+              size="lg"
+              colorScheme={isMuted ? 'red' : 'blue'}
+              borderRadius="full"
+              onClick={toggleMute}
+            />
+            <IconButton
+              aria-label="Disconnect"
+              icon={<FiPhoneOff />}
+              size="lg"
+              colorScheme="red"
+              borderRadius="full"
+              onClick={disconnect}
+            />
+            <IconButton
+              aria-label={isSpeakerMuted ? 'Unmute speaker' : 'Mute speaker'}
+              icon={isSpeakerMuted ? <FiVolumeX /> : <FiVolume2 />}
+              size="lg"
+              colorScheme={isSpeakerMuted ? 'orange' : 'gray'}
+              borderRadius="full"
+              onClick={() => setIsSpeakerMuted(!isSpeakerMuted)}
+            />
+          </>
+        )}
+      </HStack>
+    </Flex>
+  );
+}
+
+export default PipecatVoicePanel;
