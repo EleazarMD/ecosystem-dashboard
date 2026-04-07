@@ -103,6 +103,7 @@ import { useRouter } from 'next/router';
 import { useColorModeValue, useColorMode } from '@chakra-ui/react';
 import { useTeslaSettings } from '@/hooks/useTeslaSettings';
 import TeslaSettingsDrawer from '@/components/tesla/TeslaSettingsDrawer';
+import TeslaFuturisticTheme from '@/components/tesla/TeslaFuturisticTheme';
 import VncKeyboardRelay from '@/components/tesla/VncKeyboardRelay';
 
 // Icon name → component mapping for dynamic bookmarks
@@ -768,7 +769,6 @@ export default function TeslaDashboard() {
       setIsVoiceActive(false);
       setIsListening(false);
       setIsSpeaking(false);
-      setSpeechEndedWithTranscript(false);
       // Don't reset isConversationOpen — text chat may still be active
     });
 
@@ -1037,6 +1037,58 @@ export default function TeslaDashboard() {
     };
   }, [bgCard, bgHover, borderColor]);
 
+  // Render futuristic theme if selected
+  if (teslaSettings.display.themeStyle === 'futuristic') {
+    return (
+      <>
+        <TeslaFuturisticTheme
+          vehicleData={vehicleData}
+          vehicles={vehicles}
+          selectedVin={selectedVin}
+          onVehicleSelect={(vin: string) => setSelectedVin(vin)}
+          emailData={emailData}
+          calendarEvents={calendarEvents}
+          isLoadingEmail={isLoadingEmail}
+          isLoadingCalendar={isLoadingCalendar}
+          isLoadingVehicle={isLoadingVehicle}
+          onSettingsOpen={onSettingsOpen}
+          isVoiceActive={isVoiceActive}
+          isListening={isListening}
+          isSpeaking={isSpeaking}
+          isThinking={isThinking}
+          isConversationOpen={isConversationOpen}
+          isMuted={isMuted}
+          conversationHistory={conversationHistory}
+          currentTranscript={currentTranscript}
+          assistantResponse={assistantResponse}
+          thinkingText={thinkingText}
+          currentToolCall={currentToolCall}
+          textInput={textInput}
+          isSendingText={isSendingText}
+          onVoiceToggle={handleVoiceToggle}
+          onMuteToggle={handleToggleMute}
+          onNewConversation={handleNewConversation}
+          onClearConversation={handleClearConversation}
+          onSendText={handleSendText}
+          onTextInputChange={setTextInput}
+          vncUrl={vncUrl}
+        />
+        <TeslaSettingsDrawer
+          isOpen={isSettingsOpen}
+          onClose={onSettingsClose}
+          settings={teslaSettings}
+          isSaving={isSettingsSaving}
+          onUpdateSettings={updateTeslaSettings}
+          onUpdateVnc={updateVnc}
+          onUpdateBookmarks={updateBookmarks}
+          onAddBookmark={addBookmark}
+          onRemoveBookmark={removeBookmark}
+        />
+      </>
+    );
+  }
+
+  // Classic theme (default)
   return (
     <Box
       minH="100vh"

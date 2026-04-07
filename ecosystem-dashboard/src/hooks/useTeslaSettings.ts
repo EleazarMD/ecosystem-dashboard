@@ -32,6 +32,7 @@ export interface TeslaDashboardSettings {
   display: {
     browserHeightPercent: number;
     theme: 'auto' | 'light' | 'dark';
+    themeStyle: 'classic' | 'futuristic';
     novaWidthPercent: number;
   };
 }
@@ -57,6 +58,7 @@ const DEFAULT_SETTINGS: TeslaDashboardSettings = {
   display: {
     browserHeightPercent: 60,
     theme: 'auto',
+    themeStyle: 'classic',
     novaWidthPercent: 33,
   },
 };

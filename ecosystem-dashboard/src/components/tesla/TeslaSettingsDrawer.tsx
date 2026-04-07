@@ -395,6 +395,20 @@ export default function TeslaSettingsDrawer({
                 </FormControl>
 
                 <FormControl>
+                  <FormLabel fontSize="sm" fontWeight="medium">Dashboard Style</FormLabel>
+                  <Select
+                    size="sm"
+                    borderRadius="lg"
+                    value={settings.display.themeStyle}
+                    onChange={(e) => onUpdateSettings({ display: { ...settings.display, themeStyle: e.target.value as 'classic' | 'futuristic' } })}
+                  >
+                    <option value="classic">Classic (Current)</option>
+                    <option value="futuristic">Futuristic (Tesla UI)</option>
+                  </Select>
+                  <FormHelperText fontSize="xs">Choose between classic cards or futuristic Tesla-style interface</FormHelperText>
+                </FormControl>
+
+                <FormControl>
                   <FormLabel fontSize="sm" fontWeight="medium">
                     Browser Height ({settings.display.browserHeightPercent}%)
                   </FormLabel>
