@@ -55,6 +55,15 @@ const ACTION_RISK_OVERRIDES: Record<string, RiskLevel> = {
   'pic_goal_update': 'low',
   'pic_relationship_update': 'medium',
   
+  // Tesla vehicle control
+  'tesla_door_unlock': 'high',      // Security risk
+  'tesla_trunk_open': 'medium',     // Could expose belongings
+  'tesla_climate_control': 'low',   // Low risk
+  'tesla_charging_control': 'low',  // Low risk
+  'tesla_navigation_send': 'low',   // Low risk
+  'tesla_sentry_toggle': 'medium',  // Security related
+  'tesla_honk_flash': 'low',        // Low risk, annoying only
+  
   // Cloud/API calls
   'cloud_api_call': 'medium',
   'llm_inference_request': 'low',

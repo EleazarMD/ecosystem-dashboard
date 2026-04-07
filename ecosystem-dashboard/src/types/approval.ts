@@ -50,7 +50,15 @@ export type ApprovalActionType =
   | 'pic_identity_update'
   | 'pic_preference_update'
   | 'pic_goal_update'
-  | 'pic_relationship_update';
+  | 'pic_relationship_update'
+  // Tesla vehicle control types
+  | 'tesla_door_unlock'
+  | 'tesla_trunk_open'
+  | 'tesla_climate_control'
+  | 'tesla_charging_control'
+  | 'tesla_navigation_send'
+  | 'tesla_sentry_toggle'
+  | 'tesla_honk_flash';
 
 // Priority levels for approval requests
 export type ApprovalPriority = 'critical' | 'high' | 'normal' | 'low';
@@ -199,6 +207,22 @@ export interface PicMemoryPayload {
   context?: string;
 }
 
+// Tesla vehicle control payload
+export interface TeslaControlPayload {
+  vin: string;
+  vehicle_name?: string;
+  command: string;
+  params?: Record<string, unknown>;
+  // For navigation
+  destination?: string;
+  latitude?: number;
+  longitude?: number;
+  // Risk context
+  location?: { lat: number; lon: number }; // Vehicle location at time of command
+  battery_level?: number;
+  state?: string; // online, asleep, etc.
+}
+
 // Union type for all payloads
 export type ApprovalPayload = 
   | CalendarEventPayload 
@@ -209,7 +233,8 @@ export type ApprovalPayload =
   | CloudApiCallPayload
   | LlmInferencePayload
   | OpenClawGatewayPayload
-  | PicMemoryPayload;
+  | PicMemoryPayload
+  | TeslaControlPayload;
 
 // Risk assessment for an action
 export interface RiskAssessment {

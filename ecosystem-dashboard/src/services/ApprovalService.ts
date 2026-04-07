@@ -377,6 +377,16 @@ export async function executeApprovedAction(approval: ApprovalRequest): Promise<
       case 'pic_relationship_update':
         result = await executePicMemoryAction(approval);
         break;
+      
+      case 'tesla_door_unlock':
+      case 'tesla_trunk_open':
+      case 'tesla_climate_control':
+      case 'tesla_charging_control':
+      case 'tesla_navigation_send':
+      case 'tesla_sentry_toggle':
+      case 'tesla_honk_flash':
+        result = await executeTeslaAction(approval);
+        break;
         
       default:
         result = await executeGenericAction(approval);
@@ -647,6 +657,95 @@ async function executePicMemoryAction(approval: ApprovalRequest): Promise<any> {
   }
   
   return response.json();
+}
+
+/**
+ * Execute Tesla vehicle control action
+ * Routes approved commands to Tesla Relay service
+ */
+async function executeTeslaAction(approval: ApprovalRequest): Promise<any> {
+  const payload = approval.payload as any; // TeslaControlPayload
+  const teslaRelayUrl = process.env.TESLA_RELAY_URL || 'http://localhost:18810';
+  
+  // Map action type to Tesla command
+  const commandMap: Record<string, string> = {
+    'tesla_door_unlock': 'door_unlock',
+    'tesla_trunk_open': 'actuate_trunk',
+    'tesla_climate_control': 'auto_conditioning_start',
+    'tesla_charging_control': 'charge_start',
+    'tesla_navigation_send': 'navigation_request',
+    'tesla_sentry_toggle': 'set_sentry_mode',
+    'tesla_honk_flash': 'honk_horn',
+  };
+  
+  const command = commandMap[approval.action_type] || payload.command;
+  
+  // Build params based on action type
+  let params: Record<string, any> = payload.params || {};
+  
+  switch (approval.action_type) {
+    case 'tesla_trunk_open':
+      params = { which_trunk: params.which_trunk || 'rear' };
+      break;
+    case 'tesla_climate_control':
+      // If params.action is 'stop', use stop command
+      if (params.action === 'stop') {
+        commandMap[approval.action_type] = 'auto_conditioning_stop';
+      }
+      break;
+    case 'tesla_charging_control':
+      if (params.action === 'stop') {
+        commandMap[approval.action_type] = 'charge_stop';
+      }
+      break;
+    case 'tesla_navigation_send':
+      if (payload.latitude && payload.longitude) {
+        params = {
+          lat: payload.latitude,
+          lon: payload.longitude,
+          order: 1,
+        };
+      } else {
+        params = {
+          type: 'share_ext_content_raw',
+          value: { 'android.intent.extra.TEXT': payload.destination || '' },
+          locale: 'en-US',
+          timestamp_ms: Date.now(),
+        };
+      }
+      break;
+    case 'tesla_sentry_toggle':
+      params = { on: params.on ?? true };
+      break;
+  }
+  
+  const response = await fetch(`${teslaRelayUrl}/vehicles/${payload.vin}/command`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Approval-Id': approval.id,
+      'X-User-Id': approval.user_id,
+    },
+    body: JSON.stringify({
+      command: commandMap[approval.action_type],
+      params,
+    }),
+  });
+  
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Tesla Relay error: ${response.status} ${error}`);
+  }
+  
+  const result = await response.json();
+  console.log(`[ApprovalService] Tesla command executed: ${command} for VIN ${payload.vin}`);
+  
+  return {
+    vin: payload.vin,
+    command: commandMap[approval.action_type],
+    result,
+    timestamp: new Date().toISOString(),
+  };
 }
 
 /**
