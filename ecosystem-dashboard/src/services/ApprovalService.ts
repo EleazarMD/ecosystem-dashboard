@@ -706,28 +706,34 @@ async function sendPushNotification(approval: ApprovalRequest): Promise<void> {
   console.log(`[ApprovalService] Sending push notification for: ${approval.title}`);
   
   try {
-    // Send to iOS devices via APNs
-    const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/mobile/send-approval-notification`, {
+    // Send to iOS devices via APNs using the notifications/send endpoint
+    const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/notifications/send`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Internal-API-Key': process.env.INTERNAL_API_KEY || '',
+        'X-API-Key': process.env.AI_GATEWAY_API_KEY || process.env.INTERNAL_API_KEY || '',
       },
       body: JSON.stringify({
-        user_id: approval.user_id,
-        approval_id: approval.id,
-        title: approval.title,
-        summary: approval.summary,
-        action_type: approval.action_type,
-        priority: approval.priority,
-        risk_level: approval.risk.level,
-        agent_name: approval.agent.name,
+        userId: approval.user_id,
+        title: `Approval Required: ${approval.title}`,
+        body: approval.summary,
+        category: 'APPROVAL_REQUEST',
+        threadId: `approval-${approval.id}`,
+        priority: approval.priority === 'critical' ? 'high' : 'normal',
+        data: {
+          route: 'approvals',
+          resourceId: approval.id,
+          url: `/approvals/${approval.id}`,
+          source: approval.agent.name,
+          action_type: approval.action_type,
+          risk_level: approval.risk.level,
+        },
       }),
     });
 
     if (response.ok) {
       const result = await response.json();
-      console.log(`[ApprovalService] Push sent to ${result.sent} iOS device(s)`);
+      console.log(`[ApprovalService] Push sent to ${result.sent} device(s)`);
     } else {
       console.warn(`[ApprovalService] Push notification failed: ${response.status}`);
     }

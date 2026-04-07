@@ -5,6 +5,11 @@
  * Authentication:
  * - NextAuth session (web dashboard)
  * - X-API-Key header (mobile apps like GooseMind iOS)
+ * 
+ * JIT Security:
+ * - Verifies user owns the approval
+ * - Checks risk-level permissions
+ * - Validates trusted client for critical actions
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
@@ -12,6 +17,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '../../auth/[...nextauth]';
 import ApprovalService from '@/services/ApprovalService';
 import { getMobileOrSessionUserId } from '@/lib/mobile-auth';
+import { verifyApprovalPermission } from '@/lib/jit-permissions';
 
 export default async function handler(
   req: NextApiRequest,
@@ -37,6 +43,16 @@ export default async function handler(
   }
 
   try {
+    // JIT Permission Verification
+    const verification = await verifyApprovalPermission(userId, id, 'reject', req);
+    if (!verification.allowed) {
+      return res.status(403).json({ 
+        error: 'Permission denied', 
+        reason: verification.reason,
+        riskLevel: verification.riskLevel,
+      });
+    }
+    
     const { reason } = req.body;
     const device = req.headers['user-agent'] || 'unknown';
     
