@@ -2,54 +2,43 @@
  * Tesla Vehicle Command Endpoint
  * 
  * POST /api/tesla/vehicles/[vin]/command
- * Executes a command on a specific vehicle
+ * Executes a command on a specific vehicle via Tesla Relay service (port 18810)
  * 
  * Body: { command: string, params?: object }
+ * 
+ * Supports approval integration for sensitive commands.
  */
 import type { NextApiRequest, NextApiResponse } from 'next';
-import pool from '@/lib/db';
-import { refreshTeslaToken } from '../../auth/refresh';
 
-const TESLA_API_BASE = 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1';
+const TESLA_RELAY_URL = process.env.TESLA_RELAY_URL || 'http://localhost:18810';
 
-const ALLOWED_COMMANDS = [
-  'wake_up',
+// Commands that require approval before execution
+const APPROVAL_REQUIRED_COMMANDS = [
   'door_unlock',
-  'door_lock',
+  'actuate_trunk',
+  'remote_start_drive',
+];
+
+// Commands that are low-risk and can be executed directly
+const LOW_RISK_COMMANDS = [
+  'wake_up',
   'honk_horn',
   'flash_lights',
   'charge_start',
   'charge_stop',
-  'set_charge_limit',
-  'set_charging_amps',
   'auto_conditioning_start',
   'auto_conditioning_stop',
-  'set_temps',
-  'actuate_trunk',
-  'set_sentry_mode',
-  'remote_start_drive',
 ];
 
-async function getValidToken(userId: string): Promise<string | null> {
-  const result = await pool.query(`
-    SELECT access_token, refresh_token, expires_at
-    FROM tesla_tokens
-    WHERE user_id = $1
-  `, [userId]);
-
-  if (result.rows.length === 0) return null;
-  
-  const token = result.rows[0];
-  const isExpired = new Date(token.expires_at) < new Date();
-
-  if (isExpired && token.refresh_token) {
-    console.log('[Tesla] Token expired, attempting refresh...');
-    const newToken = await refreshTeslaToken(userId);
-    return newToken;
-  }
-
-  return isExpired ? null : token.access_token;
-}
+const ALLOWED_COMMANDS = [
+  ...LOW_RISK_COMMANDS,
+  ...APPROVAL_REQUIRED_COMMANDS,
+  'door_lock',
+  'set_charge_limit',
+  'set_charging_amps',
+  'set_temps',
+  'set_sentry_mode',
+];
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -57,7 +46,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const { vin } = req.query;
-  const { command, params } = req.body;
+  const { command, params, approval_id } = req.body;
 
   if (!vin || typeof vin !== 'string') {
     return res.status(400).json({ error: 'VIN required' });
@@ -70,36 +59,50 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 
-  const userId = 'default';
+  // Check if approval is required for this command
+  if (APPROVAL_REQUIRED_COMMANDS.includes(command) && !approval_id) {
+    // Return 403 indicating approval is required
+    // The frontend should create an approval request and re-submit with approval_id
+    return res.status(403).json({
+      error: 'Approval required',
+      requires_approval: true,
+      command,
+      message: `Command '${command}' requires approval before execution. Create an approval request and include approval_id in the request body.`,
+    });
+  }
 
   try {
-    const accessToken = await getValidToken(userId);
-    if (!accessToken) {
-      return res.status(401).json({ error: 'Not connected' });
-    }
-
-    // Build command payload
-    const commandPayload: any = {};
-    if (params) {
-      Object.assign(commandPayload, params);
-    }
-
-    // Try the command endpoint
-    const response = await fetch(`${TESLA_API_BASE}/vehicles/${vin}/command/${command}`, {
+    // Forward command to Tesla Relay
+    const response = await fetch(`${TESLA_RELAY_URL}/vehicles/${vin}/command`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
+        'X-Approval-Id': approval_id || '',
       },
-      body: JSON.stringify(commandPayload),
+      body: JSON.stringify({ command, params }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[Tesla API] Command error:', response.status, errorText);
+      console.error('[Tesla Relay] Command error:', response.status, errorText);
+      
+      // Handle specific error cases
+      if (response.status === 401) {
+        return res.status(401).json({ 
+          error: 'Tesla account not connected',
+          needs_auth: true,
+        });
+      }
+      
+      if (response.status === 412) {
+        return res.status(412).json({ 
+          error: 'Vehicle is asleep',
+          message: 'Vehicle is asleep. Wake it first with the wake_up command.',
+        });
+      }
       
       // Check if this is a Vehicle Command Protocol error
-      if (errorText.includes('Vehicle Command Protocol required')) {
+      if (errorText.includes('Vehicle Command Protocol required') || errorText.includes('virtual key')) {
         return res.status(403).json({ 
           error: 'Virtual key pairing required',
           message: 'Tesla requires virtual key pairing for vehicle commands. Please pair the virtual key from your vehicle touchscreen: Controls > Locks > Keys > Add Key',
@@ -108,14 +111,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
       }
       
-      return res.status(response.status).json({ error: 'Tesla API error', details: errorText });
+      return res.status(response.status).json({ error: 'Tesla Relay error', details: errorText });
     }
 
     const data = await response.json();
+    
+    // Log successful command execution
+    console.log(`[Tesla] Command '${command}' executed on ${vin}${approval_id ? ` (approval: ${approval_id})` : ''}`);
+    
     return res.status(200).json(data);
 
   } catch (error: any) {
     console.error('[Tesla Command] Error:', error.message);
-    return res.status(500).json({ error: 'Failed to execute command' });
+    return res.status(500).json({ error: 'Failed to execute command via Tesla Relay' });
   }
 }

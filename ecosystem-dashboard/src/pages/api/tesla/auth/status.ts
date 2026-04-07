@@ -2,45 +2,45 @@
  * Tesla Connection Status Endpoint
  * 
  * GET /api/tesla/auth/status
- * Returns whether user has valid Tesla tokens
+ * Returns whether user has valid Tesla tokens via Tesla Relay service (port 18810)
  */
 import type { NextApiRequest, NextApiResponse } from 'next';
-import pool from '@/lib/db';
+
+const TESLA_RELAY_URL = process.env.TESLA_RELAY_URL || 'http://localhost:18810';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const userId = 'default'; // TODO: Get from session
+  const userId = req.query.user_id as string || 'default';
 
   try {
-    const result = await pool.query(`
-      SELECT expires_at, scopes, updated_at
-      FROM tesla_tokens
-      WHERE user_id = $1
-    `, [userId]);
+    const response = await fetch(`${TESLA_RELAY_URL}/auth/status?user_id=${userId}`, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
 
-    if (result.rows.length === 0) {
+    if (!response.ok) {
+      console.error('[Tesla Relay] Status error:', response.status);
       return res.status(200).json({
         connected: false,
-        message: 'No Tesla account connected',
+        message: 'Tesla Relay unavailable',
+        relay_status: 'offline',
       });
     }
 
-    const token = result.rows[0];
-    const isExpired = new Date(token.expires_at) < new Date();
-
-    return res.status(200).json({
-      connected: !isExpired,
-      expired: isExpired,
-      expiresAt: token.expires_at,
-      scopes: token.scopes?.split(' ') || [],
-      lastUpdated: token.updated_at,
-    });
+    const data = await response.json();
+    return res.status(200).json(data);
 
   } catch (error: any) {
     console.error('[Tesla Status] Error:', error.message);
-    return res.status(500).json({ error: 'Failed to check status' });
+    // Return disconnected status if relay is unavailable
+    return res.status(200).json({
+      connected: false,
+      message: 'Tesla Relay unavailable',
+      relay_status: 'offline',
+    });
   }
 }
