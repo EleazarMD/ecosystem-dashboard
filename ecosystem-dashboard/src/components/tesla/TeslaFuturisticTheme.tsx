@@ -144,20 +144,20 @@ interface CalendarEvent {
   location?: string;
 }
 
-interface Agent {
-  id: string;
-  name: string;
-  task: string;
-  site: string;
-  status: 'idle' | 'browsing' | 'checkout' | 'complete' | 'halted';
-  progress: number;
-  total?: string;
-}
-
 interface ConversationMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+}
+
+interface OpenClawAgent {
+  id: string;
+  name: string;
+  task?: string;
+  site?: string;
+  status: 'idle' | 'browsing' | 'checkout' | 'complete' | 'halted';
+  progress: number;
+  total?: string;
 }
 
 interface TeslaFuturisticThemeProps {
@@ -193,6 +193,8 @@ interface TeslaFuturisticThemeProps {
   onTextInputChange: (value: string) => void;
   // VNC props
   vncUrl: string;
+  // OpenClaw agents from gateway
+  openClawAgents?: OpenClawAgent[];
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -210,10 +212,9 @@ const SUPERCHARGERS = [
   { name: 'San Mateo', address: '6.1 mi - 16 stalls open' },
 ];
 
-const MOCK_AGENTS: Agent[] = [
-  { id: 'a1', name: 'Starbucks Agent', task: 'Grande Oat Milk Latte', site: 'starbucks.com', status: 'checkout', progress: 85, total: '$6.45' },
-  { id: 'a2', name: 'Amazon Agent', task: 'Anker USB-C Hub 7-in-1', site: 'amazon.com', status: 'browsing', progress: 45, total: undefined },
-  { id: 'a3', name: 'Instacart Agent', task: 'Weekly grocery list', site: 'instacart.com', status: 'idle', progress: 0, total: undefined },
+// Default agents when no real data available
+const DEFAULT_AGENTS: OpenClawAgent[] = [
+  { id: 'a1', name: 'Starbucks Agent', task: 'Grande Oat Milk Latte', site: 'starbucks.com', status: 'idle', progress: 0 },
 ];
 
 // ─── Sub-Components ─────────────────────────────────────────────────────────
@@ -284,7 +285,7 @@ const VoiceWaves = memo(({ active, color }: { active: boolean; color: string }) 
 ));
 
 // Agent status card
-const AgentCard = memo(({ agent }: { agent: Agent }) => {
+const AgentCard = memo(({ agent }: { agent: OpenClawAgent }) => {
   const statusColors: Record<string, string> = {
     checkout: '#f59e0b',
     browsing: '#00d4aa',
@@ -333,13 +334,17 @@ const AgentCard = memo(({ agent }: { agent: Agent }) => {
           {agent.status.charAt(0).toUpperCase() + agent.status.slice(1)}
         </Badge>
       </Flex>
-      <Text fontSize="10px" color="#5a5a5a" noOfLines={1} mb="4px">
-        {agent.task}
-      </Text>
-      <HStack spacing="4px" mb="8px">
-        <Icon as={Globe} boxSize="10px" color="#5a5a5a" />
-        <Text fontSize="9px" color="#5a5a5a">{agent.site}</Text>
-      </HStack>
+      {agent.task && (
+        <Text fontSize="10px" color="#5a5a5a" noOfLines={1} mb="4px">
+          {agent.task}
+        </Text>
+      )}
+      {agent.site && (
+        <HStack spacing="4px" mb="8px">
+          <Icon as={Globe} boxSize="10px" color="#5a5a5a" />
+          <Text fontSize="9px" color="#5a5a5a">{agent.site}</Text>
+        </HStack>
+      )}
       <Box w="100%" h="4px" bg="#111" borderRadius="full" overflow="hidden" mb="6px">
         <Box h="100%" bg={color} borderRadius="full" w={`${agent.progress}%`} transition="width 1s" />
       </Box>
@@ -406,29 +411,48 @@ export default function TeslaFuturisticTheme({
   onSendText,
   onTextInputChange,
   vncUrl,
+  openClawAgents,
 }: TeslaFuturisticThemeProps) {
   const router = useRouter();
   const toast = useToast();
   const { isOpen: isHistoryOpen, onOpen: onHistoryOpen, onClose: onHistoryClose } = useDisclosure();
   
-  // Local state
-  const [currentTime, setCurrentTime] = useState(new Date());
+  // Local state - initialize with null/empty to avoid hydration mismatch
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [currentView, setCurrentView] = useState<'dashboard' | 'openclaw'>('dashboard');
   const [activeNav, setActiveNav] = useState<typeof DESTINATIONS[0] | null>(null);
-  const [agents, setAgents] = useState<Agent[]>(MOCK_AGENTS);
+  // Use real agents from props or fall back to defaults
+  const [agents, setAgents] = useState<OpenClawAgent[]>(openClawAgents || DEFAULT_AGENTS);
   const [vncConnected, setVncConnected] = useState(false);
   const [isBrowserExpanded, setIsBrowserExpanded] = useState(false);
+  const [isCommandLoading, setIsCommandLoading] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
   
   const vncIframeRef = useRef<HTMLIFrameElement>(null);
   
-  // Update clock
+  // Set mounted state on client
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
+    setIsMounted(true);
+    setCurrentTime(new Date());
   }, []);
   
-  // Simulate agent progress
+  // Sync agents from props when they change
   useEffect(() => {
+    if (openClawAgents && openClawAgents.length > 0) {
+      setAgents(openClawAgents);
+    }
+  }, [openClawAgents]);
+
+  // Update clock
+  useEffect(() => {
+    if (!isMounted) return;
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, [isMounted]);
+  
+  // Simulate agent progress (only on client after mount)
+  useEffect(() => {
+    if (!isMounted) return;
     const interval = setInterval(() => {
       setAgents(prev => prev.map(a => {
         if (a.status === 'browsing') {
@@ -449,29 +473,70 @@ export default function TeslaFuturisticTheme({
       }));
     }, 4000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isMounted]);
   
   // Format time
-  const formatTime = (date: Date) => {
+  const formatTime = (date: Date | null) => {
+    if (!date) return '--:--';
     return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
   };
   
-  // Vehicle controls
+  // Vehicle controls - connected to Tesla Relay API
+  const executeVehicleCommand = useCallback(async (command: string, params?: Record<string, unknown>) => {
+    if (!selectedVin) {
+      toast({ title: 'No vehicle selected', status: 'error', duration: 2000 });
+      return;
+    }
+    
+    setIsCommandLoading(command);
+    try {
+      const response = await fetch(`/api/tesla/vehicles/${selectedVin}/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command, params }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        if (data.requires_approval) {
+          toast({ title: 'Approval required', description: 'This action needs approval', status: 'warning', duration: 3000 });
+        } else if (data.needs_auth) {
+          toast({ title: 'Tesla account not connected', description: 'Please connect your Tesla account', status: 'error', duration: 3000 });
+        } else if (data.requiresVirtualKey) {
+          toast({ title: 'Virtual key required', description: 'Pair the virtual key from your vehicle', status: 'error', duration: 4000 });
+        } else {
+          throw new Error(data.error || 'Command failed');
+        }
+        return;
+      }
+      
+      toast({ title: 'Command executed successfully', status: 'success', duration: 2000 });
+    } catch (error: any) {
+      console.error('[Tesla Command] Error:', error);
+      toast({ title: 'Command failed', description: error.message, status: 'error', duration: 3000 });
+    } finally {
+      setIsCommandLoading(null);
+    }
+  }, [selectedVin, toast]);
+  
   const handleToggleLock = useCallback(() => {
-    toast({ title: vehicleData?.locked ? 'Vehicle unlocked' : 'Vehicle locked', status: 'success', duration: 2000 });
-  }, [vehicleData?.locked, toast]);
+    const command = vehicleData?.locked ? 'door_unlock' : 'door_lock';
+    executeVehicleCommand(command);
+  }, [vehicleData?.locked, executeVehicleCommand]);
   
   const handleToggleSentry = useCallback(() => {
-    toast({ title: `Sentry mode ${vehicleData?.sentry_mode ? 'deactivated' : 'activated'}`, status: 'info', duration: 2000 });
-  }, [vehicleData?.sentry_mode, toast]);
+    executeVehicleCommand('set_sentry_mode', { on: !vehicleData?.sentry_mode });
+  }, [vehicleData?.sentry_mode, executeVehicleCommand]);
   
   const handleToggleClimate = useCallback(() => {
-    toast({ title: `Climate ${vehicleData?.is_climate_on ? 'off' : 'on'}`, status: 'info', duration: 2000 });
-  }, [vehicleData?.is_climate_on, toast]);
+    const command = vehicleData?.is_climate_on ? 'auto_conditioning_stop' : 'auto_conditioning_start';
+    executeVehicleCommand(command);
+  }, [vehicleData?.is_climate_on, executeVehicleCommand]);
   
   const handleToggleTrunk = useCallback(() => {
-    toast({ title: `Trunk ${vehicleData?.trunk_open ? 'closed' : 'opened'}`, status: 'warning', duration: 2000 });
-  }, [vehicleData?.trunk_open, toast]);
+    executeVehicleCommand('actuate_trunk', { which_trunk: 'rear' });
+  }, [executeVehicleCommand]);
   
   // Navigation
   const handleSetNav = useCallback((dest: typeof DESTINATIONS[0]) => {

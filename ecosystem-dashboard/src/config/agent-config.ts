@@ -159,7 +159,7 @@ export const DefaultAgentConfig: AgentConfiguration = {
   },
 
   aihds: {
-    enabled: true,
+    enabled: false,
     gateway_url: process.env.AIHDS_GATEWAY_URL || 'http://localhost:7777',
     api_key: process.env.AIHDS_API_KEY || '',
     knowledge_graph_url: process.env.AIHDS_KNOWLEDGE_GRAPH_URL || 'http://localhost:8080',

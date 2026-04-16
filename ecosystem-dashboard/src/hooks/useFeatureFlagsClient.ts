@@ -30,51 +30,53 @@ interface UseFeatureFlagsResult {
 }
 
 export function useFeatureFlagsClient(userId?: string | null): UseFeatureFlagsResult {
-  const [flags, setFlags] = useState<FeatureFlags>(() => {
-    // Load from localStorage on init
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          // 🔄 MIGRATION: Disable emergency mode and enable theme system
-          if (
-            parsed.emergencyDisableAll === true || 
-            parsed.enableThemeSystem === false || 
-            parsed.enableGlassmorphicDesign === false
-          ) {
-            console.log('[FeatureFlags] 🔄 Migrating flags: disabling emergency mode, enabling theme system');
-            const migrated = {
-              ...parsed,
-              emergencyDisableAll: false,  // ← Disable emergency mode
-              enableThemeSystem: true,
-              enableGlassmorphicDesign: true,
-            };
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
-            return migrated;
-          }
-          return parsed;
-        } catch {
-          return DEFAULT_FEATURE_FLAGS;
-        }
-      }
-    }
-    return DEFAULT_FEATURE_FLAGS;
-  });
-  
-  const [loading, setLoading] = useState(false);
+  // Always start with defaults to avoid hydration mismatch
+  const [flags, setFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
+  const [loading, setLoading] = useState(true);  // Start loading until localStorage is read
   const [error, setError] = useState<Error | null>(null);
   const [version, setVersion] = useState(1);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(new Date().toISOString());
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
   
-  // Save to localStorage whenever flags change
+  // Load from localStorage AFTER mount (client-side only) - fixes hydration mismatch
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(flags));
-      console.log('[FeatureFlags] Saved to localStorage:', flags);
-      console.log('[FeatureFlags] Theme System Enabled:', flags.enableThemeSystem);
+    if (initialized) return;
+    
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        // MIGRATION: Disable emergency mode and enable theme system
+        if (
+          parsed.emergencyDisableAll === true || 
+          parsed.enableThemeSystem === false || 
+          parsed.enableGlassmorphicDesign === false
+        ) {
+          console.log('[FeatureFlags] Migrating flags: disabling emergency mode, enabling theme system');
+          const migrated = {
+            ...parsed,
+            emergencyDisableAll: false,
+            enableThemeSystem: true,
+            enableGlassmorphicDesign: true,
+          };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+          setFlags(migrated);
+        } else {
+          setFlags(parsed);
+        }
+      } catch {
+        // Keep defaults on parse error
+      }
     }
-  }, [flags]);
+    setLoading(false);
+    setInitialized(true);
+  }, [initialized]);
+  
+  // Save to localStorage whenever flags change (after initialization)
+  useEffect(() => {
+    if (!initialized) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(flags));
+  }, [flags, initialized]);
   
   // Check if feature is enabled
   const isEnabled = useCallback((featurePath: string): boolean => {
@@ -93,8 +95,6 @@ export function useFeatureFlagsClient(userId?: string | null): UseFeatureFlagsRe
     reason?: string
   ): Promise<boolean> => {
     try {
-      console.log(`[FeatureFlags] 🔧 Updating ${flagPath} = ${value}`, reason);
-      
       setFlags(prevFlags => {
         // Deep clone to ensure React detects the change
         const newFlags = JSON.parse(JSON.stringify(prevFlags));
@@ -111,9 +111,6 @@ export function useFeatureFlagsClient(userId?: string | null): UseFeatureFlagsRe
         }
         
         current[pathParts[pathParts.length - 1]] = value;
-        
-        console.log(`[FeatureFlags] ✅ Updated ${flagPath} =`, value, reason ? `(${reason})` : '');
-        console.log('[FeatureFlags] New flags:', newFlags);
         
         return newFlags;
       });
@@ -158,8 +155,7 @@ export function useFeatureFlagsClient(userId?: string | null): UseFeatureFlagsRe
       if (stored) {
         try {
           setFlags(JSON.parse(stored));
-          console.log('[FeatureFlags] Refreshed from localStorage');
-        } catch (err) {
+            } catch (err) {
           console.error('[FeatureFlags] Refresh failed:', err);
         }
       }

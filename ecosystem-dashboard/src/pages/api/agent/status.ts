@@ -73,8 +73,16 @@ export default async function handler(
   try {
     logger.info('[API] Agent status requested');
 
-    // Get agent status
+    // Auto-initialize if not already initialized
     const agentStatus = aiAgentRuntime.getStatus();
+    if (!agentStatus.initialized) {
+      logger.info('[API] Auto-initializing AI Agent Runtime...');
+      try {
+        await aiAgentRuntime.initialize();
+      } catch (initError) {
+        logger.warn('[API] Auto-initialization failed:', initError);
+      }
+    }
     
     // Get health check results
     const healthCheck = await aiAgentRuntime.getHealthCheck();

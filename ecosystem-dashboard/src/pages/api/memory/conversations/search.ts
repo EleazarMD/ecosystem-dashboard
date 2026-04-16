@@ -121,6 +121,10 @@ async function searchPostgres(
     `(m.content ILIKE '%' || $${i + 4} || '%' OR c.title ILIKE '%' || $${i + 4} || '%' OR c.summary ILIKE '%' || $${i + 4} || '%')`
   ).join(' OR ');
 
+  // Include 'default' user's conversations — historical data was stored under user_id='default'
+  // before proper user identification was implemented
+  const userFilter = userId === 'default' ? `c.user_id = $1` : `c.user_id IN ($1, 'default')`;
+
   const result = await pool.query(
     `SELECT DISTINCT ON (c.id)
        c.id as conversation_id,
@@ -130,7 +134,7 @@ async function searchPostgres(
        c.created_at, c.message_count
      FROM workspace.ai_conversations c
      JOIN workspace.ai_messages m ON m.conversation_id = c.id
-     WHERE c.user_id = $1
+     WHERE ${userFilter}
        AND c.retention_tier != 'archived'
        AND c.created_at >= $2
        AND c.created_at <= $3
@@ -155,6 +159,9 @@ async function browseRecent(
   userId: string,
   limit: number
 ): Promise<SearchResult[]> {
+  // Include 'default' user's conversations — historical data was stored under user_id='default'
+  const userFilter = userId === 'default' ? `c.user_id = $1` : `c.user_id IN ($1, 'default')`;
+
   // Return most recent conversations with their first user message as snippet
   const result = await pool.query(
     `SELECT c.id as conversation_id, c.title, c.importance_score,
@@ -163,7 +170,7 @@ async function browseRecent(
              WHERE conversation_id = c.id AND role = 'user'
              ORDER BY created_at ASC LIMIT 1) as snippet
      FROM workspace.ai_conversations c
-     WHERE c.user_id = $1
+     WHERE ${userFilter}
        AND c.retention_tier != 'archived'
        AND c.message_count > 0
      ORDER BY c.last_message_at DESC NULLS LAST
@@ -240,7 +247,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     let vectorResults: SearchResult[] = [];
     if (embedding) {
-      vectorResults = await searchChromaDB(embedding, userId, limit);
+      // Search both the real user and 'default' user in ChromaDB
+      const [userVecResults, defaultVecResults] = await Promise.all([
+        searchChromaDB(embedding, userId, limit),
+        userId !== 'default' ? searchChromaDB(embedding, 'default', limit) : Promise.resolve([]),
+      ]);
+      vectorResults = [...userVecResults, ...defaultVecResults];
     }
 
     // Merge and deduplicate results

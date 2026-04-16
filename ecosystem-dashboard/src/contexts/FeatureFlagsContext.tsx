@@ -4,9 +4,7 @@
  * Shared context so all components use the same feature flag state
  */
 
-console.log('📦 [FeatureFlagsContext] MODULE LOADED');
-
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext } from 'react';
 import { useFeatureFlagsClient } from '@/hooks/useFeatureFlagsClient';
 import type { FeatureFlags, PageName } from '@/types/featureFlags';
 import { DEFAULT_FEATURE_FLAGS } from '@/types/featureFlags';
@@ -40,20 +38,8 @@ const defaultContextValue: FeatureFlagsContextValue = {
 
 const FeatureFlagsContext = createContext<FeatureFlagsContextValue>(defaultContextValue);
 
-console.log('📦 [FeatureFlagsContext] About to define FeatureFlagsProvider function');
-
 export function FeatureFlagsProvider({ children }: { children: React.ReactNode }) {
-  console.log('[FeatureFlagsProvider] 🚀 Provider FUNCTION CALLED - rendering/mounting');
-  
   const featureFlags = useFeatureFlagsClient();
-  
-  console.log('[FeatureFlagsProvider] Current flags:', featureFlags.flags);
-  
-  // Debug: Log when flags change
-  React.useEffect(() => {
-    console.log('[FeatureFlagsContext] Flags updated:', featureFlags.flags);
-    console.log('[FeatureFlagsContext] Theme System:', featureFlags.flags.enableThemeSystem);
-  }, [featureFlags.flags]);
   
   return (
     <FeatureFlagsContext.Provider value={featureFlags}>

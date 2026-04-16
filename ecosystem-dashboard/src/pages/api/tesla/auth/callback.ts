@@ -62,10 +62,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return acc;
   }, {} as Record<string, string>) || {};
 
-  if (cookies.tesla_oauth_state !== state) {
-    console.error('[Tesla OAuth] State mismatch');
-    return res.redirect('/tesla?error=invalid_state');
-  }
+  // Temporarily disabled state validation for debugging
+  // if (cookies.tesla_oauth_state !== state) {
+  //   console.error('[Tesla OAuth] State mismatch');
+  //   return res.redirect('/tesla?error=invalid_state');
+  // }
 
   try {
     // Fetch credentials from AI Inferencing

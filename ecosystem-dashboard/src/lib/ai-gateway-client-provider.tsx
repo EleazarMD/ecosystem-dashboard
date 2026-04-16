@@ -54,9 +54,9 @@ interface AIGatewayClientContextType {
 // Create context
 const AIGatewayClientContext = createContext<AIGatewayClientContextType | null>(null);
 
-// Default config
+// Default config - use external IP for browser access
 const DEFAULT_CONFIG = {
-  url: 'http://localhost:8777',
+  url: process.env.NEXT_PUBLIC_AI_GATEWAY_URL || 'http://100.108.41.22:8777',
   apiKey: 'ai-gateway-api-key-2024',
   timeout: 30000,
   maxRetries: 3

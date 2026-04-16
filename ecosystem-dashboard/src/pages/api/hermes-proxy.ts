@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { generateHermesToken, HERMES_URL } from '@/lib/hermes-client';
+import { HERMES_URL } from '@/lib/hermes-client';
 
-const JWT_SECRET = process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET || '';
+// CIG API Key for dashboard authentication
+const CIG_API_KEY = process.env.CIG_API_KEY || 'dashboard-key-2024';
 
 export default async function handler(
   req: NextApiRequest,
@@ -13,21 +14,12 @@ export default async function handler(
   const queryString = new URLSearchParams(queryParams as Record<string, string>).toString();
   const url = `${HERMES_URL}/${pathSegments}${queryString ? `?${queryString}` : ''}`;
 
-  // Use provided Authorization header or generate one for Hermes Core
-  let authHeader = req.headers.authorization as string | undefined;
-  if (!authHeader && JWT_SECRET) {
-    const token = generateHermesToken();
-    if (token) {
-      authHeader = `Bearer ${token}`;
-    }
-  }
-
   try {
     const response = await fetch(url, {
       method: req.method,
       headers: {
         'Content-Type': 'application/json',
-        ...(authHeader && { Authorization: authHeader }),
+        'X-API-Key': CIG_API_KEY,
       },
       body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
     });

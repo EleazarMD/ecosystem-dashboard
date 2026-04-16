@@ -15,6 +15,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useMemo, memo, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import {
   Box,
   Flex,
@@ -103,7 +104,7 @@ import { useRouter } from 'next/router';
 import { useColorModeValue, useColorMode } from '@chakra-ui/react';
 import { useTeslaSettings } from '@/hooks/useTeslaSettings';
 import TeslaSettingsDrawer from '@/components/tesla/TeslaSettingsDrawer';
-import TeslaFuturisticTheme from '@/components/tesla/TeslaFuturisticTheme';
+const TeslaFuturisticTheme = dynamic(() => import('@/components/tesla/TeslaFuturisticTheme'), { ssr: false });
 import VncKeyboardRelay from '@/components/tesla/VncKeyboardRelay';
 
 // Icon name → component mapping for dynamic bookmarks
@@ -453,6 +454,17 @@ export default function TeslaDashboard() {
   }>>([]);
   const [selectedVin, setSelectedVin] = useState<string | null>(null);
   const [isLoadingVehicle, setIsLoadingVehicle] = useState(false);
+  
+  // OpenClaw agents from gateway
+  const [openClawAgents, setOpenClawAgents] = useState<Array<{
+    id: string;
+    name: string;
+    task?: string;
+    site?: string;
+    status: 'idle' | 'browsing' | 'checkout' | 'complete' | 'halted';
+    progress: number;
+    total?: string;
+  }>>([]);
 
   // Fetch vehicles list from Tesla Relay
   const fetchVehicles = useCallback(async () => {
@@ -626,6 +638,27 @@ export default function TeslaDashboard() {
     return false;
   }, [fetchConversationHistory]);
   
+  // Fetch OpenClaw agents from gateway
+  const fetchOpenClawAgents = useCallback(async () => {
+    try {
+      const response = await fetch('/api/agentic-control/agents');
+      if (response.ok) {
+        const data = await response.json();
+        const agents = (data.agents || []).map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          task: a.description || a.type,
+          site: a.endpoint?.replace('http://', '').replace('localhost', 'local') || undefined,
+          status: a.status === 'active' ? 'browsing' as const : 'idle' as const,
+          progress: a.health?.overall || 0,
+        }));
+        setOpenClawAgents(agents);
+      }
+    } catch (error) {
+      console.error('[Tesla] Failed to fetch OpenClaw agents:', error);
+    }
+  }, []);
+  
   // Tool-specific display config
   const getToolDisplay = (toolName: string) => {
     const toolConfig: Record<string, { icon: typeof Search; color: string; label: string; emoji: string }> = {
@@ -648,17 +681,19 @@ export default function TeslaDashboard() {
     return () => clearInterval(timer);
   }, []);
   
-  // Fetch Email and Calendar data on mount
+  // Fetch Email, Calendar, and OpenClaw agents data on mount
   useEffect(() => {
     fetchEmailData();
     fetchCalendarEvents();
+    fetchOpenClawAgents();
     // Refresh every 5 minutes
     const interval = setInterval(() => {
       fetchEmailData();
       fetchCalendarEvents();
+      fetchOpenClawAgents();
     }, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [fetchEmailData, fetchCalendarEvents]);
+  }, [fetchEmailData, fetchCalendarEvents, fetchOpenClawAgents]);
 
   // SSE Mirror — auto-connect to active voice session
   useEffect(() => {
@@ -1072,6 +1107,7 @@ export default function TeslaDashboard() {
           onSendText={handleSendText}
           onTextInputChange={setTextInput}
           vncUrl={vncUrl}
+          openClawAgents={openClawAgents}
         />
         <TeslaSettingsDrawer
           isOpen={isSettingsOpen}

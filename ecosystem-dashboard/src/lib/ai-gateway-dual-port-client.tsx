@@ -192,7 +192,7 @@ function AIClientManager({
         console.log('🤖 Initializing AI Client (Port 8777)...');
         
         const clientConfig: AIGatewayConfig = {
-          url: config?.url || process.env.NEXT_PUBLIC_AI_GATEWAY_AI_CLIENT_URL || 'http://localhost:8777',
+          url: config?.url || process.env.NEXT_PUBLIC_AI_GATEWAY_AI_CLIENT_URL || 'http://100.108.41.22:8777',
           apiKey: config?.apiKey || process.env.NEXT_PUBLIC_AI_GATEWAY_API_KEY || 'ai-gateway-api-key-2024',
           defaultModel: config?.defaultModel || 'llama3.1:8b',
           timeout: config?.timeout || 30000,
