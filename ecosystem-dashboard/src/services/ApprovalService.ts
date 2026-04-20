@@ -805,8 +805,12 @@ async function sendPushNotification(approval: ApprovalRequest): Promise<void> {
   console.log(`[ApprovalService] Sending push notification for: ${approval.title}`);
   
   try {
-    // Send to iOS devices via APNs using the notifications/send endpoint
-    const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/notifications/send`, {
+    // Send to iOS devices via APNs using the notifications/send endpoint.
+    // Use loopback directly — NEXTAUTH_URL points at the public URL (cloudflare tunnel) which
+    // can't be reached from inside the container/service. Internal server-to-server call only.
+    const internalBase = process.env.DASHBOARD_INTERNAL_URL
+      || `http://127.0.0.1:${process.env.PORT || '8404'}`;
+    const response = await fetch(`${internalBase}/api/notifications/send`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
