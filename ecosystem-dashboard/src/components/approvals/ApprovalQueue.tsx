@@ -117,7 +117,7 @@ const CATEGORY_CONFIG: Record<ApprovalCategory, {
   other: { 
     label: 'Other', 
     icon: FiLayers, 
-    actionTypes: ['contact_create', 'contact_update', 'reminder_create', 'task_create', 'document_share', 'file_delete'] 
+    actionTypes: ['contact_create', 'contact_update', 'reminder_create', 'task_create', 'document_share', 'file_delete', 'workspace_page_delete'] 
   },
 };
 

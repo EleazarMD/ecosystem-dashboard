@@ -73,6 +73,42 @@ import EmailDraftStudio from '@/components/email-agent/EmailDraftStudio';
 
 const HERMES_URL = process.env.NEXT_PUBLIC_HERMES_URL || 'http://localhost:8780';
 
+/**
+ * Escape HTML-special characters and auto-linkify URLs and bare email
+ * addresses in a plain-text body. Used only for emails that lack a
+ * body_html part — we inject the result via dangerouslySetInnerHTML so
+ * URLs remain clickable instead of rendering as static text.
+ *
+ * Safe against XSS because we HTML-escape every character before the
+ * linkification regex runs; the only tags we emit are our own `<a>`s.
+ */
+function linkifyPlainText(raw: string): string {
+  const esc = raw
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  // URL regex: http(s):// ... stopping at whitespace or common sentence
+  // terminators. The trailing-punctuation strip below puts any .,;!?) back
+  // outside the anchor so "see https://x.com/foo." doesn't include the dot.
+  const urlRe = /\bhttps?:\/\/[^\s<>"']+/g;
+  let out = esc.replace(urlRe, (m) => {
+    let tail = '';
+    while (m.length && /[.,;:!?)\]]/.test(m.slice(-1))) {
+      tail = m.slice(-1) + tail;
+      m = m.slice(0, -1);
+    }
+    return `<a href="${m}" target="_blank" rel="noopener noreferrer">${m}</a>${tail}`;
+  });
+  // Bare email addresses → mailto: links
+  out = out.replace(
+    /\b([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/g,
+    (m) => `<a href="mailto:${m}">${m}</a>`
+  );
+  return out;
+}
+
 interface EmailItem {
   id: string;
   subject: string;
@@ -1421,24 +1457,38 @@ export default function EmailClient() {
                 {selectedEmail.body_html ? (
                   <Box
                     as="iframe"
+                    // Sandbox MUST allow popups so links can escape to the
+                    // host browser. Without `allow-popups` + the outer
+                    // `allow-popups-to-escape-sandbox`, VS Code's webview
+                    // silently swallows link clicks and hyperlinks look
+                    // "static" — the exact bug reported for SharePoint
+                    // links in work email.
+                    sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                     srcDoc={(() => {
                       let html = selectedEmail.body_html.replace(
                         /cid:([^"'\s>]+)/g,
                         (match: string, contentId: string) => `/api/hermes-proxy?path=v1/attachments/inline/${encodeURIComponent(selectedEmail.id)}/${encodeURIComponent(contentId)}`
                       );
-                      const overrideStyle = `<style>
+                      // `<base target="_blank">` routes every <a href> click
+                      // to a new tab (=> host browser, with its existing M365
+                      // session for SharePoint/OneDrive URLs) instead of
+                      // trying to navigate the iframe itself, which fails
+                      // silently inside a webview.
+                      const overrideHead = `<base target="_blank">
+                      <style>
                         body { margin: 0; padding: 16px; display: flex; flex-direction: column; align-items: center; }
                         body > * { max-width: 100%; }
                         table { float: none !important; }
                         img { max-width: 100%; height: auto; }
-                        a { color: #0A84FF; }
+                        a { color: #0A84FF; text-decoration: underline; cursor: pointer; }
+                        a:hover { text-decoration: underline; filter: brightness(1.15); }
                       </style>`;
                       if (html.includes('<head>') || html.includes('<head ')) {
-                        html = html.replace(/<head([^>]*)>/i, `<head$1><meta charset="utf-8">${overrideStyle}`);
+                        html = html.replace(/<head([^>]*)>/i, `<head$1><meta charset="utf-8">${overrideHead}`);
                       } else if (html.includes('<html')) {
-                        html = html.replace(/<html([^>]*)>/i, `<html$1><head><meta charset="utf-8">${overrideStyle}</head>`);
+                        html = html.replace(/<html([^>]*)>/i, `<html$1><head><meta charset="utf-8">${overrideHead}</head>`);
                       } else {
-                        html = `<!DOCTYPE html><html><head><meta charset="utf-8">${overrideStyle}</head><body>${html}</body></html>`;
+                        html = `<!DOCTYPE html><html><head><meta charset="utf-8">${overrideHead}</head><body>${html}</body></html>`;
                       }
                       return html;
                     })()}
@@ -1447,9 +1497,14 @@ export default function EmailClient() {
                     border="none"
                   />
                 ) : (
-                  <Text fontSize="14px" color={textPrimary} whiteSpace="pre-wrap">
-                    {selectedEmail.body || selectedEmail.snippet}
-                  </Text>
+                  // Plain-text fallback: auto-linkify URLs so they stay
+                  // clickable even when the source email had no HTML part.
+                  <Box fontSize="14px" color={textPrimary} whiteSpace="pre-wrap"
+                       sx={{ '& a': { color: '#0A84FF', textDecoration: 'underline' } }}
+                       dangerouslySetInnerHTML={{
+                         __html: linkifyPlainText(selectedEmail.body || selectedEmail.snippet || ''),
+                       }}
+                  />
                 )}
               </Box>
             </>

@@ -98,6 +98,7 @@ const ACTION_ICONS: Record<string, typeof FiCalendar> = {
   contact_update: FiUser,
   document_share: FiFile,
   file_delete: FiFile,
+  workspace_page_delete: FiFile,
   // Child account approval icons
   child_conversation_access: FiMessageSquare,
   child_service_access: FiUser,
