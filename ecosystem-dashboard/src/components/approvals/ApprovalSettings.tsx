@@ -121,7 +121,7 @@ export function ApprovalSettings({ onClose }: ApprovalSettingsProps) {
     email: ['email_draft_create', 'email_send', 'email_reply', 'email_forward'],
     contacts: ['contact_create', 'contact_update'],
     tasks: ['reminder_create', 'task_create'],
-    system: ['document_share', 'file_delete', 'workspace_page_delete', 'automation_trigger', 'external_api_call', 'system_setting_change'],
+    system: ['document_share', 'file_delete', 'automation_trigger', 'external_api_call', 'system_setting_change'],
   };
   
   return (

@@ -22,7 +22,6 @@ export type ApprovalActionType =
   | 'task_create'
   | 'document_share'
   | 'file_delete'
-  | 'workspace_page_delete'
   | 'automation_trigger'
   | 'external_api_call'
   | 'system_setting_change'
@@ -628,7 +627,6 @@ export const ACTION_TYPE_LABELS: Record<ApprovalActionType, string> = {
   task_create: 'Create Task',
   document_share: 'Share Document',
   file_delete: 'Delete File',
-  workspace_page_delete: 'Delete Workspace Page',
   automation_trigger: 'Trigger Automation',
   external_api_call: 'External API Call',
   system_setting_change: 'Change System Setting',
