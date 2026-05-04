@@ -156,6 +156,9 @@ export default async function handler(
 
     return res.status(200).json({
       success: true,
+      url: servingUrl,
+      imageUrl: servingUrl,
+      id: fileId,
       file: {
         id: fileId,
         url: servingUrl,
