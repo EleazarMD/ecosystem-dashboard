@@ -859,6 +859,7 @@ export default function TeslaDashboard() {
   }, [isMuted, resetInactivityTimer]);
 
   const requestDisplayAccess = useCallback(async () => {
+    console.log('[Nova] requestDisplayAccess called, state:', novaLockState);
     if (novaLockState !== 'locked') return;
     setNovaLockState('pending_approval');
     try {
@@ -1409,16 +1410,17 @@ export default function TeslaDashboard() {
                   </Text>
                 </VStack>
                 {novaLockState === 'locked' && (
-                  <Box
-                    as="button" px={6} py={3} borderRadius="full"
+                  <Button
+                    px={6} py={3} borderRadius="full"
                     bg={accentColor} color="white" fontWeight="600" fontSize="sm"
                     boxShadow={`0 0 24px ${accentColor}55`}
-                    cursor="pointer" transition="all 0.2s"
                     _hover={{ transform: 'scale(1.04)', boxShadow: `0 0 32px ${accentColor}88` }}
-                    onClick={requestDisplayAccess}
+                    _active={{ transform: 'scale(0.97)' }}
+                    onClick={(e) => { e.stopPropagation(); requestDisplayAccess(); }}
+                    zIndex={20}
                   >
                     Unlock Nova — Approve on iPhone
-                  </Box>
+                  </Button>
                 )}
                 {novaLockState === 'pending_approval' && (
                   <HStack spacing={3} color={textSecondary} fontSize="sm">
