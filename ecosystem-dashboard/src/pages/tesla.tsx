@@ -15,6 +15,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useMemo, memo, useRef } from 'react';
+import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import {
   Box,
@@ -66,6 +67,7 @@ import {
   ChevronUp,
   Volume2,
   VolumeX,
+  Lock,
   Settings,
   Home,
   Globe,
@@ -102,6 +104,8 @@ import {
 import ReactMarkdown from 'react-markdown';
 import { useRouter } from 'next/router';
 import { useColorModeValue, useColorMode } from '@chakra-ui/react';
+import { novaColors, novaGlassTint, novaRadius } from '@/theme/nova';
+
 import { useTeslaSettings } from '@/hooks/useTeslaSettings';
 import TeslaSettingsDrawer from '@/components/tesla/TeslaSettingsDrawer';
 const TeslaFuturisticTheme = dynamic(() => import('@/components/tesla/TeslaFuturisticTheme'), { ssr: false });
@@ -298,6 +302,10 @@ export default function TeslaDashboard() {
   const router = useRouter();
   const toast = useToast();
   const { colorMode, setColorMode } = useColorMode();
+  const { data: _novaSession } = useSession();
+  // Single source of truth: authenticated PIC UUID (no more 'eleazar' / 'default' aliases)
+  const novaUserId = _novaSession?.user?.id ?? 'dfd9379f-a9cd-4241-99e7-140f5e89e3cd';
+  useEffect(() => { if (colorMode !== 'dark') setColorMode('dark'); }, [colorMode, setColorMode]);
   const { isOpen: isEmailOpen, onOpen: onEmailOpen, onClose: onEmailClose } = useDisclosure();
   const { isOpen: isSettingsOpen, onOpen: onSettingsOpen, onClose: onSettingsClose } = useDisclosure();
 
@@ -313,20 +321,21 @@ export default function TeslaDashboard() {
     vncUrl,
   } = useTeslaSettings();
 
-  // Theme colors
-  const bgBase = useColorModeValue('gray.50', 'gray.900');
-  const bgCard = useColorModeValue('white', 'gray.800');
-  const bgHover = useColorModeValue('gray.100', 'gray.700');
-  const textPrimary = useColorModeValue('gray.900', 'white');
-  const textSecondary = useColorModeValue('gray.600', 'gray.400');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
-  const accentColor = useColorModeValue('blue.500', 'blue.400');
-  const successColor = useColorModeValue('green.500', 'green.400');
-  const warningColor = useColorModeValue('orange.500', 'orange.400');
-  const cardAccentBg = useColorModeValue('gray.50', 'gray.700');
-  const subtleBorder = useColorModeValue('gray.100', 'gray.600');
-  const iconBg = useColorModeValue('blackAlpha.50', 'whiteAlpha.100');
-  const cardGlow = useColorModeValue('0 1px 3px rgba(0,0,0,0.08)', '0 1px 3px rgba(0,0,0,0.3)');
+  // Nova / iOS Hyperspace mirror palette (Aurora Glass dark)
+  // Source of truth: src/theme/nova.ts (mirrors iOS NovaLabels.Colors)
+  const bgBase = '#0a0a12';                                  // deep night base
+  const bgCard = 'rgba(255,255,255,0.04)';                   // glass card surface
+  const bgHover = 'rgba(255,255,255,0.08)';                  // hover/selected
+  const textPrimary = 'rgba(255,255,255,0.92)';
+  const textSecondary = 'rgba(255,255,255,0.55)';
+  const borderColor = 'rgba(255,255,255,0.10)';
+  const accentColor = novaColors.thinking;                   // indigo — listening / cognition
+  const successColor = novaColors.result;                    // mint — done / verified
+  const warningColor = novaColors.analyzing;                 // amber — processing
+  const cardAccentBg = 'rgba(107,92,217,0.08)';              // subtle indigo wash
+  const subtleBorder = 'rgba(255,255,255,0.06)';
+  const iconBg = 'rgba(255,255,255,0.06)';
+  const cardGlow = '0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06)';
 
   // Voice state
   const [isVoiceActive, setIsVoiceActive] = useState(false);
@@ -385,10 +394,19 @@ export default function TeslaDashboard() {
     args?: Record<string, unknown>;
   } | null>(null);
   const [isThinkingExpanded, setIsThinkingExpanded] = useState(false);
-  
+
+  // Privacy gate — conversation display requires explicit user approval on iOS
+  // 'locked' = default; 'pending_approval' = waiting for iPhone approval; 'unlocked' = active
+  const [novaLockState, setNovaLockState] = useState<'locked' | 'pending_approval' | 'unlocked'>('locked');
+  const [approvalRequestId, setApprovalRequestId] = useState<string | null>(null);
+  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const INACTIVITY_MS = 10 * 60 * 1000; // 10 minutes
+
   // Text chat input (parallel feature to voice mirror)
   const [textInput, setTextInput] = useState('');
   const [isSendingText, setIsSendingText] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   
   
   // Conversation history management (like iOS History) - synced with Nova API
@@ -516,7 +534,7 @@ export default function TeslaDashboard() {
   const fetchEmailData = useCallback(async () => {
     setIsLoadingEmail(true);
     try {
-      const response = await fetch('/api/hermes/emails/recent?limit=10');
+      const response = await fetch('/api/cig/emails/recent?limit=10');
       if (response.ok) {
         const data = await response.json();
         // Transform Hermes response to match our UI format
@@ -555,7 +573,7 @@ export default function TeslaDashboard() {
   const fetchCalendarEvents = useCallback(async () => {
     setIsLoadingCalendar(true);
     try {
-      const response = await fetch('/api/hermes/calendar/upcoming?limit=20');
+      const response = await fetch('/api/cig/calendar/upcoming?days=7');
       if (response.ok) {
         const data = await response.json();
         const now = new Date();
@@ -587,7 +605,7 @@ export default function TeslaDashboard() {
   const fetchConversationHistory = useCallback(async () => {
     setIsLoadingHistory(true);
     try {
-      const response = await fetch('/api/nova/conversations?user_id=eleazar&limit=20');
+      const response = await fetch(`/api/nova/conversations?user_id=${novaUserId}&limit=20`);
       if (response.ok) {
         const data = await response.json();
         setSavedConversations(data.conversations || []);
@@ -602,7 +620,7 @@ export default function TeslaDashboard() {
   // Load a specific conversation from Nova API
   const loadConversationFromAPI = useCallback(async (convId: string) => {
     try {
-      const response = await fetch(`/api/nova/conversations/${convId}?user_id=eleazar`);
+      const response = await fetch(`/api/nova/conversations/${convId}?user_id=${novaUserId}`);
       if (response.ok) {
         const data = await response.json();
         // Convert API messages to our format
@@ -700,7 +718,7 @@ export default function TeslaDashboard() {
     // Poll for active session, auto-activate when found
     const checkSession = async () => {
       try {
-        const res = await fetch('/api/nova/mirror/status?user_id=default');
+        const res = await fetch(`/api/nova/mirror/status?user_id=${novaUserId}`);
         if (res.ok) {
           const data = await res.json();
           if (data.active && !isVoiceActive) {
@@ -723,9 +741,9 @@ export default function TeslaDashboard() {
 
   // SSE Mirror — subscribe to event stream when voice is active
   useEffect(() => {
-    if (!isVoiceActive) return;
+    if (!isVoiceActive || novaLockState !== 'unlocked') return;
 
-    const es = new EventSource('/api/nova/mirror/stream?user_id=default&api_key=dashboard-internal-api-key-2024');
+    const es = new EventSource(`/api/nova/mirror/stream?user_id=${novaUserId}`);
 
     es.addEventListener('user_transcript', (e) => {
       const { text, isFinal } = JSON.parse(e.data);
@@ -770,35 +788,10 @@ export default function TeslaDashboard() {
       if (who === 'bot') setIsSpeaking(active);
     });
 
-    es.addEventListener('thinking', (e) => {
-      const { phase, text } = JSON.parse(e.data);
-      setIsThinking(phase !== 'done');
-      
-      // Smart contextual thinking messages matching Nova backend
-      if (text) {
-        setThinkingText(text);
-      } else if (phase === 'thinking') {
-        setThinkingText('💭 Analyzing results...');
-      } else if (phase === 'responding') {
-        setThinkingText('✍️ Composing response...');
-      } else if (phase === 'delegating') {
-        setThinkingText('🔄 Working on it...');
-      }
-      
-      if (phase === 'done') {
-        setCurrentToolCall(null);
-        setThinkingText('');
-      }
-    });
-
-    es.addEventListener('tool_call', (e) => {
-      const { name, args } = JSON.parse(e.data);
-      setCurrentToolCall({ name, args });
-      setIsThinking(true);
-      // Smart tool-specific thinking message
-      const toolDisplay = getToolDisplay(name);
-      setThinkingText(`🔧 Using ${toolDisplay.label}...`);
-    });
+    // Infer thinking state from gap between user_transcript final and bot speaking.
+    // Backend emits no dedicated 'thinking' event — speaking_state is the only signal.
+    es.addEventListener('thinking', () => { /* legacy no-op, backend never emits */ });
+    es.addEventListener('tool_call', () => { /* legacy no-op, backend never emits */ });
 
     es.addEventListener('session_end', () => {
       setIsVoiceActive(false);
@@ -820,6 +813,105 @@ export default function TeslaDashboard() {
     return () => es.close();
   }, [isVoiceActive]);
 
+  // ── Privacy gate helpers ─────────────────────────────────────────────────
+
+  const lockNova = useCallback(() => {
+    setNovaLockState('locked');
+    setApprovalRequestId(null);
+    if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+  }, []);
+
+  const resetInactivityTimer = useCallback(() => {
+    if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+    inactivityTimerRef.current = setTimeout(lockNova, INACTIVITY_MS);
+  }, [lockNova]);
+
+  // Play Nova's response via Qwen TTS proxy
+  const playTTS = useCallback(async (text: string) => {
+    if (isMuted || !text.trim()) return;
+    try {
+      const res = await fetch('/api/nova/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, service: 'read-aloud' }),
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        URL.revokeObjectURL(audioRef.current.src);
+      }
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      setIsSpeaking(true);
+      audio.onended = () => {
+        setIsSpeaking(false);
+        URL.revokeObjectURL(url);
+        resetInactivityTimer();
+      };
+      audio.onerror = () => { setIsSpeaking(false); URL.revokeObjectURL(url); };
+      audio.play().catch(() => setIsSpeaking(false));
+    } catch (e) {
+      console.error('[Nova/TTS]', e);
+      setIsSpeaking(false);
+    }
+  }, [isMuted, resetInactivityTimer]);
+
+  const requestDisplayAccess = useCallback(async () => {
+    if (novaLockState !== 'locked') return;
+    setNovaLockState('pending_approval');
+    try {
+      const res = await fetch('/api/nova/display-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: novaUserId, vehicle: 'Tesla' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setApprovalRequestId(data.approval?.id ?? null);
+      } else {
+        // Approval service unavailable — fail secure
+        setNovaLockState('locked');
+        console.error('[Nova] Approval request failed:', res.status);
+      }
+    } catch (err) {
+      setNovaLockState('locked');
+      console.error('[Nova] Approval request error:', err);
+    }
+  }, [novaLockState, novaUserId]);
+
+  // Poll for approval when pending
+  useEffect(() => {
+    if (novaLockState !== 'pending_approval' || !approvalRequestId) return;
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/nova/display-request?id=${approvalRequestId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const status = data.approval?.status ?? data.status;
+        if (status === 'approved' || status === 'executed') {
+          setNovaLockState('unlocked');
+          resetInactivityTimer();
+          clearInterval(poll);
+        } else if (status === 'denied' || status === 'expired') {
+          setNovaLockState('locked');
+          setApprovalRequestId(null);
+          clearInterval(poll);
+        }
+      } catch { /* network hiccup — keep polling */ }
+    }, 2500);
+    return () => clearInterval(poll);
+  }, [novaLockState, approvalRequestId, resetInactivityTimer]);
+
+  // Auto-lock when voice mirror session ends — covers voice mirroring only.
+  // Text chat gate is enforced independently by the lock state check in the overlay.
+  useEffect(() => {
+    if (!isVoiceActive && novaLockState === 'unlocked') {
+      lockNova();
+    }
+  }, [isVoiceActive, novaLockState, lockNova]);
+
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString('en-US', { 
       hour: 'numeric', 
@@ -838,7 +930,7 @@ export default function TeslaDashboard() {
       await fetch('/api/nova/mirror/control', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, userId: 'default' }),
+        body: JSON.stringify({ action, userId: novaUserId }),
       });
       console.log(`[Tesla] Sent ${action} listening command to Nova`);
     } catch (error) {
@@ -935,59 +1027,95 @@ export default function TeslaDashboard() {
   const handleSendText = useCallback(async () => {
     const message = textInput.trim();
     if (!message || isSendingText) return;
-    
+
     setTextInput('');
     setIsSendingText(true);
-    setIsConversationOpen(true); // Activate conversation view (independent of voice session)
-    
-    // Add user message to history immediately
+    setIsConversationOpen(true);
+    setStreamingText('');
+
+    // Optimistically add user bubble
     setConversationHistory(prev => [...prev, {
       role: 'user' as const,
       content: message,
       timestamp: new Date(),
     }]);
-    
+
     setIsThinking(true);
-    setThinkingText('Processing...');
-    
+    setThinkingText('Nova is thinking…');
+    resetInactivityTimer();
+
+    let fullText = '';
+    let resolvedConvId = conversationId;
+
     try {
       const response = await fetch('/api/nova/conversations/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        },
         body: JSON.stringify({
-          user_id: 'eleazar',
+          user_id: novaUserId,
           conversation_id: conversationId,
           message,
         }),
       });
-      
-      if (response.ok) {
-        const data = await response.json();
+
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      setIsThinking(false);
+      setThinkingText('');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const payload = JSON.parse(line.slice(6));
+            if (payload.chunk) {
+              fullText += payload.chunk;
+              setStreamingText(fullText);
+            }
+            if (payload.done) {
+              fullText = payload.full_text || fullText;
+              resolvedConvId = payload.conversation_id || resolvedConvId;
+            }
+          } catch { /* malformed line — skip */ }
+        }
+      }
+
+      // Commit final assistant bubble
+      setStreamingText('');
+      if (fullText) {
         setConversationHistory(prev => [...prev, {
           role: 'assistant' as const,
-          content: data.response || data.text || 'No response',
+          content: fullText,
           timestamp: new Date(),
         }]);
-      } else {
-        toast({
-          title: 'Failed to send message',
-          status: 'error',
-          duration: 3000,
-        });
+        if (resolvedConvId !== conversationId) setConversationId(resolvedConvId);
+        // Play TTS after committing the bubble
+        playTTS(fullText);
       }
     } catch (error) {
       console.error('[Tesla] Text chat error:', error);
-      toast({
-        title: 'Connection error',
-        status: 'error',
-        duration: 3000,
-      });
-    } finally {
       setIsThinking(false);
       setThinkingText('');
+      setStreamingText('');
+      toast({ title: 'Connection error', status: 'error', duration: 3000 });
+    } finally {
       setIsSendingText(false);
     }
-  }, [textInput, isSendingText, conversationId, toast]);
+  }, [textInput, isSendingText, conversationId, novaUserId, toast, resetInactivityTimer, playTTS]);
   
   // Load a saved conversation from Nova API
   const handleLoadConversation = useCallback(async (conv: typeof savedConversations[0]) => {
@@ -1246,17 +1374,63 @@ export default function TeslaDashboard() {
         {!(isBrowserExpanded && currentPage === 1) && (
         <Box w={`${teslaSettings.display.novaWidthPercent}%`} h="100%" flexShrink={0}>
           <Box
-            bg={bgCard}
-            borderRadius="20px"
+            bg={isListening ? `${novaColors.thinking}1F` : isSpeaking ? `${novaColors.result}1A` : isThinking ? `${novaColors.analyzing}1F` : bgCard}
+            borderRadius={novaRadius.xl}
             p={6}
             h="100%"
+            position="relative"
             border="1px solid"
-            borderColor={isConversationOpen || isVoiceActive ? accentColor : borderColor}
-            transition="all 0.3s"
-            boxShadow={isConversationOpen || isVoiceActive ? `0 0 20px ${accentColor}40` : 'none'}
+            borderColor={isListening ? `${novaColors.thinking}80` : isSpeaking ? `${novaColors.result}80` : isThinking ? `${novaColors.analyzing}80` : isConversationOpen || isVoiceActive ? accentColor : borderColor}
+            transition="all 0.3s ease"
+            boxShadow={isListening ? `0 0 32px ${novaColors.thinking}66, ${cardGlow}` : isSpeaking ? `0 0 32px ${novaColors.result}66, ${cardGlow}` : isThinking ? `0 0 32px ${novaColors.analyzing}66, ${cardGlow}` : cardGlow}
+            sx={{ backdropFilter: 'blur(20px) saturate(1.6)', WebkitBackdropFilter: 'blur(20px) saturate(1.6)' }}
             display="flex"
             flexDirection="column"
           >
+            {/* ── Privacy gate overlay ── */}
+            {novaLockState !== 'unlocked' && isConversationOpen && (
+              <Flex
+                position="absolute" inset={0} borderRadius="inherit"
+                flexDir="column" align="center" justify="center" gap={5}
+                bg="rgba(10,10,18,0.88)"
+                sx={{ backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', zIndex: 10 }}
+              >
+                <Box
+                  w="72px" h="72px" borderRadius="full"
+                  bg="rgba(255,255,255,0.06)" border="1px solid rgba(255,255,255,0.12)"
+                  display="flex" alignItems="center" justifyContent="center"
+                >
+                  <Icon as={Lock} boxSize={8} color={textSecondary} />
+                </Box>
+                <VStack spacing={1} textAlign="center">
+                  <Text fontWeight="700" fontSize="lg" color={textPrimary}>iPhone Mirror Locked</Text>
+                  <Text fontSize="sm" color={textSecondary} maxW="260px" lineHeight="1.5">
+                    {novaLockState === 'pending_approval'
+                      ? 'Approval request sent to your iPhone. Waiting for confirmation…'
+                      : 'Tap below to request display access. Your iPhone will ask for confirmation.'}
+                  </Text>
+                </VStack>
+                {novaLockState === 'locked' && (
+                  <Box
+                    as="button" px={6} py={3} borderRadius="full"
+                    bg={accentColor} color="white" fontWeight="600" fontSize="sm"
+                    boxShadow={`0 0 24px ${accentColor}55`}
+                    cursor="pointer" transition="all 0.2s"
+                    _hover={{ transform: 'scale(1.04)', boxShadow: `0 0 32px ${accentColor}88` }}
+                    onClick={requestDisplayAccess}
+                  >
+                    Unlock Nova — Approve on iPhone
+                  </Box>
+                )}
+                {novaLockState === 'pending_approval' && (
+                  <HStack spacing={3} color={textSecondary} fontSize="sm">
+                    <Spinner size="sm" color={accentColor} />
+                    <Text>Waiting for approval…</Text>
+                  </HStack>
+                )}
+              </Flex>
+            )}
+
             {!isConversationOpen ? (
               /* Idle state - show mic button and text input */
               <VStack spacing={6} align="center" justify="center" h="100%">
@@ -1392,16 +1566,47 @@ export default function TeslaDashboard() {
                     )}
                     <VStack align="start" spacing={0}>
                       <Text fontWeight="bold" fontSize="lg">Nova</Text>
-                      <HStack spacing={2}>
-                        <Box 
-                          w="8px" 
-                          h="8px" 
-                          borderRadius="full" 
-                          bg={isMuted ? 'gray.400' : isListening ? successColor : isSpeaking ? accentColor : isThinking ? 'orange.400' : 'gray.400'}
-                        />
-                        <Text fontSize="sm" color={textSecondary}>
-                          {isMuted ? 'Muted' : isListening ? 'Listening...' : isSpeaking ? 'Speaking...' : isThinking ? 'Thinking...' : 'Ready'}
-                        </Text>
+                      <HStack spacing={2} mt={1}>
+                        {(() => {
+                          if (isMuted) return (
+                            <HStack spacing={1.5} px={2.5} py={0.5} borderRadius="full" bg="rgba(100,100,100,0.18)" border="1px solid rgba(255,255,255,0.08)">
+                              <Box w="5px" h="5px" borderRadius="full" bg="gray.400" />
+                              <Text fontSize="xs" fontWeight="600" color="gray.400" letterSpacing="0.04em">Muted</Text>
+                            </HStack>
+                          );
+                          if (isListening) return (
+                            <HStack spacing={1.5} px={2.5} py={0.5} borderRadius="full" bg={`${novaColors.thinking}22`} border={`1px solid ${novaColors.thinking}55`}
+                              sx={{'@keyframes pill-pulse':{'0%,100%':{opacity:1},'50%':{opacity:0.65}},animation:'pill-pulse 1.6s ease-in-out infinite'}}>
+                              <Icon as={Mic} boxSize="10px" color={novaColors.thinking} />
+                              <Text fontSize="xs" fontWeight="700" color={novaColors.thinking} letterSpacing="0.05em">Listening</Text>
+                              <HStack spacing="2px" align="center">
+                                {[4,7,5].map((h,i) => (
+                                  <Box key={i} w="2px" h={`${h}px`} borderRadius="1px" bg={novaColors.thinking}
+                                    sx={{animationDelay:`${i*0.15}s`,animation:'bar 0.8s ease-in-out infinite',
+                                      '@keyframes bar':{'0%,100%':{transform:'scaleY(0.4)'},'50%':{transform:'scaleY(1)'}}}} />
+                                ))}
+                              </HStack>
+                            </HStack>
+                          );
+                          if (isThinking) return (
+                            <HStack spacing={1.5} px={2.5} py={0.5} borderRadius="full" bg={`${novaColors.analyzing}22`} border={`1px solid ${novaColors.analyzing}55`}>
+                              <Spinner size="xs" color={novaColors.analyzing} speed="0.9s" />
+                              <Text fontSize="xs" fontWeight="700" color={novaColors.analyzing} letterSpacing="0.05em">Thinking</Text>
+                            </HStack>
+                          );
+                          if (isSpeaking) return (
+                            <HStack spacing={1.5} px={2.5} py={0.5} borderRadius="full" bg={`${novaColors.result}22`} border={`1px solid ${novaColors.result}55`}>
+                              <Icon as={Volume2} boxSize="10px" color={novaColors.result} />
+                              <Text fontSize="xs" fontWeight="700" color={novaColors.result} letterSpacing="0.05em">Speaking</Text>
+                            </HStack>
+                          );
+                          return (
+                            <HStack spacing={1.5} px={2.5} py={0.5} borderRadius="full" bg="rgba(255,255,255,0.05)" border="1px solid rgba(255,255,255,0.08)">
+                              <Box w="5px" h="5px" borderRadius="full" bg="rgba(255,255,255,0.3)" />
+                              <Text fontSize="xs" fontWeight="600" color={textSecondary} letterSpacing="0.04em">Ready</Text>
+                            </HStack>
+                          );
+                        })()}
                       </HStack>
                     </VStack>
                   </HStack>
@@ -1443,6 +1648,18 @@ export default function TeslaDashboard() {
                         _hover={{ bg: bgHover, color: 'red.400' }}
                         onClick={handleClearConversation}
                         isDisabled={conversationHistory.length === 0}
+                      />
+                    </Tooltip>
+                    <Tooltip label="Lock conversation" placement="bottom">
+                      <IconButton
+                        aria-label="Lock conversation"
+                        icon={<Icon as={Lock} boxSize={4} />}
+                        variant="ghost"
+                        size="sm"
+                        borderRadius="full"
+                        color={textSecondary}
+                        _hover={{ bg: bgHover, color: 'orange.300' }}
+                        onClick={lockNova}
                       />
                     </Tooltip>
                     <Tooltip label="End call" placement="bottom">
@@ -1519,6 +1736,18 @@ export default function TeslaDashboard() {
                       )}
                       
                       {/* Thinking/Reasoning card (like iOS ThinkingCard) - collapsible */}
+                      {streamingText && !isThinking && (
+                        <Flex justify="flex-start" mb={2}>
+                          <Box
+                            maxW="85%" px={4} py={3} borderRadius="18px"
+                            borderBottomLeftRadius="4px"
+                            bg="rgba(255,255,255,0.06)"
+                            border="1px solid rgba(255,255,255,0.1)"
+                          >
+                            <Text fontSize="sm" color={textPrimary} whiteSpace="pre-wrap">{streamingText}<Box as="span" display="inline-block" w="8px" h="14px" bg={accentColor} ml={1} borderRadius="2px" sx={{animation:'blink 1s step-end infinite','@keyframes blink':{'0%,100%':{opacity:1},'50%':{opacity:0}}}} /></Text>
+                          </Box>
+                        </Flex>
+                      )}
                       {isThinking && (
                         <ThinkingCard
                           toolName={currentToolCall?.name || ''}
