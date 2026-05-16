@@ -905,12 +905,14 @@ export default function TeslaDashboard() {
     return () => clearInterval(poll);
   }, [novaLockState, approvalRequestId, resetInactivityTimer]);
 
-  // Auto-lock when voice mirror session ends — covers voice mirroring only.
-  // Text chat gate is enforced independently by the lock state check in the overlay.
+  // Auto-lock when voice mirror session ends (only if a session was previously active).
+  // Text chat does not trigger auto-lock — the inactivity timer handles that.
+  const prevVoiceActiveRef = useRef(false);
   useEffect(() => {
-    if (!isVoiceActive && novaLockState === 'unlocked') {
+    if (prevVoiceActiveRef.current && !isVoiceActive && novaLockState === 'unlocked') {
       lockNova();
     }
+    prevVoiceActiveRef.current = isVoiceActive;
   }, [isVoiceActive, novaLockState, lockNova]);
 
   const formatTime = (date: Date) => {
