@@ -105,6 +105,7 @@ import ReactMarkdown from 'react-markdown';
 import { useRouter } from 'next/router';
 import { useColorModeValue, useColorMode } from '@chakra-ui/react';
 import { novaColors, novaGlassTint, novaRadius } from '@/theme/nova';
+import { NovaWebRTCClient, type NovaEvent } from '@/lib/nova/NovaWebRTCClient';
 
 import { useTeslaSettings } from '@/hooks/useTeslaSettings';
 import TeslaSettingsDrawer from '@/components/tesla/TeslaSettingsDrawer';
@@ -407,6 +408,8 @@ export default function TeslaDashboard() {
   const [isSendingText, setIsSendingText] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const novaClientRef = useRef<NovaWebRTCClient | null>(null);
+  const llmBufferRef = useRef<string>('');
   
   
   // Conversation history management (like iOS History) - synced with Nova API
@@ -826,34 +829,23 @@ export default function TeslaDashboard() {
     inactivityTimerRef.current = setTimeout(lockNova, INACTIVITY_MS);
   }, [lockNova]);
 
-  // Play Nova's response via Qwen TTS proxy
-  const playTTS = useCallback(async (text: string) => {
+  // Speak Nova's response via the browser's local speech synthesis
+  // (mirrors iOS AVSpeechSynthesizer pattern — no server-side TTS needed)
+  const playTTS = useCallback((text: string) => {
     if (isMuted || !text.trim()) return;
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
     try {
-      const res = await fetch('/api/nova/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, service: 'read-aloud' }),
-      });
-      if (!res.ok) return;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      if (audioRef.current) {
-        audioRef.current.pause();
-        URL.revokeObjectURL(audioRef.current.src);
-      }
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      setIsSpeaking(true);
-      audio.onended = () => {
-        setIsSpeaking(false);
-        URL.revokeObjectURL(url);
-        resetInactivityTimer();
-      };
-      audio.onerror = () => { setIsSpeaking(false); URL.revokeObjectURL(url); };
-      audio.play().catch(() => setIsSpeaking(false));
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.rate = 1.0;
+      utter.pitch = 1.0;
+      utter.volume = 1.0;
+      utter.onstart = () => setIsSpeaking(true);
+      utter.onend = () => { setIsSpeaking(false); resetInactivityTimer(); };
+      utter.onerror = () => setIsSpeaking(false);
+      window.speechSynthesis.speak(utter);
     } catch (e) {
-      console.error('[Nova/TTS]', e);
+      console.error('[Nova/tts] speechSynthesis error:', e);
       setIsSpeaking(false);
     }
   }, [isMuted, resetInactivityTimer]);
@@ -904,6 +896,127 @@ export default function TeslaDashboard() {
     }, 2500);
     return () => clearInterval(poll);
   }, [novaLockState, approvalRequestId, resetInactivityTimer]);
+
+  // ── Nova WebRTC connection lifecycle ───────────────────────────────────
+  // Connect to Nova's /connect endpoint (via /api/nova/webrtc-connect proxy)
+  // when the user unlocks Nova, and tear down on lock/unmount. Mirrors the
+  // iOS NovaPipecatService lifecycle exactly (same RTVI envelope + events).
+  useEffect(() => {
+    if (novaLockState !== 'unlocked') {
+      // Tear down any existing session
+      const existing = novaClientRef.current;
+      if (existing) {
+        existing.disconnect().catch(() => {});
+        novaClientRef.current = null;
+      }
+      return;
+    }
+    if (novaClientRef.current) return; // already connected
+
+    let cancelled = false;
+    const client = new NovaWebRTCClient({
+      userId: novaUserId,
+      conversationId,
+      audioMode: 'tesla',
+    });
+    novaClientRef.current = client;
+
+    const onEvent = (e: NovaEvent) => {
+      if (cancelled) return;
+      switch (e.kind) {
+        case 'connected':
+        case 'botReady':
+          console.log('[Nova/WebRTC] connected/ready');
+          break;
+        case 'disconnected':
+          console.log('[Nova/WebRTC] disconnected:', e.reason);
+          break;
+        case 'botLlmStarted':
+          llmBufferRef.current = '';
+          setIsThinking(true);
+          setThinkingText('Nova is thinking…');
+          break;
+        case 'botLlmText':
+          llmBufferRef.current += e.text;
+          setStreamingText(llmBufferRef.current);
+          setIsThinking(false);
+          break;
+        case 'botLlmStopped': {
+          const text = llmBufferRef.current.trim();
+          if (text) {
+            setConversationHistory(prev => [...prev, {
+              role: 'assistant' as const,
+              content: text,
+              timestamp: new Date(),
+            }]);
+            playTTS(text);
+          }
+          setStreamingText('');
+          llmBufferRef.current = '';
+          setIsThinking(false);
+          setThinkingText('');
+          break;
+        }
+        case 'validated': {
+          const finalText = e.text || llmBufferRef.current;
+          if (finalText && !e.suppressSpeech) {
+            playTTS(e.speechText || finalText);
+          }
+          setIsThinking(false);
+          setThinkingText('');
+          break;
+        }
+        case 'hypothesis':
+          setThinkingText(e.text);
+          break;
+        case 'validating':
+          setThinkingText(`Verifying with ${e.tools.join(', ')}…`);
+          break;
+        case 'validationStep':
+          setCurrentToolCall({ name: e.tool, status: e.status, latencyMs: e.latencyMs });
+          break;
+        case 'turnStatus':
+          if (e.message) setThinkingText(e.message);
+          break;
+        case 'thinkingUpdate':
+        case 'progressUpdate':
+        case 'heartbeat':
+          if (e.text) setThinkingText(e.text);
+          break;
+        case 'turnComplete':
+          setIsThinking(false);
+          setThinkingText('');
+          setCurrentToolCall(null);
+          break;
+        case 'functionCall':
+          setCurrentToolCall({ name: e.name, status: 'running' });
+          break;
+        case 'userTranscript':
+          if (e.isFinal) setCurrentTranscript(e.text);
+          break;
+        case 'error':
+          console.error('[Nova/WebRTC] error:', e.message);
+          toast({ title: 'Nova error', description: e.message, status: 'error', duration: 4000 });
+          break;
+      }
+    };
+
+    client.connect(onEvent).catch((err) => {
+      if (cancelled) return;
+      console.error('[Nova/WebRTC] connect failed:', err);
+      toast({ title: 'Could not reach Nova', description: String(err.message || err), status: 'error', duration: 4000 });
+      novaClientRef.current = null;
+    });
+
+    return () => {
+      cancelled = true;
+      const c = novaClientRef.current;
+      if (c) {
+        c.disconnect().catch(() => {});
+        novaClientRef.current = null;
+      }
+    };
+  }, [novaLockState, novaUserId, conversationId, playTTS, toast]);
 
   // Auto-lock when voice mirror session ends (only if a session was previously active).
   // Text chat does not trigger auto-lock — the inactivity timer handles that.
@@ -1026,15 +1139,23 @@ export default function TeslaDashboard() {
     });
   }, [conversationHistory.length, conversationId, deleteConversationFromAPI, toast]);
   
-  // Send text message via Nova text chat API (port 18803)
+  // Send text via the Nova WebRTC data channel (RTVI send-text envelope, mirrors iOS).
+  // All streaming responses + progress events arrive back via the data channel and are
+  // wired through the useEffect below into the existing state machine.
   const handleSendText = useCallback(async () => {
     const message = textInput.trim();
     if (!message || isSendingText) return;
+    const client = novaClientRef.current;
+    if (!client || !client.isConnected()) {
+      toast({ title: 'Nova is not connected', status: 'warning', duration: 2500 });
+      return;
+    }
 
     setTextInput('');
     setIsSendingText(true);
     setIsConversationOpen(true);
     setStreamingText('');
+    llmBufferRef.current = '';
 
     // Optimistically add user bubble
     setConversationHistory(prev => [...prev, {
@@ -1047,78 +1168,17 @@ export default function TeslaDashboard() {
     setThinkingText('Nova is thinking…');
     resetInactivityTimer();
 
-    let fullText = '';
-    let resolvedConvId = conversationId;
-
     try {
-      const response = await fetch('/api/nova/conversations/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'text/event-stream',
-        },
-        body: JSON.stringify({
-          user_id: novaUserId,
-          conversation_id: conversationId,
-          message,
-        }),
-      });
-
-      if (!response.ok || !response.body) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      setIsThinking(false);
-      setThinkingText('');
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const payload = JSON.parse(line.slice(6));
-            if (payload.chunk) {
-              fullText += payload.chunk;
-              setStreamingText(fullText);
-            }
-            if (payload.done) {
-              fullText = payload.full_text || fullText;
-              resolvedConvId = payload.conversation_id || resolvedConvId;
-            }
-          } catch { /* malformed line — skip */ }
-        }
-      }
-
-      // Commit final assistant bubble
-      setStreamingText('');
-      if (fullText) {
-        setConversationHistory(prev => [...prev, {
-          role: 'assistant' as const,
-          content: fullText,
-          timestamp: new Date(),
-        }]);
-        if (resolvedConvId !== conversationId) setConversationId(resolvedConvId);
-        // Play TTS after committing the bubble
-        playTTS(fullText);
-      }
+      client.sendText(message);
     } catch (error) {
-      console.error('[Tesla] Text chat error:', error);
+      console.error('[Tesla] Failed to send text via data channel:', error);
       setIsThinking(false);
       setThinkingText('');
-      setStreamingText('');
-      toast({ title: 'Connection error', status: 'error', duration: 3000 });
+      toast({ title: 'Failed to send message', status: 'error', duration: 3000 });
     } finally {
       setIsSendingText(false);
     }
-  }, [textInput, isSendingText, conversationId, novaUserId, toast, resetInactivityTimer, playTTS]);
+  }, [textInput, isSendingText, toast, resetInactivityTimer]);
   
   // Load a saved conversation from Nova API
   const handleLoadConversation = useCallback(async (conv: typeof savedConversations[0]) => {
