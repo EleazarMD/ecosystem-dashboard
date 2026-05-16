@@ -829,23 +829,36 @@ export default function TeslaDashboard() {
     inactivityTimerRef.current = setTimeout(lockNova, INACTIVITY_MS);
   }, [lockNova]);
 
-  // Speak Nova's response via the browser's local speech synthesis
-  // (mirrors iOS AVSpeechSynthesizer pattern — no server-side TTS needed)
-  const playTTS = useCallback((text: string) => {
+  // Speak Nova's response via the Qwen TTS service (port 4200).
+  // Proxied through /api/nova/tts to avoid mixed-content, same endpoint
+  // as iOS QwenTTSService — voice_id from user preference (default american_female_warm).
+  const playTTS = useCallback(async (text: string) => {
     if (isMuted || !text.trim()) return;
-    if (typeof window === 'undefined' || !window.speechSynthesis) return;
     try {
-      window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.rate = 1.0;
-      utter.pitch = 1.0;
-      utter.volume = 1.0;
-      utter.onstart = () => setIsSpeaking(true);
-      utter.onend = () => { setIsSpeaking(false); resetInactivityTimer(); };
-      utter.onerror = () => setIsSpeaking(false);
-      window.speechSynthesis.speak(utter);
+      setIsSpeaking(true);
+      const res = await fetch('/api/nova/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) {
+        console.error('[Nova/tts] HTTP', res.status);
+        setIsSpeaking(false);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        URL.revokeObjectURL(audioRef.current.src);
+      }
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => { setIsSpeaking(false); URL.revokeObjectURL(url); resetInactivityTimer(); };
+      audio.onerror = () => { setIsSpeaking(false); URL.revokeObjectURL(url); };
+      audio.play().catch(() => setIsSpeaking(false));
     } catch (e) {
-      console.error('[Nova/tts] speechSynthesis error:', e);
+      console.error('[Nova/tts] error:', e);
       setIsSpeaking(false);
     }
   }, [isMuted, resetInactivityTimer]);
