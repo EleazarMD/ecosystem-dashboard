@@ -1388,12 +1388,10 @@ export default function TeslaDashboard() {
             flexDirection="column"
           >
             {/* ── Privacy gate overlay ── */}
-            {novaLockState !== 'unlocked' && isConversationOpen && (
+            {novaLockState !== 'unlocked' && (
               <Flex
-                position="absolute" inset={0} borderRadius="inherit"
                 flexDir="column" align="center" justify="center" gap={5}
-                bg="rgba(10,10,18,0.88)"
-                sx={{ backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', zIndex: 10 }}
+                h="100%" w="100%"
               >
                 <Box
                   w="72px" h="72px" borderRadius="full"
@@ -1403,11 +1401,11 @@ export default function TeslaDashboard() {
                   <Icon as={Lock} boxSize={8} color={textSecondary} />
                 </Box>
                 <VStack spacing={1} textAlign="center">
-                  <Text fontWeight="700" fontSize="lg" color={textPrimary}>iPhone Mirror Locked</Text>
+                  <Text fontWeight="700" fontSize="lg" color={textPrimary}>Nova Locked</Text>
                   <Text fontSize="sm" color={textSecondary} maxW="260px" lineHeight="1.5">
                     {novaLockState === 'pending_approval'
                       ? 'Approval request sent to your iPhone. Waiting for confirmation…'
-                      : 'Tap below to request display access. Your iPhone will ask for confirmation.'}
+                      : 'Nova requires approval before any conversation. Tap below — your iPhone will prompt you.'}
                   </Text>
                 </VStack>
                 {novaLockState === 'locked' && (
@@ -1431,8 +1429,8 @@ export default function TeslaDashboard() {
               </Flex>
             )}
 
-            {!isConversationOpen ? (
-              /* Idle state - show mic button and text input */
+            {novaLockState === 'unlocked' && !isConversationOpen && (
+              /* Idle state (unlocked) - show mic button and text input */
               <VStack spacing={6} align="center" justify="center" h="100%">
                 {/* Large mic button */}
                 <Box position="relative">
@@ -1514,8 +1512,8 @@ export default function TeslaDashboard() {
                   </InputRightElement>
                 </InputGroup>
               </VStack>
-            ) : (
-              /* Active state - show conversation */
+            )}
+            {novaLockState === 'unlocked' && isConversationOpen && (
               <Flex direction="column" h="100%">
                 {/* Header with status and controls */}
                 <Flex justify="space-between" align="center" mb={4}>
