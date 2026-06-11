@@ -103,6 +103,7 @@ import {
   Maximize2,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useRouter } from 'next/router';
 import { useColorModeValue, useColorMode } from '@chakra-ui/react';
 import { novaColors, novaGlassTint, novaRadius } from '@/theme/nova';
@@ -112,6 +113,12 @@ import { useTeslaSettings } from '@/hooks/useTeslaSettings';
 import TeslaSettingsDrawer from '@/components/tesla/TeslaSettingsDrawer';
 const TeslaFuturisticTheme = dynamic(() => import('@/components/tesla/TeslaFuturisticTheme'), { ssr: false });
 import VncKeyboardRelay from '@/components/tesla/VncKeyboardRelay';
+
+// Strip iOS-injected context suffixes (e.g. "[Context: User's current location is ...]")
+// from mirrored user transcripts before display. Mirrors the server-side scrubber
+// in nova/voice_turn_runtime.py (_INJECTED_CONTEXT_RE).
+const stripContextBlocks = (text: string): string =>
+  text.replace(/\[\s*(?:Context|User\s+location)\s*:[^\]]*\]/gi, '').replace(/[ \t]{2,}/g, ' ').trim();
 
 // Icon name → component mapping for dynamic bookmarks
 const ICON_MAP: Record<string, any> = {
@@ -749,6 +756,35 @@ export default function TeslaDashboard() {
   const [textInput, setTextInput] = useState('');
   const [isSendingText, setIsSendingText] = useState(false);
   const [streamingText, setStreamingText] = useState('');
+
+  // Focused chat mode — centered, large-type, driving-legible conversation view.
+  // Defaults ON so an iPhone-initiated session lands in the readable layout.
+  const [isChatFocused, setIsChatFocused] = useState(true);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll: keep the newest message/stream delta pinned into view.
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [conversationHistory.length, currentTranscript, assistantResponse, streamingText, thinkingText, isThinking]);
+
+  // Focus mode is only active when the conversation UI is actually rendered.
+  const chatFocusActive = isChatFocused && isConversationOpen &&
+    (teslaModeEnabled || (isVoiceActive && novaLockState === 'unlocked')) &&
+    (teslaModeEnabled || novaLockState === 'unlocked');
+
+  // Markdown styling for assistant bubbles — GFM tables + driving-legible type.
+  const assistantMdSx = {
+    '& p': { margin: 0, fontSize: chatFocusActive ? 'lg' : 'sm', lineHeight: 1.6 },
+    '& strong': { fontWeight: 'bold' },
+    '& ul, & ol': { pl: chatFocusActive ? 6 : 4, my: 1 },
+    '& li': { fontSize: chatFocusActive ? 'lg' : 'sm', my: 0.5 },
+    '& code': { bg: 'blackAlpha.200', px: 1, borderRadius: 'sm', fontSize: chatFocusActive ? 'md' : 'xs' },
+    '& table': { width: '100%', borderCollapse: 'collapse', my: 2, fontSize: chatFocusActive ? 'md' : 'sm' },
+    '& th, & td': { border: '1px solid rgba(255,255,255,0.14)', px: chatFocusActive ? 3 : 2, py: chatFocusActive ? 2 : 1, textAlign: 'left' },
+    '& th': { bg: 'rgba(255,255,255,0.06)', fontWeight: '600' },
+    '& h1, & h2, & h3': { fontWeight: '700', my: 1, fontSize: chatFocusActive ? 'xl' : 'md' },
+    '& blockquote': { borderLeft: '3px solid rgba(255,255,255,0.2)', pl: 3, my: 1, opacity: 0.85 },
+  } as const;
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const novaClientRef = useRef<NovaWebRTCClient | null>(null);
   const llmBufferRef = useRef<string>('');
@@ -1973,7 +2009,7 @@ export default function TeslaDashboard() {
       <Flex gap={isBrowserExpanded && currentPage === 1 ? 0 : 5} h={isBrowserExpanded && currentPage === 1 ? 'calc(100vh - 24px)' : 'calc(100vh - 140px)'}>
         {/* Voice Agent - Left Side (hidden when browser expanded) */}
         {!(isBrowserExpanded && currentPage === 1) && (
-        <Box w={`${teslaSettings.display.novaWidthPercent}%`} h="100%" flexShrink={0}>
+        <Box w={chatFocusActive ? '100%' : `${teslaSettings.display.novaWidthPercent}%`} h="100%" flexShrink={0} transition="width 0.3s ease">
           <Box
             bg={isListening ? 'rgba(107,92,217,0.22)' : isSpeaking ? 'rgba(52,199,140,0.20)' : isThinking ? 'rgba(255,178,54,0.20)' : bgCard}
             borderRadius={novaRadius.xl}
@@ -2219,7 +2255,7 @@ export default function TeslaDashboard() {
               </VStack>
             )}
             {(teslaModeEnabled || (isVoiceActive && novaLockState === 'unlocked')) && (teslaModeEnabled || novaLockState === 'unlocked') && isConversationOpen && (
-              <Flex direction="column" h="100%">
+              <Flex direction="column" h="100%" w="100%" maxW={chatFocusActive ? '920px' : undefined} mx={chatFocusActive ? 'auto' : undefined}>
                 {/* Header with status and controls */}
                 <Flex justify="space-between" align="center" mb={4}>
                   <HStack spacing={3}>
@@ -2314,8 +2350,20 @@ export default function TeslaDashboard() {
                     </VStack>
                   </HStack>
                   
-                  {/* Voice controls: New, History, Trash, End */}
+                  {/* Voice controls: Focus, New, History, Trash, End */}
                   <HStack spacing={2}>
+                    <Tooltip label={isChatFocused ? 'Exit focused chat' : 'Focus chat'} placement="bottom">
+                      <IconButton
+                        aria-label={isChatFocused ? 'Exit focused chat' : 'Focus chat'}
+                        icon={<Icon as={isChatFocused ? Minimize2 : Maximize2} boxSize={4} />}
+                        variant="ghost"
+                        size="sm"
+                        borderRadius="full"
+                        color={isChatFocused ? accentColor : textSecondary}
+                        _hover={{ bg: bgHover, color: accentColor }}
+                        onClick={() => setIsChatFocused(!isChatFocused)}
+                      />
+                    </Tooltip>
                     <Tooltip label="New conversation" placement="bottom">
                       <IconButton
                         aria-label="New conversation"
@@ -2405,24 +2453,18 @@ export default function TeslaDashboard() {
                         <Box
                           key={i}
                           alignSelf={turn.role === 'user' ? 'flex-end' : 'flex-start'}
-                          maxW="85%"
+                          maxW={chatFocusActive ? (turn.role === 'assistant' ? '95%' : '80%') : '85%'}
                           bg={turn.role === 'user' ? accentColor : bgHover}
                           color={turn.role === 'user' ? 'white' : textPrimary}
-                          px={4}
-                          py={2}
+                          px={chatFocusActive ? 5 : 4}
+                          py={chatFocusActive ? 3 : 2}
                           borderRadius={turn.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px'}
-                          sx={turn.role === 'assistant' ? {
-                            '& p': { margin: 0, fontSize: 'sm' },
-                            '& strong': { fontWeight: 'bold' },
-                            '& ul, & ol': { pl: 4, my: 1 },
-                            '& li': { fontSize: 'sm', my: 0.5 },
-                            '& code': { bg: 'blackAlpha.200', px: 1, borderRadius: 'sm', fontSize: 'xs' },
-                          } : {}}
+                          sx={turn.role === 'assistant' ? assistantMdSx : {}}
                         >
                           {turn.role === 'assistant' ? (
-                            <ReactMarkdown>{turn.content}</ReactMarkdown>
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.content}</ReactMarkdown>
                           ) : (
-                            <Text fontSize="sm">{turn.content}</Text>
+                            <Text fontSize={chatFocusActive ? 'lg' : 'sm'}>{stripContextBlocks(turn.content)}</Text>
                           )}
                         </Box>
                       ))}
@@ -2439,7 +2481,7 @@ export default function TeslaDashboard() {
                           borderRadius="18px 18px 4px 18px"
                           opacity={0.8}
                         >
-                          <Text fontSize="sm">{currentTranscript}</Text>
+                          <Text fontSize={chatFocusActive ? 'lg' : 'sm'}>{stripContextBlocks(currentTranscript)}</Text>
                         </Box>
                       )}
                       
@@ -2452,7 +2494,7 @@ export default function TeslaDashboard() {
                             bg="rgba(255,255,255,0.06)"
                             border="1px solid rgba(255,255,255,0.1)"
                           >
-                            <Text fontSize="sm" color={textPrimary} whiteSpace="pre-wrap">{streamingText}<Box as="span" display="inline-block" w="8px" h="14px" bg={accentColor} ml={1} borderRadius="2px" sx={{animation:'blink 1s step-end infinite','@keyframes blink':{'0%,100%':{opacity:1},'50%':{opacity:0}}}} /></Text>
+                            <Text fontSize={chatFocusActive ? 'lg' : 'sm'} color={textPrimary} whiteSpace="pre-wrap">{streamingText}<Box as="span" display="inline-block" w="8px" h="14px" bg={accentColor} ml={1} borderRadius="2px" sx={{animation:'blink 1s step-end infinite','@keyframes blink':{'0%,100%':{opacity:1},'50%':{opacity:0}}}} /></Text>
                           </Box>
                         </Flex>
                       )}
@@ -2474,20 +2516,14 @@ export default function TeslaDashboard() {
                       {assistantResponse && (
                         <Box
                           alignSelf="flex-start"
-                          maxW="85%"
+                          maxW={chatFocusActive ? '95%' : '85%'}
                           bg={bgHover}
-                          px={4}
-                          py={2}
+                          px={chatFocusActive ? 5 : 4}
+                          py={chatFocusActive ? 3 : 2}
                           borderRadius="18px 18px 18px 4px"
-                          sx={{
-                            '& p': { margin: 0, fontSize: 'sm' },
-                            '& strong': { fontWeight: 'bold' },
-                            '& ul, & ol': { pl: 4, my: 1 },
-                            '& li': { fontSize: 'sm', my: 0.5 },
-                            '& code': { bg: 'blackAlpha.200', px: 1, borderRadius: 'sm', fontSize: 'xs' },
-                          }}
+                          sx={assistantMdSx}
                         >
-                          <ReactMarkdown>{assistantResponse}</ReactMarkdown>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{assistantResponse}</ReactMarkdown>
                           {isSpeaking && (
                             <HStack spacing={1} mt={1}>
                               {[...Array(3)].map((_, i) => (
@@ -2507,6 +2543,8 @@ export default function TeslaDashboard() {
                       )}
                     </VStack>
                   )}
+                  {/* Auto-scroll sentinel */}
+                  <Box ref={chatEndRef} h="1px" flexShrink={0} />
                 </Box>
 
                 {/* Voice visualizer - responds to listening, speaking, and thinking states */}
@@ -2598,12 +2636,13 @@ export default function TeslaDashboard() {
         </Box>
         )}
 
-        {/* Swipeable Cards Container - Right Side (full width when browser expanded) */}
+        {/* Swipeable Cards Container - Right Side (full width when browser expanded; hidden in focused chat) */}
         <Box
           flex={1}
           h="100%"
           overflow="hidden"
           position="relative"
+          display={chatFocusActive ? 'none' : undefined}
           onTouchStart={isBrowserExpanded ? undefined : handleSwipeStart}
           onTouchEnd={isBrowserExpanded ? undefined : handleSwipeEnd}
           onTouchMove={isBrowserExpanded ? undefined : handleSwipeMove}
