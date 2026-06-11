@@ -68,6 +68,7 @@ import {
   Volume2,
   VolumeX,
   Lock,
+  Smartphone,
   Settings,
   Home,
   Globe,
@@ -151,6 +152,281 @@ const mockChargingInfo = {
   charging: false,
   nearbyChargers: 3,
 };
+
+// ── Nova progress step types (mirrors iOS ThinkingActivity exactly) ──────────
+interface NovaActivity {
+  id: string;
+  type: 'thinking'|'searching'|'analyzing'|'reading'|'memory'|'calendar'|'email'|'workspace'|'code'|'approval'|'delegating'|'result'|'toolCall';
+  label: string;
+  subLabel?: string;
+  detail?: string;
+  status: 'active'|'completed'|'failed';
+  startedAt: number;         // Date.now()
+  completedAt?: number;
+  latencyMs?: number;
+  resultPreview?: string;
+}
+
+// Canonical color map — same RGB as iOS ActivityType.color
+const ACTIVITY_COLORS: Record<NovaActivity['type'], string> = {
+  thinking:   'rgba(107, 92, 217, 1)',   // Indigo
+  searching:  'rgba(46, 158, 217, 1)',    // Cerulean
+  analyzing:  'rgba(230, 140, 51, 1)',    // Amber
+  reading:    'rgba(51, 179, 115, 1)',    // Emerald
+  memory:     'rgba(166, 82, 199, 1)',    // Violet
+  calendar:   'rgba(235, 158, 46, 1)',    // Saffron
+  email:      'rgba(51, 128, 235, 1)',    // Royal
+  workspace:  'rgba(77, 168, 107, 1)',    // Forest
+  code:       'rgba(41, 184, 184, 1)',    // Teal
+  approval:   'rgba(224, 77, 89, 1)',     // Crimson
+  delegating: 'rgba(140, 102, 217, 1)',   // Purple
+  result:     'rgba(56, 184, 128, 1)',    // Mint
+  toolCall:   'rgba(115, 140, 184, 1)',   // Slate
+};
+
+// Maps tool/function names to activity type — mirrors iOS activityTypeForTool()
+function activityTypeForTool(name: string): NovaActivity['type'] {
+  const k = name.toLowerCase();
+  if (/search|web_search|tavily|perplexity|brave|serper|research/.test(k)) return 'searching';
+  if (/memory|recall|remember/.test(k)) return 'memory';
+  if (/calendar|schedule|event/.test(k)) return 'calendar';
+  if (/email|mail|send_email/.test(k)) return 'email';
+  if (/read|fetch|get_page|scrape/.test(k)) return 'reading';
+  if (/code|execute|run_python|bash/.test(k)) return 'code';
+  if (/workspace|doc|note|create_doc/.test(k)) return 'workspace';
+  if (/analyz|compar|evaluat|assess/.test(k)) return 'analyzing';
+  if (/approv|request.*access/.test(k)) return 'approval';
+  if (/delegat|agent|assign/.test(k)) return 'delegating';
+  return 'toolCall';
+}
+
+function activityFormattedDuration(a: NovaActivity): string | null {
+  if (a.latencyMs !== undefined) {
+    return a.latencyMs < 1000 ? `${a.latencyMs}ms` : `${(a.latencyMs/1000).toFixed(1)}s`;
+  }
+  if (!a.completedAt) return null;
+  const ms = a.completedAt - a.startedAt;
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms/1000).toFixed(1)}s`;
+}
+
+// ── Single connected step row (mirrors iOS CompactStepRowView) ───────────────
+function NovaStepRow({ activity, isLast }: { activity: NovaActivity; isLast: boolean }) {
+  const color = ACTIVITY_COLORS[activity.type];
+  const isActive = activity.status === 'active';
+  const isFailed = activity.status === 'failed';
+  const dur = activityFormattedDuration(activity);
+  const [elapsed, setElapsed] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!isActive) return;
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - activity.startedAt)/100)/10), 100);
+    return () => clearInterval(t);
+  }, [isActive, activity.startedAt]);
+
+  return (
+    <HStack align="flex-start" spacing="10px" py="2px">
+      {/* Left rail: circle badge + connector */}
+      <Flex direction="column" align="center" w="22px" flexShrink={0}>
+        <Box
+          w="22px" h="22px" borderRadius="full" flexShrink={0}
+          bg={`${color.replace('1)', '0.15)')}` }
+          border={`1.2px solid ${color.replace('1)', isActive ? '0.55)' : isFailed ? '0.35)' : '0.6)')}` }
+          display="flex" alignItems="center" justifyContent="center" position="relative"
+        >
+          {isActive ? (
+            <Box
+              w="10px" h="10px" borderRadius="full" bg={color}
+              sx={{ animation: 'nova-pulse 1s ease-in-out infinite',
+                    '@keyframes nova-pulse': { '0%,100%': { opacity: 0.6, transform: 'scale(0.8)' }, '50%': { opacity: 1, transform: 'scale(1.1)' } } }}
+            />
+          ) : isFailed ? (
+            <Text fontSize="9px" fontWeight="bold" color="red.400" lineHeight="1">✕</Text>
+          ) : (
+            <Text fontSize="9px" color={color} lineHeight="1">✓</Text>
+          )}
+        </Box>
+        {!isLast && (
+          <Box flex="1" w="1.5px" minH="12px" bg={color.replace('1)', '0.22)')} mt="2px" />
+        )}
+      </Flex>
+
+      {/* Content */}
+      <VStack align="start" spacing="2px" flex="1" pb={isLast ? 0 : "6px"}>
+        <HStack spacing="6px" wrap="nowrap">
+          <Text
+            fontSize="12px" fontWeight={isActive ? '600' : '400'}
+            color={isFailed ? 'red.400' : isActive ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.75)'}
+            noOfLines={1}
+          >
+            {activity.label}
+          </Text>
+          {/* Duration badge */}
+          {dur ? (
+            <Box px="6px" py="1.5px" borderRadius="full" bg={color.replace('1)', '0.15)')} flexShrink={0}>
+              <Text fontSize="10px" fontFamily="mono" color={color} lineHeight="1.4">{dur}</Text>
+            </Box>
+          ) : isActive ? (
+            <Box px="6px" py="1.5px" borderRadius="full" bg={color.replace('1)', '0.15)')} flexShrink={0}>
+              <Text fontSize="10px" fontFamily="mono" color={color} lineHeight="1.4">{elapsed.toFixed(1)}s</Text>
+            </Box>
+          ) : null}
+        </HStack>
+        {isActive && activity.subLabel && (
+          <Text fontSize="10px" fontFamily="mono" color={color.replace('1)', '0.7)')} letterSpacing="0.03em">
+            {activity.subLabel}
+          </Text>
+        )}
+        {!isActive && activity.detail && (
+          <Text fontSize="11px" color="rgba(255,255,255,0.45)" noOfLines={1}>{activity.detail}</Text>
+        )}
+      </VStack>
+    </HStack>
+  );
+}
+
+// ── Progression steps container (mirrors iOS ProgressionStepsView) ───────────
+function NovaProgressSteps({
+  activities,
+  isLive,
+}: { activities: NovaActivity[]; isLive: boolean }) {
+  const [expanded, setExpanded] = React.useState(false);
+  if (activities.length === 0) return null;
+
+  const allDone = activities.every(a => a.status !== 'active');
+  const collapsed = allDone && !expanded;
+
+  // Summary: "3 steps · 1.2s"
+  const totalMs = activities.reduce((sum, a) => {
+    if (a.latencyMs !== undefined) return sum + a.latencyMs;
+    if (a.completedAt) return sum + (a.completedAt - a.startedAt);
+    return sum;
+  }, 0);
+  const timeStr = totalMs >= 1000 ? `${(totalMs/1000).toFixed(1)}s` : `${Math.round(totalMs)}ms`;
+  const summary = `${activities.length} step${activities.length === 1 ? '' : 's'} · ${timeStr}`;
+
+  if (collapsed) {
+    return (
+      <HStack
+        spacing="6px" px="10px" py="5px" borderRadius="full"
+        bg="rgba(255,255,255,0.07)" border="1px solid rgba(255,255,255,0.1)"
+        cursor="pointer" onClick={() => setExpanded(true)}
+        _hover={{ bg: 'rgba(255,255,255,0.10)' }} transition="background 0.15s"
+        alignSelf="flex-start"
+      >
+        <Text fontSize="10px" color={novaColors.result}>✓</Text>
+        <Text fontSize="11px" color="rgba(255,255,255,0.5)">{summary}</Text>
+        <Text fontSize="9px" color="rgba(255,255,255,0.3)">▾</Text>
+      </HStack>
+    );
+  }
+
+  return (
+    <VStack align="start" spacing={0} pl="2px">
+      {activities.map((a, i) => (
+        <NovaStepRow key={a.id} activity={a} isLast={i === activities.length - 1} />
+      ))}
+      {allDone && (
+        <HStack
+          spacing="4px" cursor="pointer" onClick={() => setExpanded(false)}
+          opacity={0.4} _hover={{ opacity: 0.7 }} transition="opacity 0.15s"
+          pt="4px" pl="32px"
+        >
+          <Text fontSize="9px" color="rgba(255,255,255,0.6)">▴</Text>
+          <Text fontSize="10px" color="rgba(255,255,255,0.6)">collapse</Text>
+        </HStack>
+      )}
+    </VStack>
+  );
+}
+
+// ── Session planner pill + expandable step list (mirrors iOS InlinePlanPanelView) ─
+interface PlanStep { id: string; title: string; status: 'pending'|'in_progress'|'done'|'skipped'; order: number; }
+interface ActivePlan { topic: string; status: string; steps: PlanStep[]; workspacePageId?: string; }
+
+function InlinePlanPanel({ plan }: { plan: ActivePlan }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const done = plan.steps.filter(s => s.status === 'done' || s.status === 'skipped').length;
+  const total = plan.steps.length;
+
+  React.useEffect(() => {
+    if (total > 0) setExpanded(true);
+  }, [total]);
+
+  return (
+    <Box
+      borderRadius="10px" overflow="hidden"
+      bg="rgba(255,255,255,0.04)"
+      border="0.5px solid rgba(107,92,217,0.25)"
+      alignSelf="flex-start" maxW="90%"
+    >
+      <HStack
+        spacing="8px" px="12px" py="7px" cursor="pointer"
+        onClick={() => total > 0 && setExpanded(e => !e)}
+        _hover={{ bg: 'rgba(255,255,255,0.06)' }} transition="background 0.15s"
+      >
+        <Text fontSize="11px" color={novaColors.delegating}>⎗</Text>
+        <Text fontSize="12px" fontWeight="600" color="rgba(255,255,255,0.88)" noOfLines={1} flex={1}>
+          {plan.topic || 'Session Plan'}
+        </Text>
+        <Text fontSize="11px" color="rgba(255,255,255,0.5)">
+          {total > 0 ? `· ${done}/${total}` : `· ${plan.status}`}
+        </Text>
+        {total > 0 && (
+          <Text fontSize="10px" color="rgba(255,255,255,0.35)">{expanded ? '▴' : '▾'}</Text>
+        )}
+      </HStack>
+      {expanded && total > 0 && (
+        <VStack align="start" spacing="10px" px="12px" pb="10px" pt={0}>
+          <Box w="100%" h="1px" bg="rgba(255,255,255,0.08)" />
+          {[...plan.steps].sort((a,b) => a.order - b.order).map(step => {
+            const isDone = step.status === 'done' || step.status === 'skipped';
+            const isActive = step.status === 'in_progress';
+            return (
+              <HStack key={step.id} align="flex-start" spacing="9px">
+                <Text
+                  fontSize="14px" flexShrink={0} pt="1px"
+                  color={isDone ? novaColors.result : isActive ? novaColors.delegating : 'rgba(255,255,255,0.3)'}
+                >
+                  {isDone ? '●' : isActive ? '◉' : '○'}
+                </Text>
+                <Text
+                  fontSize="12px"
+                  fontWeight={isDone ? '400' : '500'}
+                  color={isDone ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.88)'}
+                  textDecoration={isDone ? 'line-through' : 'none'}
+                  sx={{ textDecorationColor: 'rgba(255,255,255,0.3)' }}
+                >
+                  {step.title}
+                </Text>
+              </HStack>
+            );
+          })}
+        </VStack>
+      )}
+    </Box>
+  );
+}
+
+const VncBrowser = memo(React.forwardRef<HTMLIFrameElement, { url?: string }>(
+  function VncBrowser({ url }, ref) {
+    const src = url || 'https://vnc.hyperspaceanalytics.com/vnc.html?autoconnect=true&resize=scale&show_dot=true';
+    return (
+      <Box
+        as="iframe"
+        ref={ref}
+        src={src}
+        w="100%"
+        h="100%"
+        border="none"
+        display="block"
+        title="Agent Browser Preview"
+        allow="clipboard-read; clipboard-write; fullscreen; autoplay; encrypted-media"
+        // @ts-ignore — allowFullScreen is valid on iframes
+        allowFullScreen
+      />
+    );
+  }
+), (prev, next) => prev.url === next.url);
 
 // ThinkingCard component for collapsible reasoning display
 interface ThinkingCardProps {
@@ -278,30 +554,57 @@ function ThinkingCard({
   );
 }
 
-const VncBrowser = memo(React.forwardRef<HTMLIFrameElement, { url?: string }>(
-  function VncBrowser({ url }, ref) {
-    const src = url || 'https://vnc.hyperspaceanalytics.com/vnc.html?autoconnect=true&resize=scale&show_dot=true';
-    return (
-      <Box
-        as="iframe"
-        ref={ref}
-        src={src}
-        w="100%"
-        h="100%"
-        border="none"
-        display="block"
-        title="Agent Browser Preview"
-        allow="clipboard-read; clipboard-write; fullscreen; autoplay; encrypted-media"
-        // @ts-ignore — allowFullScreen is valid on iframes
-        allowFullScreen
-      />
-    );
-  }
-), (prev, next) => prev.url === next.url);
-
 export default function TeslaDashboard() {
   const router = useRouter();
   const toast = useToast();
+  // ── Tesla Mode opt-in toggle ────────────────────────────────────────────
+  // When OFF (default): iPhone runs Nova standalone. Dashboard does NOT send
+  //   control commands to iPhone and shows a passive "Enable" button.
+  // When ON: dashboard drives the conversation — controls when the iPhone
+  //   starts/stops listening via the mirror control API. iPhone provides the
+  //   microphone over its own WebRTC session; dashboard mirrors conversation
+  //   via SSE. Tesla browser has no mic access. Persisted to localStorage.
+  const [teslaModeEnabled, setTeslaModeEnabledState] = useState<boolean>(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = window.localStorage.getItem('nova_tesla_mode_enabled');
+    // Default to ON on the /tesla page — if you're here you're in a Tesla.
+    // Respect an explicit 'false' if the user previously disabled it.
+    const enabled = stored === 'false' ? false : true;
+    setTeslaModeEnabledState(enabled);
+    if (enabled) {
+      novaLockSetterRef.current?.('unlocked');
+    }
+  }, []);
+  // Forward declarations — actual setters are defined below; we capture them
+  // in refs so persistTeslaMode (which is referenced before they exist) can
+  // call them once they're assigned.
+  const novaLockSetterRef = useRef<((s: 'locked' | 'pending_approval' | 'unlocked') => void) | null>(null);
+  const approvalIdSetterRef = useRef<((id: string | null) => void) | null>(null);
+
+  const persistTeslaMode = useCallback((enabled: boolean) => {
+    setTeslaModeEnabledState(enabled);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('nova_tesla_mode_enabled', String(enabled));
+    }
+    // Enabling Tesla mode = dashboard takes over the conversation. The user
+    // is already authenticated to the dashboard, so we skip the iPhone
+    // approval gate (which is what was trapping them in the dark screen).
+    // Disabling = revert to iPhone-standalone; lock back down so the
+    // conversation panel is hidden and any active session is torn down.
+    if (enabled) {
+      novaLockSetterRef.current?.('unlocked');
+      approvalIdSetterRef.current?.(null);
+    } else {
+      novaLockSetterRef.current?.('locked');
+      approvalIdSetterRef.current?.(null);
+    }
+  }, []);
+
+  // devMic = browser-microphone dev-override path (?devMic=1 only).
+  // In Tesla mode the iPhone provides the microphone — Tesla browser has no mic API.
+  const devMic = process.env.NODE_ENV !== 'production' && router.query.devMic === '1';
+  const devSpeechRef = useRef<any>(null);
   const { colorMode, setColorMode } = useColorMode();
   const { data: _novaSession } = useSession();
   // Single source of truth: authenticated PIC UUID (no more 'eleazar' / 'default' aliases)
@@ -325,17 +628,17 @@ export default function TeslaDashboard() {
   // Nova / iOS Hyperspace mirror palette (Aurora Glass dark)
   // Source of truth: src/theme/nova.ts (mirrors iOS NovaLabels.Colors)
   const bgBase = '#0a0a12';                                  // deep night base
-  const bgCard = 'rgba(255,255,255,0.04)';                   // glass card surface
-  const bgHover = 'rgba(255,255,255,0.08)';                  // hover/selected
+  const bgCard = 'rgba(22,22,36,0.92)';                      // dark card surface — visible without backdrop-filter
+  const bgHover = 'rgba(38,38,58,0.95)';                     // hover/selected
   const textPrimary = 'rgba(255,255,255,0.92)';
   const textSecondary = 'rgba(255,255,255,0.55)';
   const borderColor = 'rgba(255,255,255,0.10)';
   const accentColor = novaColors.thinking;                   // indigo — listening / cognition
   const successColor = novaColors.result;                    // mint — done / verified
   const warningColor = novaColors.analyzing;                 // amber — processing
-  const cardAccentBg = 'rgba(107,92,217,0.08)';              // subtle indigo wash
-  const subtleBorder = 'rgba(255,255,255,0.06)';
-  const iconBg = 'rgba(255,255,255,0.06)';
+  const cardAccentBg = 'rgba(107,92,217,0.18)';              // indigo wash
+  const subtleBorder = 'rgba(255,255,255,0.12)';
+  const iconBg = 'rgba(255,255,255,0.10)';
   const cardGlow = '0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06)';
 
   // Voice state
@@ -379,6 +682,11 @@ export default function TeslaDashboard() {
   // Conversation state for inline voice UI
   const [currentTranscript, setCurrentTranscript] = useState('');
   const [assistantResponse, setAssistantResponse] = useState('');
+  const [reconnectNonce, setReconnectNonce] = useState(0);
+  const seenTurnsRef = useRef<Set<string>>(new Set());
+  const conversationIdRef = useRef<string | null>(null);
+  const [sseEventCount, setSseEventCount] = useState(0);
+  const [sseLastEvent, setSseLastEvent] = useState('none');
   const [conversationHistory, setConversationHistory] = useState<Array<{
     role: 'user' | 'assistant';
     content: string;
@@ -387,19 +695,53 @@ export default function TeslaDashboard() {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   
-  // Thinking/reasoning state (like iOS ThinkingCard)
+  // Nova progress steps state (mirrors iOS thinkingActivities + hypothesisState)
   const [isThinking, setIsThinking] = useState(false);
   const [thinkingText, setThinkingText] = useState('');
+  const [thinkingActivities, setThinkingActivities] = useState<NovaActivity[]>([]);
   const [currentToolCall, setCurrentToolCall] = useState<{
     name: string;
     args?: Record<string, unknown>;
   } | null>(null);
   const [isThinkingExpanded, setIsThinkingExpanded] = useState(false);
+  const [validationResult, setValidationResult] = useState<'confirmed'|'corrected'|'enriched'|'direct'|'failed'|null>(null);
+  // Session planner (activePlan from iOS VoiceAgentService)
+  const [activePlan, setActivePlan] = useState<ActivePlan | null>(null);
+  // Helper refs for activities mutation
+  const activitiesRef = React.useRef<NovaActivity[]>([]);
+  activitiesRef.current = thinkingActivities;
+
+  const upsertActivity = React.useCallback((patch: Partial<NovaActivity> & { id: string }) => {
+    setThinkingActivities(prev => {
+      const idx = prev.findIndex(a => a.id === patch.id);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], ...patch } as NovaActivity;
+        return updated;
+      }
+      return [...prev, patch as NovaActivity];
+    });
+  }, []);
 
   // Privacy gate — conversation display requires explicit user approval on iOS
   // 'locked' = default; 'pending_approval' = waiting for iPhone approval; 'unlocked' = active
   const [novaLockState, setNovaLockState] = useState<'locked' | 'pending_approval' | 'unlocked'>('locked');
   const [approvalRequestId, setApprovalRequestId] = useState<string | null>(null);
+  // Wire forward-declared setters so persistTeslaMode (defined earlier) can
+  // unlock/relock when the user toggles Tesla mode. Updated every render so
+  // they stay in sync with React's latest state setters.
+  novaLockSetterRef.current = setNovaLockState;
+  approvalIdSetterRef.current = setApprovalRequestId;
+  // Auto-unlock when Tesla mode is enabled and the gate is still locked.
+  // The initial useEffect (line ~442) tries to unlock via novaLockSetterRef,
+  // but the ref is null at that point because setNovaLockState has not been
+  // captured yet. This effect fires after the ref is wired, so the unlock
+  // actually takes effect.
+  useEffect(() => {
+    if (teslaModeEnabled && novaLockState !== "unlocked") {
+      setNovaLockState("unlocked");
+    }
+  }, [teslaModeEnabled, novaLockState]);
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const INACTIVITY_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -716,9 +1058,12 @@ export default function TeslaDashboard() {
     return () => clearInterval(interval);
   }, [fetchEmailData, fetchCalendarEvents, fetchOpenClawAgents]);
 
-  // SSE Mirror — auto-connect to active voice session
+  // SSE Mirror — poll iPhone voice session activity.
+  // Runs in both Tesla mode and standalone iPhone mode.
+  // In Tesla mode the dashboard controls start/stop via the mirror control API
+  // and the iPhone provides audio; this poller drives isVoiceActive which
+  // gates the SSE event stream connection.
   useEffect(() => {
-    // Poll for active session, auto-activate when found
     const checkSession = async () => {
       try {
         const res = await fetch(`/api/nova/mirror/status?user_id=${novaUserId}`);
@@ -740,22 +1085,32 @@ export default function TeslaDashboard() {
     const poller = setInterval(checkSession, 3000);
     checkSession();
     return () => clearInterval(poller);
-  }, [isVoiceActive]);
+  }, [isVoiceActive, teslaModeEnabled, novaUserId]);
 
   // SSE Mirror — subscribe to event stream when voice is active
   useEffect(() => {
-    if (!isVoiceActive || novaLockState !== 'unlocked') return;
+    if (!isVoiceActive || (!teslaModeEnabled && novaLockState !== 'unlocked')) return;
 
     const es = new EventSource(`/api/nova/mirror/stream?user_id=${novaUserId}`);
+    const connectedAt = Date.now();
+    setSseLastEvent('connecting@' + new Date().toLocaleTimeString());
+    es.onopen = () => setSseLastEvent('open@' + new Date().toLocaleTimeString());
 
     es.addEventListener('user_transcript', (e) => {
       const { text, isFinal } = JSON.parse(e.data);
+      setIsConversationOpen(true); // Open view on first real content
+      setSseEventCount(c => c + 1);
       if (isFinal) {
-        setConversationHistory(prev => [...prev, {
-          role: 'user' as const,
-          content: text,
-          timestamp: new Date(),
-        }]);
+        const sig = 'user::' + text;
+        const replaying = Date.now() - connectedAt < 2500;
+        if (!(replaying && seenTurnsRef.current.has(sig))) {
+          seenTurnsRef.current.add(sig);
+          setConversationHistory(prev => [...prev, {
+            role: 'user' as const,
+            content: text,
+            timestamp: new Date(),
+          }]);
+        }
         setCurrentTranscript('');
       } else {
         setCurrentTranscript(text);
@@ -764,15 +1119,22 @@ export default function TeslaDashboard() {
 
     es.addEventListener('assistant_text', (e) => {
       const { text, isFinal } = JSON.parse(e.data);
+      setIsConversationOpen(true); // Open view on first real content
+      setSseEventCount(c => c + 1);
       if (isFinal) {
         setIsThinking(false);
         setThinkingText('');
         setCurrentToolCall(null);
-        setConversationHistory(prev => [...prev, {
-          role: 'assistant' as const,
-          content: text,
-          timestamp: new Date(),
-        }]);
+        const sigA = 'assistant::' + text;
+        const replayingA = Date.now() - connectedAt < 2500;
+        if (!(replayingA && seenTurnsRef.current.has(sigA))) {
+          seenTurnsRef.current.add(sigA);
+          setConversationHistory(prev => [...prev, {
+            role: 'assistant' as const,
+            content: text,
+            timestamp: new Date(),
+          }]);
+        }
         setAssistantResponse('');
       } else {
         setAssistantResponse(text);
@@ -793,36 +1155,83 @@ export default function TeslaDashboard() {
 
     // Infer thinking state from gap between user_transcript final and bot speaking.
     // Backend emits no dedicated 'thinking' event — speaking_state is the only signal.
-    es.addEventListener('thinking', () => { /* legacy no-op, backend never emits */ });
+    es.addEventListener('thinking', () => { setIsThinking(true); setThinkingText(''); });
     es.addEventListener('tool_call', () => { /* legacy no-op, backend never emits */ });
 
     es.addEventListener('session_end', () => {
-      setIsVoiceActive(false);
-      setIsListening(false);
-      setIsSpeaking(false);
-      // Don't reset isConversationOpen — text chat may still be active
+      // Verify session truly ended before closing SSE — transient reconnects can fire this.
+      setTimeout(async () => {
+        try {
+          const r = await fetch(`/api/nova/mirror/status?user_id=${novaUserId}`);
+          if (r.ok) {
+            const d = await r.json();
+            if (!d.active) {
+              setIsVoiceActive(false);
+              setIsListening(false);
+              setIsSpeaking(false);
+            }
+          }
+        } catch { /* keep session alive on network error */ }
+      }, 3000);
     });
 
     es.addEventListener('session_start', (e) => {
       const { conversation_id } = JSON.parse(e.data);
-      if (conversation_id) setConversationId(conversation_id);
+      if (conversation_id) {
+        if (conversationIdRef.current && conversationIdRef.current !== conversation_id) {
+          seenTurnsRef.current = new Set();
+          setConversationHistory([]);
+          setCurrentTranscript('');
+          setAssistantResponse('');
+        }
+        conversationIdRef.current = conversation_id;
+        setConversationId(conversation_id);
+      }
     });
 
     es.onerror = () => {
       // SSE reconnects automatically
       console.log('[Tesla] Mirror SSE reconnecting...');
+      setSseLastEvent('error@' + new Date().toLocaleTimeString());
     };
 
     return () => es.close();
-  }, [isVoiceActive]);
+  }, [isVoiceActive, novaLockState, novaUserId, reconnectNonce, teslaModeEnabled]);
+
+  // Recover from in-car browser tab suspension. When the Tesla browser
+  // backgrounds/freezes this tab, both the 3s status poll and the SSE stop
+  // and do not resume on their own. On resume, bump the reconnect nonce so
+  // the SSE effect re-opens the stream; the mirror replays recent history,
+  // so the conversation repopulates immediately (dedup guards doubles).
+  useEffect(() => {
+    const resume = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      setReconnectNonce((n) => n + 1);
+    };
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('pageshow', resume);
+    window.addEventListener('online', resume);
+    return () => {
+      document.removeEventListener('visibilitychange', resume);
+      window.removeEventListener('pageshow', resume);
+      window.removeEventListener('online', resume);
+    };
+  }, []);
+
+
+
 
   // ── Privacy gate helpers ─────────────────────────────────────────────────
 
   const lockNova = useCallback(() => {
+    // In Tesla mode or passive mirror mode the inactivity lock is suppressed —
+    // driver should never be trapped in a dark screen that requires iPhone
+    // interaction to dismiss while a voice session is active.
+    if (teslaModeEnabled || isVoiceActive) return;
     setNovaLockState('locked');
     setApprovalRequestId(null);
     if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-  }, []);
+  }, [teslaModeEnabled]);
 
   const resetInactivityTimer = useCallback(() => {
     if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
@@ -910,17 +1319,49 @@ export default function TeslaDashboard() {
     return () => clearInterval(poll);
   }, [novaLockState, approvalRequestId, resetInactivityTimer]);
 
-  // ── Nova WebRTC connection lifecycle ───────────────────────────────────
-  // Connect to Nova's /connect endpoint (via /api/nova/webrtc-connect proxy)
-  // when the user unlocks Nova, and tear down on lock/unmount. Mirrors the
-  // iOS NovaPipecatService lifecycle exactly (same RTVI envelope + events).
+  // iPhone session detected — log + auto-request approval in passive mode.
+  // NOTE: must be defined after requestDisplayAccess to avoid SSR hoisting error.
   useEffect(() => {
-    if (novaLockState !== 'unlocked') {
-      // Tear down any existing session
+    if (novaLockState === 'unlocked' && isVoiceActive && teslaModeEnabled) {
+      console.log('[Tesla] iPhone session active — auto-opening conversation view');
+      setIsConversationOpen(true);
+    }
+    // Passive mirror: auto-request display approval when a voice session is
+    // detected and the gate is still locked. The user gets an iPhone
+    // notification and can approve without touching the dashboard.
+    if (!teslaModeEnabled && isVoiceActive) {
+      if (novaLockState === 'unlocked') {
+        setIsConversationOpen(true);
+      } else {
+        // Auto-request display approval when a voice session is
+        // detected and the gate is still locked. The user gets an iPhone
+        // notification and can approve without touching the dashboard.
+        console.log('[Passive] Voice session detected — auto-requesting display approval');
+        requestDisplayAccess();
+      }
+    }
+  }, [novaLockState, isVoiceActive, teslaModeEnabled, requestDisplayAccess]);
+
+  // ── Nova WebRTC connection lifecycle ───────────────────────────────────
+  // In Tesla mode the iPhone is the audio client — no dashboard WebRTC session.
+  // A dashboard-owned session is only created when devMic is active (dev override).
+  useEffect(() => {
+    // Tesla mode: iPhone provides audio via its own WebRTC session.
+    // Tear down any stale dashboard session and exit.
+    if (teslaModeEnabled) {
       const existing = novaClientRef.current;
       if (existing) {
         existing.disconnect().catch(() => {});
         novaClientRef.current = null;
+      }
+      return;
+    }
+    if (novaLockState !== 'unlocked') {
+      const existing = novaClientRef.current;
+      if (existing) {
+        existing.disconnect().catch(() => {});
+        novaClientRef.current = null;
+        setIsVoiceActive(false);
       }
       return;
     }
@@ -940,9 +1381,11 @@ export default function TeslaDashboard() {
         case 'connected':
         case 'botReady':
           console.log('[Nova/WebRTC] connected/ready');
+          setIsVoiceActive(true);
           break;
         case 'disconnected':
           console.log('[Nova/WebRTC] disconnected:', e.reason);
+          setIsVoiceActive(false);
           break;
         case 'botLlmStarted':
           llmBufferRef.current = '';
@@ -1029,17 +1472,14 @@ export default function TeslaDashboard() {
         novaClientRef.current = null;
       }
     };
-  }, [novaLockState, novaUserId, conversationId, playTTS, toast]);
+  }, [teslaModeEnabled, novaLockState, novaUserId, conversationId, playTTS, toast]);
 
-  // Auto-lock when voice mirror session ends (only if a session was previously active).
-  // Text chat does not trigger auto-lock — the inactivity timer handles that.
-  const prevVoiceActiveRef = useRef(false);
-  useEffect(() => {
-    if (prevVoiceActiveRef.current && !isVoiceActive && novaLockState === 'unlocked') {
-      lockNova();
-    }
-    prevVoiceActiveRef.current = isVoiceActive;
-  }, [isVoiceActive, novaLockState, lockNova]);
+  // NOTE: previously, when isVoiceActive flipped from true→false the dashboard
+  // called lockNova(), trapping the user in a dark lock screen that required
+  // an iPhone approval to dismiss. With Tesla mode (dashboard-driven, browser
+  // mic) the dashboard's WebRTC session is the source of truth and brief
+  // disconnects must NOT lock the UI. The 10-minute inactivity timer
+  // (resetInactivityTimer) is the only auto-lock path now.
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString('en-US', { 
@@ -1052,20 +1492,87 @@ export default function TeslaDashboard() {
   const handleVoiceToggle = useCallback(async () => {
     const newState = !isConversationOpen;
     setIsConversationOpen(newState);
-    
-    // Send control command to Nova Mirror API (tap-to-talk)
-    try {
-      const action = newState ? 'start' : 'stop';
-      await fetch('/api/nova/mirror/control', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, userId: novaUserId }),
-      });
-      console.log(`[Tesla] Sent ${action} listening command to Nova`);
-    } catch (error) {
-      console.error('[Tesla] Failed to send control command:', error);
+
+    if (devMic) {
+      // ── Dev-mic mode: browser microphone via Web Speech API ──────────────────
+      // Final transcripts are sent through the WebRTC data channel (same path as
+      // keyboard text input). The iPhone is NOT involved.
+      if (newState) {
+        const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+        if (!SR) {
+          toast({ title: '[devMic] SpeechRecognition not supported in this browser', status: 'error', duration: 3000 });
+          return;
+        }
+        const sr = new SR() as any;
+        sr.lang = 'en-US';
+        sr.interimResults = true;
+        sr.continuous = true;
+        devSpeechRef.current = sr;
+        sr.onstart = () => { setIsListening(true); console.log('[devMic] listening'); };
+        sr.onend = () => { setIsListening(false); console.log('[devMic] stopped'); };
+        sr.onerror = (ev: any) => {
+          console.error('[devMic] error', ev.error);
+          setIsListening(false);
+        };
+        sr.onresult = (ev: any) => {
+          let interim = '';
+          let finalText = '';
+          for (let i = ev.resultIndex; i < ev.results.length; i++) {
+            const t = ev.results[i][0].transcript;
+            if (ev.results[i].isFinal) finalText += t;
+            else interim += t;
+          }
+          if (interim) setCurrentTranscript(interim);
+          if (finalText) {
+            setCurrentTranscript('');
+            const client = novaClientRef.current;
+            if (client?.isConnected()) {
+              setConversationHistory(prev => [...prev, { role: 'user' as const, content: finalText, timestamp: new Date() }]);
+              setIsThinking(true);
+              setThinkingText('Nova is thinking…');
+              resetInactivityTimer();
+              client.sendText(finalText);
+              console.log('[devMic] sent:', finalText);
+            }
+          }
+        };
+        sr.start();
+      } else {
+        devSpeechRef.current?.stop();
+        devSpeechRef.current = null;
+        setIsListening(false);
+      }
+      return;
     }
-  }, [isConversationOpen]);
+
+    // ── Tesla / Normal mode: delegate mic to iPhone via mirror control ─────────
+    // In Tesla mode: send start/stop listening commands to iPhone.
+    // In passive mode (no Tesla mode): the mic button is informational only —
+    // the iPhone controls its own mic. Tapping toggles isConversationOpen for
+    // the display but does NOT send control commands.
+    if (teslaModeEnabled) {
+      // Optimistically flip isVoiceActive so the SSE stream connects immediately
+      // without waiting for the 3-second status poller cycle.
+      setIsVoiceActive(newState);
+      try {
+        const action = newState ? 'start' : 'stop';
+        await fetch('/api/nova/mirror/control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, userId: novaUserId }),
+        });
+        console.log('[Tesla] Sent ' + action + ' listening command to iPhone');
+      } catch (error) {
+        console.error('[Tesla] Failed to send control command:', error);
+        // Roll back optimistic flip on failure
+        setIsVoiceActive(!newState);
+      }
+    } else {
+      // Passive mirror mode: no control commands. Just toggle the conversation view.
+      // isVoiceActive is driven by the mirror status poller, not by the dashboard.
+      console.log('[Passive] Mic tap in passive mode — no control command sent to iPhone');
+    }
+  }, [isConversationOpen, devMic, teslaModeEnabled, novaUserId, setIsVoiceActive, resetInactivityTimer]);
 
   const handleNavigate = useCallback((path: string) => {
     router.push(path);
@@ -1336,6 +1843,24 @@ export default function TeslaDashboard() {
       p={6}
       color={textPrimary}
     >
+      {/* DEBUG HUD (fixed, root-level) - remove after diagnosis */}
+      <Box position="fixed" top="0" left="0" right="0" zIndex={999999} bg="rgba(0,0,0,0.92)" color="#4ade80" fontSize="13px" fontFamily="monospace" px={2} py={1} pointerEvents="none" textAlign="center" fontWeight="bold">
+        {`lock:${novaLockState} | tesla:${teslaModeEnabled?'Y':'N'} | voice:${isVoiceActive?'Y':'N'} | open:${isConversationOpen?'Y':'N'} | hist:${conversationHistory.length} | ev:${sseEventCount} | page:${currentPage} | bexp:${isBrowserExpanded?'Y':'N'} | ${sseLastEvent}`}
+      </Box>
+      {/* Dev-mic banner — only visible when ?devMic=1 is in the URL */}
+      {devMic && (
+        <Box
+          bg="rgba(255,178,54,0.18)" border="1px solid rgba(255,178,54,0.55)"
+          borderRadius="8px" px={4} py={2} mb={4}
+          display="flex" alignItems="center" gap={3}
+        >
+          <Text fontSize="sm" fontWeight="700" color="rgba(255,178,54,1)">⚠ DEV MIC MODE</Text>
+          <Text fontSize="xs" color="rgba(255,178,54,0.8)">
+            Browser microphone active — iPhone not involved. Remove ?devMic=1 for production.
+          </Text>
+        </Box>
+      )}
+
       {/* Header (hidden in expanded browser mode) */}
       {!(isBrowserExpanded && currentPage === 1) && (
       <Flex justify="space-between" align="center" mb={6}>
@@ -1450,7 +1975,7 @@ export default function TeslaDashboard() {
         {!(isBrowserExpanded && currentPage === 1) && (
         <Box w={`${teslaSettings.display.novaWidthPercent}%`} h="100%" flexShrink={0}>
           <Box
-            bg={isListening ? `${novaColors.thinking}1F` : isSpeaking ? `${novaColors.result}1A` : isThinking ? `${novaColors.analyzing}1F` : bgCard}
+            bg={isListening ? 'rgba(107,92,217,0.22)' : isSpeaking ? 'rgba(52,199,140,0.20)' : isThinking ? 'rgba(255,178,54,0.20)' : bgCard}
             borderRadius={novaRadius.xl}
             p={6}
             h="100%"
@@ -1463,8 +1988,93 @@ export default function TeslaDashboard() {
             display="flex"
             flexDirection="column"
           >
-            {/* ── Privacy gate overlay ── */}
-            {novaLockState !== 'unlocked' && (
+            {/* ── Tesla Mode disabled — passive mirror or standalone ── */}
+            {!teslaModeEnabled && (
+              <Flex
+                flexDir="column" align="center" justify="center" gap={5}
+                h="100%" w="100%"
+              >
+                {isVoiceActive && novaLockState !== 'unlocked' ? (
+                  /* ── Passive mirror: voice session active but not yet approved ── */
+                  <>
+                    <Box
+                      w="72px" h="72px" borderRadius="full"
+                      bg="rgba(255,255,255,0.06)" border="1px solid rgba(255,255,255,0.12)"
+                      display="flex" alignItems="center" justifyContent="center"
+                    >
+                      <Icon as={Lock} boxSize={8} color={textSecondary} />
+                    </Box>
+                    <VStack spacing={1} textAlign="center">
+                      <Text fontWeight="700" fontSize="lg" color={textPrimary}>Nova Session Detected</Text>
+                      <Text fontSize="sm" color={textSecondary} maxW="280px" lineHeight="1.5">
+                        {novaLockState === 'pending_approval'
+                          ? 'Approval request sent to your iPhone. Waiting for confirmation…'
+                          : 'An active Nova session was found on your iPhone. Approve to view the conversation on this screen.'}
+                      </Text>
+                    </VStack>
+                    {novaLockState === 'locked' && (
+                      <VStack spacing={3}>
+                        <Button
+                          px={6} py={3} borderRadius="full"
+                          bg={accentColor} color="white" fontWeight="600" fontSize="sm"
+                          boxShadow={`0 0 24px ${accentColor}55`}
+                          _hover={{ transform: 'scale(1.04)', boxShadow: `0 0 32px ${accentColor}88` }}
+                          _active={{ transform: 'scale(0.97)' }}
+                          onClick={(e) => { e.stopPropagation(); requestDisplayAccess(); }}
+                          zIndex={20}
+                        >
+                          View Conversation
+                        </Button>
+                        <Button
+                          variant="ghost" size="sm" color={textSecondary}
+                          _hover={{ color: textPrimary, bg: 'rgba(255,255,255,0.06)' }}
+                          onClick={(e) => { e.stopPropagation(); persistTeslaMode(true); }}
+                        >
+                          Switch to Tesla Mode (dashboard controls mic)
+                        </Button>
+                      </VStack>
+                    )}
+                    {novaLockState === 'pending_approval' && (
+                      <HStack spacing={3} color={textSecondary} fontSize="sm">
+                        <Spinner size="sm" color={accentColor} />
+                        <Text>Waiting for approval…</Text>
+                      </HStack>
+                    )}
+                  </>
+                ) : (
+                  /* ── No active voice session — standalone info ── */
+                  <>
+                    <Box
+                      w="72px" h="72px" borderRadius="full"
+                      bg="rgba(255,255,255,0.06)" border="1px solid rgba(255,255,255,0.12)"
+                      display="flex" alignItems="center" justifyContent="center"
+                    >
+                      <Icon as={Smartphone} boxSize={8} color={textSecondary} />
+                    </Box>
+                    <VStack spacing={1} textAlign="center">
+                      <Text fontWeight="700" fontSize="lg" color={textPrimary}>Using iPhone Standalone</Text>
+                      <Text fontSize="sm" color={textSecondary} maxW="280px" lineHeight="1.5">
+                        Nova is running on your iPhone. Start a conversation and it will appear here, or enable Tesla Mode to let the dashboard drive the mic.
+                      </Text>
+                    </VStack>
+                    <Button
+                      px={6} py={3} borderRadius="full"
+                      bg={accentColor} color="white" fontWeight="600" fontSize="sm"
+                      boxShadow={`0 0 24px ${accentColor}55`}
+                      _hover={{ transform: 'scale(1.04)', boxShadow: `0 0 32px ${accentColor}88` }}
+                      _active={{ transform: 'scale(0.97)' }}
+                      onClick={(e) => { e.stopPropagation(); persistTeslaMode(true); }}
+                      zIndex={20}
+                    >
+                      Enable Tesla Mode
+                    </Button>
+                  </>
+                )}
+              </Flex>
+            )}
+
+            {/* ── Privacy gate overlay (Tesla mode OR passive mirror with active session) ── */}
+            {(teslaModeEnabled || isVoiceActive) && novaLockState !== 'unlocked' && (
               <Flex
                 flexDir="column" align="center" justify="center" gap={5}
                 h="100%" w="100%"
@@ -1478,35 +2088,53 @@ export default function TeslaDashboard() {
                 </Box>
                 <VStack spacing={1} textAlign="center">
                   <Text fontWeight="700" fontSize="lg" color={textPrimary}>Nova Locked</Text>
-                  <Text fontSize="sm" color={textSecondary} maxW="260px" lineHeight="1.5">
+                  <Text fontSize="sm" color={textSecondary} maxW="280px" lineHeight="1.5">
                     {novaLockState === 'pending_approval'
                       ? 'Approval request sent to your iPhone. Waiting for confirmation…'
-                      : 'Nova requires approval before any conversation. Tap below — your iPhone will prompt you.'}
+                      : 'Inactive too long. Tap unlock or disable Tesla Mode to use the iPhone instead.'}
                   </Text>
                 </VStack>
                 {novaLockState === 'locked' && (
-                  <Button
-                    px={6} py={3} borderRadius="full"
-                    bg={accentColor} color="white" fontWeight="600" fontSize="sm"
-                    boxShadow={`0 0 24px ${accentColor}55`}
-                    _hover={{ transform: 'scale(1.04)', boxShadow: `0 0 32px ${accentColor}88` }}
-                    _active={{ transform: 'scale(0.97)' }}
-                    onClick={(e) => { e.stopPropagation(); requestDisplayAccess(); }}
-                    zIndex={20}
-                  >
-                    Unlock Nova — Approve on iPhone
-                  </Button>
+                  <VStack spacing={3}>
+                    <Button
+                      px={6} py={3} borderRadius="full"
+                      bg={accentColor} color="white" fontWeight="600" fontSize="sm"
+                      boxShadow={`0 0 24px ${accentColor}55`}
+                      _hover={{ transform: 'scale(1.04)', boxShadow: `0 0 32px ${accentColor}88` }}
+                      _active={{ transform: 'scale(0.97)' }}
+                      onClick={(e) => { e.stopPropagation(); setNovaLockState('unlocked'); resetInactivityTimer(); }}
+                      zIndex={20}
+                    >
+                      Unlock Dashboard
+                    </Button>
+                    <Button
+                      variant="ghost" size="sm" color={textSecondary}
+                      _hover={{ color: textPrimary, bg: 'rgba(255,255,255,0.06)' }}
+                      onClick={(e) => { e.stopPropagation(); persistTeslaMode(false); }}
+                    >
+                      Disable Tesla Mode
+                    </Button>
+                  </VStack>
                 )}
                 {novaLockState === 'pending_approval' && (
-                  <HStack spacing={3} color={textSecondary} fontSize="sm">
-                    <Spinner size="sm" color={accentColor} />
-                    <Text>Waiting for approval…</Text>
-                  </HStack>
+                  <VStack spacing={3}>
+                    <HStack spacing={3} color={textSecondary} fontSize="sm">
+                      <Spinner size="sm" color={accentColor} />
+                      <Text>Waiting for approval…</Text>
+                    </HStack>
+                    <Button
+                      variant="ghost" size="sm" color={textSecondary}
+                      _hover={{ color: textPrimary, bg: 'rgba(255,255,255,0.06)' }}
+                      onClick={(e) => { e.stopPropagation(); persistTeslaMode(false); }}
+                    >
+                      Cancel — Disable Tesla Mode
+                    </Button>
+                  </VStack>
                 )}
               </Flex>
             )}
 
-            {novaLockState === 'unlocked' && !isConversationOpen && (
+            {(teslaModeEnabled || (isVoiceActive && novaLockState === 'unlocked')) && (teslaModeEnabled || novaLockState === 'unlocked') && !isConversationOpen && (
               /* Idle state (unlocked) - show mic button and text input */
               <VStack spacing={6} align="center" justify="center" h="100%">
                 {/* Large mic button */}
@@ -1590,7 +2218,7 @@ export default function TeslaDashboard() {
                 </InputGroup>
               </VStack>
             )}
-            {novaLockState === 'unlocked' && isConversationOpen && (
+            {(teslaModeEnabled || (isVoiceActive && novaLockState === 'unlocked')) && (teslaModeEnabled || novaLockState === 'unlocked') && isConversationOpen && (
               <Flex direction="column" h="100%">
                 {/* Header with status and controls */}
                 <Flex justify="space-between" align="center" mb={4}>
@@ -1762,8 +2390,13 @@ export default function TeslaDashboard() {
                   }}
                 >
                   {conversationHistory.length === 0 && !currentTranscript && !assistantResponse ? (
-                    <VStack h="100%" justify="center" spacing={2} opacity={0.6}>
-                      {/* Empty state - mic button below is the CTA */}
+                    <VStack h="100%" justify="center" spacing={3} opacity={0.6}>
+                      <Box w="48px" h="48px" borderRadius="full" bg="rgba(255,255,255,0.05)" border="1px solid rgba(255,255,255,0.1)" display="flex" alignItems="center" justifyContent="center">
+                        <Icon as={isVoiceActive ? Mic : MicOff} boxSize={5} color={isVoiceActive ? accentColor : textSecondary} />
+                      </Box>
+                      <Text fontSize="sm" color={textSecondary} textAlign="center">
+                        {isVoiceActive ? (teslaModeEnabled ? 'iPhone connected — tap mic to speak' : 'iPhone session active — listening on phone') : 'Waiting for iPhone session…'}
+                      </Text>
                     </VStack>
                   ) : (
                     <VStack align="stretch" spacing={3}>
