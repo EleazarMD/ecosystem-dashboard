@@ -194,6 +194,8 @@ const ACTIVITY_COLORS: Record<NovaActivity['type'], string> = {
 // Maps tool/function names to activity type — mirrors iOS activityTypeForTool()
 function activityTypeForTool(name: string): NovaActivity['type'] {
   const k = name.toLowerCase();
+  if (/^(query_cig|cig_vector_search|check_studio)$/.test(k)) return 'reading';
+  if (/^(query_context|recall_memory|search_past_conversations|memory_search)$/.test(k)) return 'memory';
   if (/search|web_search|tavily|perplexity|brave|serper|research/.test(k)) return 'searching';
   if (/memory|recall|remember/.test(k)) return 'memory';
   if (/calendar|schedule|event/.test(k)) return 'calendar';
@@ -1060,17 +1062,33 @@ export default function TeslaDashboard() {
   
   // Tool-specific display config
   const getToolDisplay = (toolName: string) => {
+    const normalizedTool = String(toolName || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+    const toolAlias: Record<string, string> = {
+      search_web: 'web_search',
+      tavily_search: 'web_search',
+      perplexity_search: 'web_search',
+      brave_search: 'web_search',
+      serper_search: 'web_search',
+      query_context: 'recall_memory',
+      memory_search: 'recall_memory',
+      weather: 'get_weather',
+    };
+    const toolKey = toolAlias[normalizedTool] || normalizedTool;
+
     const toolConfig: Record<string, { icon: typeof Search; color: string; label: string; emoji: string }> = {
       get_weather: { icon: Cloud, color: 'blue.400', label: 'Weather', emoji: '🌤️' },
       web_search: { icon: Globe, color: 'green.400', label: 'Web Search', emoji: '🔍' },
-      openclaw_delegate: { icon: Brain, color: 'purple.400', label: 'Deep Research', emoji: '🧠' },
-      check_studio: { icon: Mail, color: 'orange.400', label: 'Studio', emoji: '📧' },
-      get_time: { icon: Clock, color: 'cyan.400', label: 'Time', emoji: '🕐' },
+      query_cig: { icon: Server, color: 'cyan.400', label: 'CIG Data', emoji: '📊' },
+      cig_vector_search: { icon: FileText, color: 'teal.400', label: 'CIG Vector Search', emoji: '🧭' },
+      check_studio: { icon: Mail, color: 'orange.400', label: 'Studio Data', emoji: '📧' },
       recall_memory: { icon: Brain, color: 'pink.400', label: 'Memory', emoji: '💭' },
+      search_past_conversations: { icon: MessageSquare, color: 'purple.400', label: 'Conversation Memory', emoji: '🗂️' },
+      openclaw_delegate: { icon: Brain, color: 'purple.400', label: 'Deep Research', emoji: '🧠' },
+      get_time: { icon: Clock, color: 'cyan.400', label: 'Time', emoji: '🕐' },
       service_health_check: { icon: Server, color: 'red.400', label: 'Health Check', emoji: '🔧' },
       manage_ticket: { icon: FileText, color: 'yellow.400', label: 'Tickets', emoji: '🎫' },
     };
-    return toolConfig[toolName] || { icon: Brain, color: 'purple.400', label: 'Processing', emoji: '✨' };
+    return toolConfig[toolKey] || { icon: Brain, color: 'purple.400', label: 'Processing', emoji: '✨' };
   };
 
   // Update clock and set mounted state
