@@ -84,6 +84,7 @@ interface SafetySummary {
   overallSafetyScore: number;
   openIncidents: number;
   pendingAlerts: number;
+  interactionsThisWeek: number;
   recentAnomaly: boolean;
   currentSycophancy: number;
   currentManipulation: number;
@@ -466,7 +467,7 @@ export default function AISafetyDashboard({ childId, childName }: AISafetyDashbo
           </VStack>
           <VStack>
             <Text fontSize="2xl" fontWeight="bold">
-              {summary.weeklyTrend?.totalInteractions || 0}
+              {summary.interactionsThisWeek || summary.weeklyTrend?.totalInteractions || 0}
             </Text>
             <Text fontSize="xs" color="gray.500">Interactions This Week</Text>
           </VStack>

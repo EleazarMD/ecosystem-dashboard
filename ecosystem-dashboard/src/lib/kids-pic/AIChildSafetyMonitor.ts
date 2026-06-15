@@ -142,6 +142,7 @@ export interface SafetySummary {
   overallSafetyScore: number;  // 0-1, higher = safer
   openIncidents: number;
   pendingAlerts: number;
+  interactionsThisWeek: number;
   recentAnomaly: boolean;
   currentSycophancy: number;
   currentManipulation: number;
@@ -272,6 +273,17 @@ export class AIChildSafetyMonitor {
     // Determine if should flag or block
     const shouldFlag = sycophancyScore > 0.6 || manipulationScore > 0.5 || biasScore > 0.5;
     const shouldBlock = manipulationScore > 0.8 || ageAppropriatenessScore < 0.5;
+
+    // Persist a rolling interaction record so all analyzed surfaces (chat + learn tutor)
+    // are reflected in current-week interaction metrics.
+    await this.recordRealtimeInteraction(input, {
+      sycophancyScore,
+      biasScore,
+      manipulationScore,
+      ageAppropriatenessScore,
+      shouldFlag,
+      concerns,
+    });
 
     // Log if concerning
     if (shouldFlag) {
@@ -1096,7 +1108,39 @@ export class AIChildSafetyMonitor {
        WHERE child_id = $1 ORDER BY week_start DESC LIMIT 1`,
       [childId]
     );
-    const weeklyTrend = trendResult.rows.length > 0 ? this.mapTrend(trendResult.rows[0]) : null;
+    let weeklyTrend = trendResult.rows.length > 0 ? this.mapTrend(trendResult.rows[0]) : null;
+
+    let interactionsThisWeek = weeklyTrend?.totalInteractions || 0;
+    try {
+      const weekStart = this.getWeekStart(new Date());
+      const interactionsResult = await this.pool.query(
+        `SELECT
+           COUNT(*)::text AS interactions_this_week,
+           COALESCE(SUM(message_count), 0)::text AS messages_this_week
+         FROM ai_interaction_analysis
+         WHERE child_id = $1
+           AND interaction_date >= $2`,
+        [childId, weekStart],
+      );
+
+      const interactionRow = interactionsResult.rows[0] as
+        | { interactions_this_week: string; messages_this_week: string }
+        | undefined;
+      if (interactionRow) {
+        interactionsThisWeek = Number.parseInt(interactionRow.interactions_this_week, 10) || 0;
+        const messagesThisWeek = Number.parseInt(interactionRow.messages_this_week, 10) || 0;
+
+        if (weeklyTrend) {
+          weeklyTrend = {
+            ...weeklyTrend,
+            totalInteractions: interactionsThisWeek,
+            totalMessages: messagesThisWeek,
+          };
+        }
+      }
+    } catch (error) {
+      console.warn('[AIChildSafety] failed to load live interaction counts:', error);
+    }
 
     // Get recent incidents
     const recentIncidentsResult = await this.pool.query(
@@ -1119,6 +1163,7 @@ export class AIChildSafetyMonitor {
       overallSafetyScore,
       openIncidents,
       pendingAlerts,
+      interactionsThisWeek,
       recentAnomaly: weeklyTrend?.anomalyDetected || false,
       currentSycophancy: weeklyTrend?.avgSycophancyScore || 0,
       currentManipulation: weeklyTrend?.avgManipulationScore || 0,
@@ -1200,6 +1245,105 @@ export class AIChildSafetyMonitor {
       alertOnTrends: config.alert_on_trends,
       immediateAlertSeverity: config.immediate_alert_severity
     };
+  }
+
+  private async recordRealtimeInteraction(
+    input: MessageAnalysisInput,
+    metrics: {
+      sycophancyScore: number;
+      biasScore: number;
+      manipulationScore: number;
+      ageAppropriatenessScore: number;
+      shouldFlag: boolean;
+      concerns: string[];
+    },
+  ): Promise<void> {
+    const childMessages = [{ content: input.childMessage }];
+    const aiMessages = [{ content: input.aiResponse }];
+    const boundaryRespectScore = Math.max(0, 1 - metrics.manipulationScore * 0.5);
+    const childAgencyScore = this.calculateChildAgency(childMessages, aiMessages);
+    const topicDiversityScore = this.calculateTopicDiversity([...childMessages, ...aiMessages]);
+    const emotionalInfluenceScore = metrics.manipulationScore;
+
+    try {
+      await this.pool.query(
+        `INSERT INTO ai_interaction_analysis
+         (child_id, session_id, interaction_date, message_count, child_message_count, ai_message_count,
+          avg_response_length, session_duration_seconds, sycophancy_score, bias_score, manipulation_score,
+          boundary_respect_score, age_appropriateness_score, topic_diversity_score, child_agency_score,
+          emotional_influence_score, flagged_for_review, flag_reasons)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+         ON CONFLICT (child_id, session_id) DO UPDATE SET
+           interaction_date = EXCLUDED.interaction_date,
+           message_count = COALESCE(ai_interaction_analysis.message_count, 0) + EXCLUDED.message_count,
+           child_message_count = COALESCE(ai_interaction_analysis.child_message_count, 0) + EXCLUDED.child_message_count,
+           ai_message_count = COALESCE(ai_interaction_analysis.ai_message_count, 0) + EXCLUDED.ai_message_count,
+           avg_response_length =
+             ((COALESCE(ai_interaction_analysis.avg_response_length, 0) * COALESCE(ai_interaction_analysis.ai_message_count, 0))
+              + (EXCLUDED.avg_response_length * EXCLUDED.ai_message_count))
+             / NULLIF(COALESCE(ai_interaction_analysis.ai_message_count, 0) + EXCLUDED.ai_message_count, 0),
+           session_duration_seconds = GREATEST(
+             COALESCE(ai_interaction_analysis.session_duration_seconds, 0),
+             EXCLUDED.session_duration_seconds
+           ),
+           sycophancy_score =
+             ((COALESCE(ai_interaction_analysis.sycophancy_score, 0) * COALESCE(ai_interaction_analysis.ai_message_count, 0))
+              + (EXCLUDED.sycophancy_score * EXCLUDED.ai_message_count))
+             / NULLIF(COALESCE(ai_interaction_analysis.ai_message_count, 0) + EXCLUDED.ai_message_count, 0),
+           bias_score =
+             ((COALESCE(ai_interaction_analysis.bias_score, 0) * COALESCE(ai_interaction_analysis.ai_message_count, 0))
+              + (EXCLUDED.bias_score * EXCLUDED.ai_message_count))
+             / NULLIF(COALESCE(ai_interaction_analysis.ai_message_count, 0) + EXCLUDED.ai_message_count, 0),
+           manipulation_score =
+             ((COALESCE(ai_interaction_analysis.manipulation_score, 0) * COALESCE(ai_interaction_analysis.ai_message_count, 0))
+              + (EXCLUDED.manipulation_score * EXCLUDED.ai_message_count))
+             / NULLIF(COALESCE(ai_interaction_analysis.ai_message_count, 0) + EXCLUDED.ai_message_count, 0),
+           boundary_respect_score =
+             ((COALESCE(ai_interaction_analysis.boundary_respect_score, 1) * COALESCE(ai_interaction_analysis.ai_message_count, 0))
+              + (EXCLUDED.boundary_respect_score * EXCLUDED.ai_message_count))
+             / NULLIF(COALESCE(ai_interaction_analysis.ai_message_count, 0) + EXCLUDED.ai_message_count, 0),
+           age_appropriateness_score =
+             ((COALESCE(ai_interaction_analysis.age_appropriateness_score, 1) * COALESCE(ai_interaction_analysis.ai_message_count, 0))
+              + (EXCLUDED.age_appropriateness_score * EXCLUDED.ai_message_count))
+             / NULLIF(COALESCE(ai_interaction_analysis.ai_message_count, 0) + EXCLUDED.ai_message_count, 0),
+           topic_diversity_score = GREATEST(
+             COALESCE(ai_interaction_analysis.topic_diversity_score, 0),
+             EXCLUDED.topic_diversity_score
+           ),
+           child_agency_score =
+             ((COALESCE(ai_interaction_analysis.child_agency_score, 0) * COALESCE(ai_interaction_analysis.child_message_count, 0))
+              + (EXCLUDED.child_agency_score * EXCLUDED.child_message_count))
+             / NULLIF(COALESCE(ai_interaction_analysis.child_message_count, 0) + EXCLUDED.child_message_count, 0),
+           emotional_influence_score =
+             ((COALESCE(ai_interaction_analysis.emotional_influence_score, 0) * COALESCE(ai_interaction_analysis.ai_message_count, 0))
+              + (EXCLUDED.emotional_influence_score * EXCLUDED.ai_message_count))
+             / NULLIF(COALESCE(ai_interaction_analysis.ai_message_count, 0) + EXCLUDED.ai_message_count, 0),
+           flagged_for_review = COALESCE(ai_interaction_analysis.flagged_for_review, false) OR EXCLUDED.flagged_for_review,
+           flag_reasons = EXCLUDED.flag_reasons`,
+        [
+          input.childId,
+          input.sessionId,
+          input.timestamp,
+          2,
+          1,
+          1,
+          input.aiResponse.length,
+          0,
+          metrics.sycophancyScore,
+          metrics.biasScore,
+          metrics.manipulationScore,
+          boundaryRespectScore,
+          metrics.ageAppropriatenessScore,
+          topicDiversityScore,
+          childAgencyScore,
+          emotionalInfluenceScore,
+          metrics.shouldFlag,
+          JSON.stringify(metrics.concerns),
+        ],
+      );
+    } catch (error) {
+      console.warn('[AIChildSafety] failed to save realtime interaction:', error);
+    }
   }
 
   private async saveInteractionAnalysis(analysis: AIInteractionAnalysis): Promise<void> {
