@@ -71,9 +71,22 @@ interface AttemptResponse {
   hint?: string;
   hintLevel?: number;
   hintsAvailable?: number;
+  coachMessage?: string;
+}
+
+interface TutorTurnResponse {
+  response?: string;
+  tutorMessage?: string;
+  hint?: string;
+  hintLevel?: number;
+  hintsAvailable?: number;
 }
 
 type Phase = 'loading' | 'plan' | 'activity' | 'complete' | 'empty' | 'error';
+
+// Each activity walks through a short pedagogical loop: read/instruction ->
+// answer (with scaffolded hints) -> check-for-understanding (metacognition).
+type ActivityStep = 'intro' | 'answer' | 'understanding';
 
 const SUBJECT_LABELS: Record<string, string> = {
   math: 'Math',
@@ -113,6 +126,11 @@ function ChildLearnContent() {
   const [result, setResult] = useState<AttemptResponse | null>(null);
   const [correctCount, setCorrectCount] = useState(0);
   const [reflection, setReflection] = useState('');
+  const [step, setStep] = useState<ActivityStep>('intro');
+  const [understanding, setUnderstanding] = useState('');
+  const [understandingNotes, setUnderstandingNotes] = useState<Record<number, string>>({});
+  const [savingReflection, setSavingReflection] = useState(false);
+  const [reflectionSaved, setReflectionSaved] = useState(false);
 
   const childId = profile?.id || '';
   const ageBand = profile?.ageGroup || '';
@@ -146,6 +164,10 @@ function ChildLearnContent() {
       setResponseText('');
       setAttemptNumber(1);
       setResult(null);
+      setStep('intro');
+      setUnderstanding('');
+      setUnderstandingNotes({});
+      setReflectionSaved(false);
 
       if (!data.activities || data.activities.length === 0) {
         setPhase('empty');
@@ -210,9 +232,46 @@ function ChildLearnContent() {
       }
 
       const data = (await res.json()) as AttemptResponse;
-      setResult(data);
-      if (data.correct) {
+
+      let tutorTurn: TutorTurnResponse | null = null;
+      if (!data.correct) {
+        try {
+          const tutorRes = await fetch('/api/learn/tutor/turn', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              childId,
+              contentItemId: activity.contentItemId,
+              message: responseText,
+              attemptNumber,
+              sessionId: sessionId || undefined,
+            }),
+          });
+
+          if (tutorRes.ok) {
+            tutorTurn = (await tutorRes.json()) as TutorTurnResponse;
+          }
+        } catch {
+          /* tutor coaching is non-critical */
+        }
+      }
+
+      const mergedResult: AttemptResponse = {
+        ...data,
+        coachMessage: tutorTurn?.tutorMessage || tutorTurn?.response,
+        hint: tutorTurn?.hint ?? data.hint,
+        hintLevel:
+          typeof tutorTurn?.hintLevel === 'number' ? tutorTurn.hintLevel : data.hintLevel,
+        hintsAvailable:
+          typeof tutorTurn?.hintsAvailable === 'number'
+            ? tutorTurn.hintsAvailable
+            : data.hintsAvailable,
+      };
+
+      setResult(mergedResult);
+      if (mergedResult.correct) {
         setCorrectCount((c) => c + 1);
+        setStep('understanding');
       } else {
         setAttemptNumber((n) => n + 1);
       }
@@ -225,10 +284,10 @@ function ChildLearnContent() {
     } finally {
       setGrading(false);
     }
-  }, [activity, responseText, childId, attemptNumber]);
+  }, [activity, responseText, childId, attemptNumber, sessionId]);
 
   const completeSession = useCallback(
-    async (finalCorrect: number) => {
+    async (outcomes: Record<string, unknown>) => {
       if (!sessionId) return;
       try {
         await fetch(`/api/learn/session/${sessionId}`, {
@@ -237,33 +296,75 @@ function ChildLearnContent() {
           body: JSON.stringify({
             status: 'completed',
             endedAt: new Date().toISOString(),
-            outcomes: { correct: finalCorrect, total },
+            outcomes,
           }),
         });
       } catch {
         /* non-critical */
       }
     },
-    [sessionId, total],
+    [sessionId],
   );
 
-  const goNext = useCallback(() => {
-    setResult(null);
-    setResponseText('');
-    setAttemptNumber(1);
+  const advanceToNext = useCallback(
+    (notes: Record<number, string>) => {
+      setResult(null);
+      setResponseText('');
+      setAttemptNumber(1);
+      setUnderstanding('');
+      setStep('intro');
 
-    if (isLast) {
-      setPhase('complete');
-      completeSession(correctCount);
-      return;
+      if (isLast) {
+        setPhase('complete');
+        completeSession({
+          correct: correctCount,
+          total,
+          understanding: Object.values(notes).filter(Boolean),
+        });
+        return;
+      }
+      setCurrentIndex((i) => i + 1);
+    },
+    [isLast, completeSession, correctCount, total],
+  );
+
+  // Advance without capturing a metacognition note (used by both Skip actions).
+  const skipActivity = useCallback(() => {
+    advanceToNext(understandingNotes);
+  }, [advanceToNext, understandingNotes]);
+
+  // Advance from the understanding step, capturing the child's explanation.
+  const goNext = useCallback(() => {
+    const trimmed = understanding.trim();
+    const nextNotes = trimmed
+      ? { ...understandingNotes, [currentIndex]: trimmed }
+      : understandingNotes;
+    if (trimmed) {
+      setUnderstandingNotes(nextNotes);
     }
-    setCurrentIndex((i) => i + 1);
-  }, [isLast, completeSession, correctCount]);
+    advanceToNext(nextNotes);
+  }, [understanding, understandingNotes, currentIndex, advanceToNext]);
 
   const retry = useCallback(() => {
     setResult(null);
     setResponseText('');
   }, []);
+
+  const saveReflection = useCallback(async () => {
+    if (!sessionId) return;
+    setSavingReflection(true);
+    try {
+      await completeSession({
+        correct: correctCount,
+        total,
+        understanding: Object.values(understandingNotes).filter(Boolean),
+        reflection: reflection.trim() || undefined,
+      });
+      setReflectionSaved(true);
+    } finally {
+      setSavingReflection(false);
+    }
+  }, [sessionId, completeSession, correctCount, total, understandingNotes, reflection]);
 
   // ---- Render states -------------------------------------------------------
 
@@ -328,10 +429,26 @@ function ChildLearnContent() {
                 </Text>
                 <Textarea
                   value={reflection}
-                  onChange={(e) => setReflection(e.target.value)}
+                  onChange={(e) => {
+                    setReflection(e.target.value);
+                    setReflectionSaved(false);
+                  }}
                   placeholder="Type a sentence (optional)"
                   rows={3}
+                  isDisabled={savingReflection}
                 />
+                <Flex justify="flex-end" mt={2}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={saveReflection}
+                    isLoading={savingReflection}
+                    loadingText="Saving"
+                    isDisabled={reflectionSaved || !reflection.trim()}
+                  >
+                    {reflectionSaved ? 'Saved' : 'Save reflection'}
+                  </Button>
+                </Flex>
               </Box>
 
               <HStack pt={2}>
@@ -359,6 +476,16 @@ function ChildLearnContent() {
   }
 
   const progressValue = total > 0 ? (currentIndex / total) * 100 : 0;
+  const isWarmUp = currentIndex === 0;
+  const stepLabel =
+    step === 'intro'
+      ? isWarmUp
+        ? 'Warm-up'
+        : 'Get ready'
+      : step === 'understanding'
+        ? 'Explain it'
+        : 'Practice';
+  const isQuestionType = activity.type === 'question';
 
   return (
     <Container maxW="2xl" py={6}>
@@ -378,6 +505,7 @@ function ChildLearnContent() {
             borderRadius="full"
             colorScheme="primary"
             hasStripe
+            aria-label={`Progress: activity ${currentIndex + 1} of ${total}`}
           />
         </Box>
 
@@ -392,99 +520,175 @@ function ChildLearnContent() {
                   <Badge variant="subtle">{prettifySkill(activity.skillCode)}</Badge>
                 </WrapItem>
                 <WrapItem>
+                  <Badge colorScheme={isWarmUp && step === 'intro' ? 'green' : 'gray'} variant="subtle">
+                    {stepLabel}
+                  </Badge>
+                </WrapItem>
+                <WrapItem>
                   <DifficultyDots difficulty={activity.difficulty} />
                 </WrapItem>
               </Wrap>
 
-              <HStack align="start" spacing={3}>
-                <Text fontSize="xl" fontWeight="medium" flex="1">
-                  {activity.prompt}
-                </Text>
-                <ReadAloudButton text={activity.prompt} sourceType="document" size="md" />
-              </HStack>
-
-              <Textarea
-                value={responseText}
-                onChange={(e) => setResponseText(e.target.value)}
-                placeholder="Type your answer here"
-                rows={2}
-                isDisabled={grading || result?.correct === true}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (!result?.correct) submitAttempt();
-                  }
-                }}
-              />
-
-              {result && (
-                <Alert
-                  status={result.correct ? 'success' : 'warning'}
-                  borderRadius="lg"
-                  alignItems="start"
-                >
-                  <AlertIcon />
+              {step === 'intro' && (
+                <VStack align="stretch" spacing={4}>
                   <Box>
-                    <Text fontWeight="bold">{result.feedback}</Text>
-                    {!result.correct && result.hint && (
-                      <HStack mt={2} align="start" color="orange.700">
-                        <Box pt={1}><FiHelpCircle /></Box>
-                        <Text>
-                          {typeof result.hintsAvailable === 'number' &&
-                          typeof result.hintLevel === 'number' ? (
-                            <b>Hint {result.hintLevel + 1} of {result.hintsAvailable}: </b>
-                          ) : (
-                            <b>Hint: </b>
-                          )}
-                          {result.hint}
-                        </Text>
-                      </HStack>
-                    )}
+                    <Text fontWeight="bold" mb={1}>
+                      {isWarmUp ? "Let's warm up with" : "Next up"}: {prettifySkill(activity.skillCode)}
+                    </Text>
+                    <Text opacity={0.8}>
+                      Read the {isQuestionType ? 'passage and question' : 'problem'} carefully and take
+                      your time. You can ask for hints, and I&apos;ll coach you step by step &mdash; I won&apos;t
+                      just give the answer.
+                    </Text>
                   </Box>
-                </Alert>
+
+                  <HStack
+                    align="start"
+                    spacing={3}
+                    bg="blackAlpha.50"
+                    _dark={{ bg: 'whiteAlpha.100' }}
+                    p={3}
+                    borderRadius="lg"
+                  >
+                    <Text fontSize="lg" flex="1">
+                      {activity.prompt}
+                    </Text>
+                    <ReadAloudButton text={activity.prompt} sourceType="document" size="md" />
+                  </HStack>
+
+                  <Flex justify="flex-end">
+                    <Button rightIcon={<FiArrowRight />} colorScheme="primary" onClick={() => setStep('answer')}>
+                      Start
+                    </Button>
+                  </Flex>
+                </VStack>
               )}
 
-              <Flex justify="flex-end" gap={3} wrap="wrap">
-                {!result?.correct && (
-                  <Button
-                    leftIcon={<FiSkipForward />}
-                    variant="ghost"
-                    onClick={goNext}
-                    isDisabled={grading}
-                  >
-                    Skip
-                  </Button>
-                )}
+              {step === 'answer' && (
+                <>
+                  <HStack align="start" spacing={3}>
+                    <Text fontSize="xl" fontWeight="medium" flex="1">
+                      {activity.prompt}
+                    </Text>
+                    <ReadAloudButton text={activity.prompt} sourceType="document" size="md" />
+                  </HStack>
 
-                {result && !result.correct ? (
-                  <Button
-                    leftIcon={<FiRefreshCw />}
-                    colorScheme="primary"
-                    onClick={retry}
+                  <Textarea
+                    value={responseText}
+                    onChange={(e) => setResponseText(e.target.value)}
+                    placeholder="Type your answer here"
+                    rows={2}
+                    autoFocus
                     isDisabled={grading}
-                  >
-                    Try again
-                  </Button>
-                ) : result?.correct ? (
-                  <Button
-                    rightIcon={isLast ? <FiCheckCircle /> : <FiArrowRight />}
-                    colorScheme="primary"
-                    onClick={goNext}
-                  >
-                    {isLast ? 'Finish' : 'Next'}
-                  </Button>
-                ) : (
-                  <Button
-                    colorScheme="primary"
-                    onClick={submitAttempt}
-                    isLoading={grading}
-                    loadingText="Checking"
-                    isDisabled={!responseText.trim()}
-                  >
-                    Check answer
-                  </Button>
-                )}
-              </Flex>
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        submitAttempt();
+                      }
+                    }}
+                  />
+
+                  {result && !result.correct && (
+                    <Alert status="warning" borderRadius="lg" alignItems="start">
+                      <AlertIcon />
+                      <Box>
+                        <Text fontWeight="bold">{result.feedback}</Text>
+                        {result.coachMessage && <Text mt={2}>{result.coachMessage}</Text>}
+                        {result.hint && (
+                          <HStack mt={2} align="start" color="orange.700" _dark={{ color: 'orange.300' }}>
+                            <Box pt={1}><FiHelpCircle /></Box>
+                            <Text>
+                              {typeof result.hintsAvailable === 'number' &&
+                              typeof result.hintLevel === 'number' ? (
+                                <b>Hint {result.hintLevel + 1} of {result.hintsAvailable}: </b>
+                              ) : (
+                                <b>Hint: </b>
+                              )}
+                              {result.hint}
+                            </Text>
+                          </HStack>
+                        )}
+                      </Box>
+                    </Alert>
+                  )}
+
+                  <Flex justify="flex-end" gap={3} wrap="wrap">
+                    <Button
+                      leftIcon={<FiSkipForward />}
+                      variant="ghost"
+                      onClick={skipActivity}
+                      isDisabled={grading}
+                    >
+                      Skip
+                    </Button>
+
+                    {result && !result.correct ? (
+                      <Button
+                        leftIcon={<FiRefreshCw />}
+                        colorScheme="primary"
+                        onClick={retry}
+                        isDisabled={grading}
+                      >
+                        Try again
+                      </Button>
+                    ) : (
+                      <Button
+                        colorScheme="primary"
+                        onClick={submitAttempt}
+                        isLoading={grading}
+                        loadingText="Checking"
+                        isDisabled={!responseText.trim()}
+                      >
+                        Check answer
+                      </Button>
+                    )}
+                  </Flex>
+                </>
+              )}
+
+              {step === 'understanding' && (
+                <VStack align="stretch" spacing={4}>
+                  <Alert status="success" borderRadius="lg" alignItems="start">
+                    <AlertIcon />
+                    <Text fontWeight="bold">{result?.feedback || 'Correct! Nice thinking.'}</Text>
+                  </Alert>
+
+                  <Box>
+                    <Text fontWeight="bold" mb={1}>
+                      Quick check: how did you figure it out?
+                    </Text>
+                    <Text opacity={0.8} mb={2}>
+                      One sentence is plenty &mdash; explaining it helps you remember it next time.
+                    </Text>
+                    <Textarea
+                      value={understanding}
+                      onChange={(e) => setUnderstanding(e.target.value)}
+                      placeholder="I figured it out by..."
+                      rows={2}
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          goNext();
+                        }
+                      }}
+                    />
+                  </Box>
+
+                  <Flex justify="flex-end" gap={3} wrap="wrap">
+                    <Button variant="ghost" onClick={skipActivity}>
+                      Skip
+                    </Button>
+                    <Button
+                      rightIcon={isLast ? <FiCheckCircle /> : <FiArrowRight />}
+                      colorScheme="primary"
+                      onClick={goNext}
+                    >
+                      {isLast ? 'Finish' : 'Next'}
+                    </Button>
+                  </Flex>
+                </VStack>
+              )}
             </VStack>
           </CardBody>
         </Card>
