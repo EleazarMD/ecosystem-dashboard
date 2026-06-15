@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]';
 import { getLearningPhase1Service } from '@/lib/kids-pic/LearningPhase1Service';
 import { SkillProgressService } from '@/lib/kids-pic/SkillProgressService';
+import { getLearningAccessState, recordLearningUsage } from '@/lib/kids-pic/learning-access';
 import dbPool from '@/lib/db/client';
 
 const skillProgressService = new SkillProgressService(dbPool);
@@ -44,6 +45,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!childId || !contentItemId) {
       return res.status(400).json({
         error: 'childId and contentItemId are required',
+      });
+    }
+
+    // Learning is child-facing and must respect the same parental controls as chat
+    // (allowed hours + daily usage limit), keyed by the authenticated child USER id.
+    const userId = readUserId(session);
+    const access = await getLearningAccessState(dbPool, userId);
+    if (!access.allowed) {
+      return res.status(403).json({
+        error: 'Learning time limit reached',
+        message: access.reason || 'Learning is currently unavailable.',
+        usageLimitReached: true,
+        usage: {
+          minutes: access.currentUsageMinutes,
+          limit: access.dailyLimitMinutes,
+          remaining: access.remainingMinutes,
+        },
       });
     }
 
@@ -99,6 +117,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
+    // One graded attempt = one minute of learning usage for controlled children.
+    if (access.controlled) {
+      await recordLearningUsage(dbPool, userId, 1);
+    }
+
     return res.status(200).json({
       attemptId: gradeResult.attemptId,
       contentItemId: gradeResult.contentItem.id,
@@ -114,6 +137,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         postgres: postgresResult,
         kidsPcg: pcgResult,
       },
+      usage: access.controlled
+        ? {
+            minutes: access.currentUsageMinutes + 1,
+            limit: access.dailyLimitMinutes,
+            remaining: Math.max(0, access.remainingMinutes - 1),
+            limitReached: access.currentUsageMinutes + 1 >= access.dailyLimitMinutes,
+          }
+        : null,
     });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('Unknown content item:')) {
@@ -237,6 +268,11 @@ async function writeKidsPcgMasteryEvidence(input: {
       detail: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+export function readUserId(session: { user?: unknown } | null): string {
+  const user = session?.user as { id?: unknown } | undefined;
+  return typeof user?.id === 'string' ? user.id : '';
 }
 
 export function normalizeAttemptNumber(value: unknown): number {

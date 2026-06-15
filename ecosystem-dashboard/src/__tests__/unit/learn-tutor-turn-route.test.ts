@@ -13,15 +13,20 @@ jest.mock('@/lib/kids-pic/AIChildSafetyMonitor', () => ({
 }));
 
 jest.mock('@/lib/platform/content-filter-service', () => ({
-  checkChildAccess: jest.fn(),
   filterChildContent: jest.fn(),
   logChildActivity: jest.fn(),
+}));
+
+jest.mock('@/lib/kids-pic/learning-access', () => ({
+  getLearningAccessState: jest.fn(),
+  recordLearningUsage: jest.fn(),
 }));
 
 import { getServerSession } from 'next-auth';
 import { getLearningPhase1Service } from '@/lib/kids-pic/LearningPhase1Service';
 import { getAIChildSafetyMonitor } from '@/lib/kids-pic/AIChildSafetyMonitor';
-import { checkChildAccess, filterChildContent, logChildActivity } from '@/lib/platform/content-filter-service';
+import { filterChildContent, logChildActivity } from '@/lib/platform/content-filter-service';
+import { getLearningAccessState } from '@/lib/kids-pic/learning-access';
 import handler from '../../pages/api/learn/tutor/turn';
 
 type MockState = {
@@ -75,7 +80,7 @@ describe('POST /api/learn/tutor/turn', () => {
   const mockGetServerSession = getServerSession as jest.Mock;
   const mockGetLearningPhase1Service = getLearningPhase1Service as jest.Mock;
   const mockGetAIChildSafetyMonitor = getAIChildSafetyMonitor as jest.Mock;
-  const mockCheckChildAccess = checkChildAccess as jest.Mock;
+  const mockGetLearningAccessState = getLearningAccessState as jest.Mock;
   const mockFilterChildContent = filterChildContent as jest.Mock;
   const mockLogChildActivity = logChildActivity as jest.Mock;
 
@@ -104,7 +109,13 @@ describe('POST /api/learn/tutor/turn', () => {
       ],
     });
 
-    mockCheckChildAccess.mockResolvedValue({ allowed: true });
+    mockGetLearningAccessState.mockResolvedValue({
+      controlled: true,
+      allowed: true,
+      currentUsageMinutes: 0,
+      dailyLimitMinutes: 120,
+      remainingMinutes: 120,
+    });
 
     mockFilterChildContent.mockImplementation(async (_childId: string, content: string) => ({
       passed: true,
@@ -176,5 +187,32 @@ describe('POST /api/learn/tutor/turn', () => {
         wasFiltered: false,
       }),
     );
+  });
+
+  it('returns 403 and skips tutoring when learning access is blocked', async () => {
+    mockGetLearningAccessState.mockResolvedValue({
+      controlled: true,
+      allowed: false,
+      reason: "Time's up for learning today! Come back tomorrow.",
+      currentUsageMinutes: 120,
+      dailyLimitMinutes: 120,
+      remainingMinutes: 0,
+    });
+
+    const { req, res, state } = createMockReqRes({
+      body: {
+        childId: 'child-1',
+        contentItemId: 'phase1.math.word_1step.v1',
+        message: 'I think it is 8',
+        attemptNumber: 1,
+      },
+    });
+
+    await handler(req, res);
+
+    expect(state.statusCode).toBe(403);
+    expect(state.body.usageLimitReached).toBe(true);
+    expect(mockGetContentById).not.toHaveBeenCalled();
+    expect(mockAnalyzeMessage).not.toHaveBeenCalled();
   });
 });

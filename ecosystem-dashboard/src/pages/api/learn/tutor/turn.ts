@@ -6,8 +6,9 @@ import { authOptions } from '../../auth/[...nextauth]';
 import { getLearningPhase1Service } from '@/lib/kids-pic/LearningPhase1Service';
 import { getAIChildSafetyMonitor } from '@/lib/kids-pic/AIChildSafetyMonitor';
 import dbPool from '@/lib/db/client';
-import { checkChildAccess, filterChildContent, logChildActivity } from '@/lib/platform/content-filter-service';
-import { normalizeAttemptNumber } from '../attempt';
+import { filterChildContent, logChildActivity } from '@/lib/platform/content-filter-service';
+import { getLearningAccessState } from '@/lib/kids-pic/learning-access';
+import { normalizeAttemptNumber, readUserId } from '../attempt';
 
 interface TutorTurnRequestBody {
   childId?: unknown;
@@ -44,11 +45,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const input = validation.value;
-    const access = await safeCheckChildAccess(input.childId);
+    // Gate on the authenticated child USER id (parental controls + usage are keyed to
+    // it), not the PIC profile id carried in the request body.
+    const access = await getLearningAccessState(dbPool, readUserId(session));
     if (!access.allowed) {
       return res.status(403).json({
         error: 'Learning access blocked',
         message: access.reason || 'Learning access is currently unavailable.',
+        usageLimitReached: true,
       });
     }
 
@@ -231,15 +235,6 @@ export function buildDeterministicTutorMessage(input: {
   const promptSnippet = input.prompt.length > 180 ? `${input.prompt.slice(0, 180)}...` : input.prompt;
 
   return `${coachingPrefix} Re-read the problem and focus on the key detail: "${promptSnippet}".`;
-}
-
-async function safeCheckChildAccess(childId: string): Promise<{ allowed: boolean; reason?: string }> {
-  try {
-    return await checkChildAccess(childId);
-  } catch (error) {
-    console.warn('[api/learn/tutor/turn] checkChildAccess fallback:', error);
-    return { allowed: true };
-  }
 }
 
 async function safeFilterContent(

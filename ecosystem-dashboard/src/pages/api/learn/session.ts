@@ -3,6 +3,9 @@ import { getServerSession } from 'next-auth';
 
 import { authOptions } from '../auth/[...nextauth]';
 import { getLearningSessionService, type CreateLearningSessionInput, type LearningSessionStatus } from '@/lib/kids-pic/LearningSessionService';
+import { getLearningAccessState } from '@/lib/kids-pic/learning-access';
+import dbPool from '@/lib/db/client';
+import { readUserId } from './attempt';
 
 interface CreateSessionRequestBody {
   childId?: unknown;
@@ -30,6 +33,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const validation = validateCreateSessionPayload((req.body || {}) as CreateSessionRequestBody);
     if ('error' in validation) {
       return res.status(400).json({ error: validation.error });
+    }
+
+    // Don't even start a session when the child is out of allowed hours / daily time.
+    const access = await getLearningAccessState(dbPool, readUserId(session));
+    if (!access.allowed) {
+      return res.status(403).json({
+        error: 'Learning time limit reached',
+        message: access.reason || 'Learning is currently unavailable.',
+        usageLimitReached: true,
+      });
     }
 
     const created = await getLearningSessionService().createSession(validation.value);
