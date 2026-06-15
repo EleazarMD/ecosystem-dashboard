@@ -44,9 +44,14 @@ interface LearningPageProps {
     email: string;
   };
   childProfileId: string;
+  attemptSummary: {
+    attemptsLast7Days: number;
+    correctLast7Days: number;
+    latestAttemptAt: string | null;
+  };
 }
 
-export default function ChildLearningPage({ child, childProfileId }: LearningPageProps) {
+export default function ChildLearningPage({ child, childProfileId, attemptSummary }: LearningPageProps) {
   const router = useRouter();
   const bg = useSemanticToken('surface.base');
 
@@ -76,6 +81,12 @@ export default function ChildLearningPage({ child, childProfileId }: LearningPag
                 <Heading size="lg">Learning Insights</Heading>
                 <Text color="gray.500">
                   Privacy-first view of {child.name}'s learning journey
+                </Text>
+                <Text color="gray.600" fontSize="sm">
+                  Attempts (7d): {attemptSummary.attemptsLast7Days} | Correct: {attemptSummary.correctLast7Days}
+                  {attemptSummary.latestAttemptAt
+                    ? ` | Last attempt: ${new Date(attemptSummary.latestAttemptAt).toLocaleString()}`
+                    : ''}
                 </Text>
               </VStack>
               <Button
@@ -184,6 +195,48 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
     profileId = createResult.rows[0].id;
   }
 
+  let attemptSummary = {
+    attemptsLast7Days: 0,
+    correctLast7Days: 0,
+    latestAttemptAt: null as string | null,
+  };
+
+  try {
+    const hasAttemptsTable = await query('SELECT to_regclass($1) AS exists', [
+      'public.learning_attempts',
+    ]);
+
+    if (hasAttemptsTable.rows[0]?.exists) {
+      const attemptsResult = await query(
+        `SELECT
+           COUNT(*)::text AS attempts_last_7_days,
+           COUNT(*) FILTER (WHERE is_correct)::text AS correct_last_7_days,
+           MAX(attempted_at)::text AS latest_attempt_at
+         FROM learning_attempts
+         WHERE child_id = $1
+           AND attempted_at >= NOW() - INTERVAL '7 days'`,
+        [profileId],
+      );
+
+      const row = attemptsResult.rows[0] as
+        | {
+            attempts_last_7_days: string;
+            correct_last_7_days: string;
+            latest_attempt_at: string | null;
+          }
+        | undefined;
+      if (row) {
+        attemptSummary = {
+          attemptsLast7Days: Number.parseInt(row.attempts_last_7_days, 10) || 0,
+          correctLast7Days: Number.parseInt(row.correct_last_7_days, 10) || 0,
+          latestAttemptAt: row.latest_attempt_at,
+        };
+      }
+    }
+  } catch (error) {
+    console.warn('[family-learning] failed to load attempt summary:', error);
+  }
+
   return {
     props: {
       child: {
@@ -192,6 +245,7 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
         email: child.email,
       },
       childProfileId: profileId,
+      attemptSummary,
     },
   };
 };

@@ -55,6 +55,8 @@
     "schema:worker": "npx ts-node scripts/schema-sync-worker.ts",
     "schema:worker:once": "npx ts-node scripts/schema-sync-worker.ts --once",
     "schema:worker:dev": "nodemon --watch scripts scripts/schema-sync-worker.ts",
+    "seed:phase0:learning": "tsx scripts/seed-phase0-learning.ts",
+    "seed:phase1:learning": "tsx scripts/seed-phase1-learning.ts",
     "dev:local": "NODE_ENV=development next dev",
     "dev:cloud": "next dev",
     "sync-db": "./sync-production-data.sh"
