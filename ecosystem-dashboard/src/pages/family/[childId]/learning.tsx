@@ -23,6 +23,10 @@ import {
   Tab,
   TabPanel,
   Icon,
+  SimpleGrid,
+  Badge,
+  Wrap,
+  WrapItem,
 } from '@chakra-ui/react';
 import { FiArrowLeft, FiTrendingUp, FiShield, FiTarget } from 'react-icons/fi';
 import { useRouter } from 'next/router';
@@ -44,11 +48,16 @@ interface LearningPageProps {
     email: string;
   };
   childProfileId: string;
-  attemptSummary: {
-    attemptsLast7Days: number;
-    correctLast7Days: number;
-    latestAttemptAt: string | null;
-  };
+  attemptSummary: LearningActivitySummary;
+}
+
+interface LearningActivitySummary {
+  attemptsLast7Days: number;
+  correctLast7Days: number;
+  latestAttemptAt: string | null;
+  skillsPracticed: number;
+  sessionsCompleted: number;
+  bySubject: Array<{ subject: string; attempts: number; correct: number }>;
 }
 
 export default function ChildLearningPage({ child, childProfileId, attemptSummary }: LearningPageProps) {
@@ -82,12 +91,6 @@ export default function ChildLearningPage({ child, childProfileId, attemptSummar
                 <Text color="gray.500">
                   Privacy-first view of {child.name}'s learning journey
                 </Text>
-                <Text color="gray.600" fontSize="sm">
-                  Attempts (7d): {attemptSummary.attemptsLast7Days} | Correct: {attemptSummary.correctLast7Days}
-                  {attemptSummary.latestAttemptAt
-                    ? ` | Last attempt: ${new Date(attemptSummary.latestAttemptAt).toLocaleString()}`
-                    : ''}
-                </Text>
               </VStack>
               <Button
                 leftIcon={<FiArrowLeft />}
@@ -97,6 +100,8 @@ export default function ChildLearningPage({ child, childProfileId, attemptSummar
                 Back to {child.name}
               </Button>
             </HStack>
+
+            <LearningActivityCard summary={attemptSummary} childName={child.name} />
 
             {/* Tabbed Dashboard */}
             <Tabs colorScheme="purple" variant="enclosed">
@@ -149,6 +154,86 @@ export default function ChildLearningPage({ child, childProfileId, attemptSummar
   );
 }
 
+const SUBJECT_LABELS: Record<string, string> = {
+  math: 'Math',
+  reading: 'Reading',
+  writing: 'Writing',
+  science: 'Science',
+  analytical: 'Thinking',
+};
+
+function StatCell({ label, value }: { label: string; value: number | string }) {
+  return (
+    <Box>
+      <Text fontSize="2xl" fontWeight="bold">{value}</Text>
+      <Text fontSize="xs" color="gray.500">{label}</Text>
+    </Box>
+  );
+}
+
+function LearningActivityCard({
+  summary,
+  childName,
+}: {
+  summary: LearningActivitySummary;
+  childName: string;
+}) {
+  const accuracy =
+    summary.attemptsLast7Days > 0
+      ? Math.round((summary.correctLast7Days / summary.attemptsLast7Days) * 100)
+      : null;
+  const hasActivity = summary.attemptsLast7Days > 0 || summary.sessionsCompleted > 0;
+
+  return (
+    <Box borderWidth="1px" borderRadius="lg" p={5}>
+      <HStack justify="space-between" align="start" mb={4} flexWrap="wrap">
+        <Heading size="sm">Practice activity (last 7 days)</Heading>
+        {summary.latestAttemptAt && (
+          <Text fontSize="xs" color="gray.500">
+            Last practice: {new Date(summary.latestAttemptAt).toLocaleString()}
+          </Text>
+        )}
+      </HStack>
+
+      {!hasActivity ? (
+        <Text fontSize="sm" color="gray.500">
+          No practice yet this week. When {childName} completes activities on the Learn hub, a
+          privacy-first summary will appear here.
+        </Text>
+      ) : (
+        <VStack align="stretch" spacing={4}>
+          <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4}>
+            <StatCell label="Attempts" value={summary.attemptsLast7Days} />
+            <StatCell label="Accuracy" value={accuracy === null ? '\u2014' : `${accuracy}%`} />
+            <StatCell label="Skills practiced" value={summary.skillsPracticed} />
+            <StatCell label="Sessions completed" value={summary.sessionsCompleted} />
+          </SimpleGrid>
+
+          {summary.bySubject.length > 0 && (
+            <Box>
+              <Text fontSize="xs" color="gray.500" mb={2}>
+                By subject
+              </Text>
+              <Wrap spacing={2}>
+                {summary.bySubject.map((s) => {
+                  const pct = s.attempts > 0 ? Math.round((s.correct / s.attempts) * 100) : 0;
+                  return (
+                    <WrapItem key={s.subject}>
+                      <Badge colorScheme="purple" variant="subtle" px={2} py={1} borderRadius="md">
+                        {SUBJECT_LABELS[s.subject] || s.subject}: {s.correct}/{s.attempts} ({pct}%)
+                      </Badge>
+                    </WrapItem>
+                  );
+                })}
+              </Wrap>
+            </Box>
+          )}
+        </VStack>
+      )}
+    </Box>
+  );
+}
+
 export const getServerSideProps: GetServerSideProps = async (context) => {
   const session = await getServerSession(context.req, context.res, authOptions);
 
@@ -195,10 +280,13 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
     profileId = createResult.rows[0].id;
   }
 
-  let attemptSummary = {
+  let attemptSummary: LearningActivitySummary = {
     attemptsLast7Days: 0,
     correctLast7Days: 0,
-    latestAttemptAt: null as string | null,
+    latestAttemptAt: null,
+    skillsPracticed: 0,
+    sessionsCompleted: 0,
+    bySubject: [],
   };
 
   try {
@@ -211,6 +299,7 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
         `SELECT
            COUNT(*)::text AS attempts_last_7_days,
            COUNT(*) FILTER (WHERE is_correct)::text AS correct_last_7_days,
+           COUNT(DISTINCT skill_code)::text AS skills_practiced,
            MAX(attempted_at)::text AS latest_attempt_at
          FROM learning_attempts
          WHERE child_id = $1
@@ -222,19 +311,68 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
         | {
             attempts_last_7_days: string;
             correct_last_7_days: string;
+            skills_practiced: string;
             latest_attempt_at: string | null;
           }
         | undefined;
       if (row) {
-        attemptSummary = {
-          attemptsLast7Days: Number.parseInt(row.attempts_last_7_days, 10) || 0,
-          correctLast7Days: Number.parseInt(row.correct_last_7_days, 10) || 0,
-          latestAttemptAt: row.latest_attempt_at,
-        };
+        attemptSummary.attemptsLast7Days = Number.parseInt(row.attempts_last_7_days, 10) || 0;
+        attemptSummary.correctLast7Days = Number.parseInt(row.correct_last_7_days, 10) || 0;
+        attemptSummary.skillsPracticed = Number.parseInt(row.skills_practiced, 10) || 0;
+        attemptSummary.latestAttemptAt = row.latest_attempt_at;
       }
+
+      const bySubjectResult = await query(
+        `SELECT
+           split_part(skill_code, '.', 1) AS subject,
+           COUNT(*)::text AS attempts,
+           COUNT(*) FILTER (WHERE is_correct)::text AS correct
+         FROM learning_attempts
+         WHERE child_id = $1
+           AND attempted_at >= NOW() - INTERVAL '7 days'
+         GROUP BY 1
+         ORDER BY COUNT(*) DESC`,
+        [profileId],
+      );
+
+      attemptSummary.bySubject = (
+        bySubjectResult.rows as Array<{ subject: string; attempts: string; correct: string }>
+      ).map((r) => ({
+        subject: r.subject || 'other',
+        attempts: Number.parseInt(r.attempts, 10) || 0,
+        correct: Number.parseInt(r.correct, 10) || 0,
+      }));
     }
   } catch (error) {
     console.warn('[family-learning] failed to load attempt summary:', error);
+  }
+
+  // Completed-session count is isolated so a sessions schema mismatch never
+  // wipes the attempt aggregates computed above.
+  try {
+    const hasSessionsTable = await query('SELECT to_regclass($1) AS exists', [
+      'public.learning_sessions',
+    ]);
+
+    if (hasSessionsTable.rows[0]?.exists) {
+      const sessionsResult = await query(
+        `SELECT COUNT(*)::text AS sessions_completed
+         FROM learning_sessions
+         WHERE child_id = $1
+           AND status = 'completed'
+           AND started_at >= NOW() - INTERVAL '7 days'`,
+        [profileId],
+      );
+
+      attemptSummary.sessionsCompleted =
+        Number.parseInt(
+          (sessionsResult.rows[0] as { sessions_completed: string } | undefined)
+            ?.sessions_completed || '0',
+          10,
+        ) || 0;
+    }
+  } catch (error) {
+    console.warn('[family-learning] failed to load session summary:', error);
   }
 
   return {
