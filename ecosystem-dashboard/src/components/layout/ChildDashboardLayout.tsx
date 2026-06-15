@@ -54,6 +54,7 @@ import {
   CalendarIcon,
   BookOpenIcon,
   DocumentTextIcon,
+  AcademicCapIcon,
 } from '@heroicons/react/24/outline';
 
 const DynamicRightPanel = dynamic(
@@ -63,7 +64,7 @@ const DynamicRightPanel = dynamic(
 
 interface ChildDashboardLayoutProps {
   children: ReactNode;
-  pageType?: 'home' | 'chat' | 'art' | 'workspace' | 'email' | 'planner' | 'books' | 'dictionary' | 'journal';
+  pageType?: 'home' | 'chat' | 'art' | 'workspace' | 'email' | 'planner' | 'books' | 'dictionary' | 'journal' | 'learn';
 }
 
 interface ChildNavItem {
@@ -165,6 +166,7 @@ function ChildDashboardLayoutInner({ children, pageType = 'home' }: ChildDashboa
   // Build child navigation with themed icons
   const childNavItems: ChildNavItem[] = [
     { label: 'Home', path: '/child/home', icon: HomeIcon, imageIcon: serviceIcons?.home },
+    { label: 'Learn', path: '/child/learn', icon: AcademicCapIcon },
     { label: 'Chat', path: '/child/chat', icon: ChatBubbleLeftRightIcon, imageIcon: serviceIcons?.chat },
     { label: 'Art Studio', path: '/child/art-studio', icon: PaintBrushIcon, imageIcon: serviceIcons?.art },
     { label: 'Workspace', path: '/child/workspace', icon: PencilSquareIcon, imageIcon: serviceIcons?.writing },

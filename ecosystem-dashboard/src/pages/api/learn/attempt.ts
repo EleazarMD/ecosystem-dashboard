@@ -22,6 +22,7 @@ interface AttemptRequestBody {
   ownerId?: string;
   contentItemId?: string;
   response?: unknown;
+  attemptNumber?: number;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -51,6 +52,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       contentItemId,
       learnerResponse: body.response,
     });
+
+    // Escalating hints are resolved server-side so the answer key never leaves
+    // the server. attemptNumber is 1-based; deeper attempts surface later hints.
+    const attemptNumber = normalizeAttemptNumber(body.attemptNumber);
+    const hintSet = gradeResult.contentItem.hintSet || [];
+    const hintsAvailable = hintSet.length;
+    let hint: string | undefined;
+    let hintLevel: number | undefined;
+    if (!gradeResult.correct && hintsAvailable > 0) {
+      hintLevel = Math.min(attemptNumber - 1, hintsAvailable - 1);
+      hint = hintSet[hintLevel];
+    }
 
     const notEligible: MasteryWriteStatus = {
       status: 'skipped',
@@ -93,7 +106,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       correct: gradeResult.correct,
       score: gradeResult.score,
       feedback: gradeResult.feedback,
-      hint: gradeResult.hint,
+      hint,
+      hintLevel,
+      hintsAvailable,
       mastery: {
         eligible: gradeResult.masteryEligible,
         postgres: postgresResult,
@@ -218,6 +233,14 @@ async function writeKidsPcgMasteryEvidence(input: {
       detail: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+export function normalizeAttemptNumber(value: unknown): number {
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 1;
+  }
+  return parsed;
 }
 
 export function readOwnerIdHeader(req: NextApiRequest): string {
