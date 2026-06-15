@@ -82,11 +82,17 @@ interface TutorTurnResponse {
   hintsAvailable?: number;
 }
 
-type Phase = 'loading' | 'plan' | 'activity' | 'complete' | 'empty' | 'error';
+type Phase = 'loading' | 'plan' | 'activity' | 'complete' | 'empty' | 'error' | 'blocked';
 
 // Each activity walks through a short pedagogical loop: read/instruction ->
 // answer (with scaffolded hints) -> check-for-understanding (metacognition).
 type ActivityStep = 'intro' | 'answer' | 'understanding';
+
+const TIME_UP_MESSAGE = "That's all the learning time for today. Come back tomorrow!";
+
+// Thrown when the learning APIs report the child is out of allowed time/hours, so
+// the UI can show a friendly "time's up" screen instead of a generic error.
+class AccessBlockedError extends Error {}
 
 const SUBJECT_LABELS: Record<string, string> = {
   math: 'Math',
@@ -146,6 +152,10 @@ function ChildLearnContent() {
         if (withBand && ageBand) params.set('ageBand', ageBand);
         params.set('objectivesLimit', '5');
         const res = await fetch(`/api/learn/plan?${params.toString()}`);
+        if (res.status === 403) {
+          const blocked = await res.json().catch(() => ({}));
+          throw new AccessBlockedError(blocked?.message || TIME_UP_MESSAGE);
+        }
         if (!res.ok) {
           throw new Error(`Plan request failed (${res.status})`);
         }
@@ -196,6 +206,11 @@ function ChildLearnContent() {
         /* session tracking is non-critical */
       }
     } catch (err) {
+      if (err instanceof AccessBlockedError) {
+        setErrorMessage(err.message);
+        setPhase('blocked');
+        return;
+      }
       setErrorMessage(err instanceof Error ? err.message : 'Could not load your plan.');
       setPhase('error');
     }
@@ -226,6 +241,13 @@ function ChildLearnContent() {
           attemptNumber,
         }),
       });
+
+      if (res.status === 403) {
+        const blocked = await res.json().catch(() => ({}));
+        setErrorMessage(blocked?.message || TIME_UP_MESSAGE);
+        setPhase('blocked');
+        return;
+      }
 
       if (!res.ok) {
         throw new Error(`Attempt failed (${res.status})`);
@@ -386,6 +408,21 @@ function ChildLearnContent() {
         </Alert>
         <Button mt={4} leftIcon={<FiRefreshCw />} onClick={loadPlan} colorScheme="primary">
           Try again
+        </Button>
+      </Centered>
+    );
+  }
+
+  if (phase === 'blocked') {
+    return (
+      <Centered>
+        <Text fontSize="5xl">⏰</Text>
+        <Heading size="md" mt={2}>That&apos;s all for now</Heading>
+        <Text mt={2} textAlign="center" maxW="md" opacity={0.8}>
+          {errorMessage || TIME_UP_MESSAGE}
+        </Text>
+        <Button mt={6} onClick={() => router.push('/child/home')} colorScheme="primary">
+          Back to Home
         </Button>
       </Centered>
     );

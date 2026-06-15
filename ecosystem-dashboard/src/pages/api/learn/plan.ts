@@ -4,7 +4,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]';
 import { getLearningPhase1Service } from '@/lib/kids-pic/LearningPhase1Service';
 import { SkillProgressService } from '@/lib/kids-pic/SkillProgressService';
+import { getLearningAccessState } from '@/lib/kids-pic/learning-access';
 import dbPool from '@/lib/db/client';
+import { readUserId } from './attempt';
 import type { LearnAgeBand } from '@/lib/kids-pic/phase1-starter-content';
 import type { ChildSkillSummary, SkillProgress } from '@/lib/kids-pic/SkillProgressService';
 
@@ -43,6 +45,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const childId = asSingleQuery(req.query.childId).trim();
     if (!childId) {
       return res.status(400).json({ error: 'childId is required' });
+    }
+
+    // Block the plan entirely when the child is out of allowed hours / daily time so
+    // they see a friendly "time's up" screen rather than activities they can't submit.
+    const access = await getLearningAccessState(dbPool, readUserId(session));
+    if (!access.allowed) {
+      return res.status(403).json({
+        error: 'Learning time limit reached',
+        message: access.reason || 'Learning is currently unavailable.',
+        usageLimitReached: true,
+      });
     }
 
     const ageBandRaw = asSingleQuery(req.query.ageBand);
