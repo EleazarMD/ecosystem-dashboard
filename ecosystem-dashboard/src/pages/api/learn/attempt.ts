@@ -11,7 +11,7 @@ const skillProgressService = new SkillProgressService(dbPool);
 const KIDS_PCG_URL = process.env.KIDS_PCG_URL || 'http://127.0.0.1:8771';
 const KIDS_PCG_ADMIN_KEY = process.env.KIDS_PCG_ADMIN_KEY || '';
 const KIDS_PCG_DEFAULT_OWNER_ID = process.env.KIDS_PCG_DEFAULT_OWNER_ID || '';
-const KIDS_PCG_EVIDENCE_PATH = process.env.KIDS_PCG_EVIDENCE_PATH || '/api/learner/evidence';
+const KIDS_PCG_EVIDENCE_PATH = process.env.KIDS_PCG_EVIDENCE_PATH || '/api/learner/mastery/evidence';
 const LEARN_REQUIRE_PCG_WRITE = parseBool(process.env.LEARN_REQUIRE_PCG_WRITE, false);
 const LEARN_REQUIRE_POSTGRES_WRITE = parseBool(process.env.LEARN_REQUIRE_POSTGRES_WRITE, false);
 
@@ -200,14 +200,18 @@ async function writeKidsPcgMasteryEvidence(input: {
         'X-PCG-Owner-Id': ownerId,
       },
       body: JSON.stringify({
+        // Schema for POST /api/learner/mastery/evidence is { skill_id, correct,
+        // source?, detail? }. skill_id is the skill CODE registered at seed time.
+        // score/attempt context is carried in `detail` since they are not
+        // first-class fields on the kids-pcg evidence model.
         skill_id: input.skillCode,
         correct: input.correct,
-        score: input.score,
         source: 'learn_attempt',
-        metadata: {
-          attempt_id: input.attemptId,
-          content_item_id: input.contentItemId,
-        },
+        detail: JSON.stringify({
+          attemptId: input.attemptId,
+          contentItemId: input.contentItemId,
+          score: input.score,
+        }),
       }),
     });
 
