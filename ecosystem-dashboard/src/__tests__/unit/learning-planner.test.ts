@@ -1,5 +1,6 @@
 import {
   composePlannedObjectives,
+  composePlanWithNextObjectives,
   selectLowestScoreObjectives,
   selectReviewWarmUp,
 } from '@/lib/kids-pic/learning-planner';
@@ -161,5 +162,55 @@ describe('composePlannedObjectives', () => {
 
   it('returns nothing for a non-positive limit', () => {
     expect(composePlannedObjectives(summaryOf(skills), 0)).toEqual([]);
+  });
+});
+
+describe('composePlanWithNextObjectives', () => {
+  const summary = summaryOf([
+    makeSkill({ skillCode: 'a', currentScore: 0.2, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+    makeSkill({ skillCode: 'b', currentScore: 0.4, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+    makeSkill({ skillCode: 'rev', currentScore: 0.7, assessmentsCount: 5, lastAssessmentDate: new Date('2023-01-01') }),
+  ]);
+
+  it('orders focus by the prereq-aware sequence (not by score) and leads with a review', () => {
+    const objectives = composePlanWithNextObjectives(summary, ['b', 'a'], 3);
+
+    expect(objectives.map((o) => o.skillCode)).toEqual(['rev', 'b', 'a']);
+    expect(objectives.map((o) => o.kind)).toEqual(['review', 'practice', 'practice']);
+  });
+
+  it('synthesizes objectives for codes not present in the Postgres summary', () => {
+    const objectives = composePlanWithNextObjectives(summaryOf([
+      makeSkill({ skillCode: 'b', currentScore: 0.4, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+    ]), ['x.new', 'b'], 3);
+
+    expect(objectives.map((o) => o.skillCode)).toEqual(['x.new', 'b']);
+    const synthesized = objectives.find((o) => o.skillCode === 'x.new');
+    expect(synthesized).toMatchObject({ skillName: 'x.new', kind: 'practice', currentScore: 0 });
+  });
+
+  it('ignores blank/duplicate codes and trims to the limit', () => {
+    const lowOnly = summaryOf([
+      makeSkill({ skillCode: 'a', currentScore: 0.2, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+      makeSkill({ skillCode: 'b', currentScore: 0.4, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+    ]);
+
+    expect(composePlanWithNextObjectives(lowOnly, ['b', '', '  ', 'b', 'a'], 1).map((o) => o.skillCode)).toEqual(['b']);
+    expect(composePlanWithNextObjectives(lowOnly, ['a', 'a', 'b'], 5).map((o) => o.skillCode)).toEqual(['a', 'b']);
+  });
+
+  it('falls back to score-based composition when no usable codes are supplied', () => {
+    expect(composePlanWithNextObjectives(summary, ['', '   '], 3)).toEqual(composePlannedObjectives(summary, 3));
+  });
+
+  it('works without a Postgres summary (synthesized focus, no warm-up)', () => {
+    const objectives = composePlanWithNextObjectives(null, ['x', 'y'], 3);
+
+    expect(objectives.map((o) => o.skillCode)).toEqual(['x', 'y']);
+    expect(objectives.every((o) => o.kind === 'practice' && o.skillName === o.skillCode)).toBe(true);
+  });
+
+  it('returns nothing for a non-positive limit', () => {
+    expect(composePlanWithNextObjectives(summary, ['a', 'b'], 0)).toEqual([]);
   });
 });

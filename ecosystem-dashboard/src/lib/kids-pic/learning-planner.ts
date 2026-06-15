@@ -63,6 +63,29 @@ function toObjective(entry: FlatSkill, kind: 'review' | 'practice'): PlannerObje
   };
 }
 
+function indexSkills(summary: ChildSkillSummary): Map<string, FlatSkill> {
+  const map = new Map<string, FlatSkill>();
+  for (const entry of flattenSkills(summary)) {
+    if (!map.has(entry.skill.skillCode)) {
+      map.set(entry.skill.skillCode, entry);
+    }
+  }
+  return map;
+}
+
+/** A skill code known to kids-pcg but not (yet) present in the Postgres summary. */
+function synthesizeObjective(skillCode: string): PlannerObjective {
+  return {
+    skillCode,
+    skillName: skillCode,
+    domainCode: '',
+    domainName: '',
+    currentScore: 0,
+    proficiencyLevel: 'unknown',
+    kind: 'practice',
+  };
+}
+
 /**
  * Lowest-scoring skills first (most in need of practice), tie-broken by fewest
  * assessments, then least-recently assessed.
@@ -141,5 +164,55 @@ export function composePlannedObjectives(summary: ChildSkillSummary, limit: numb
   }
 
   // Warm-up takes the first slot; trim focus so the total respects `limit`.
+  return [warmUp, ...focus].slice(0, limit);
+}
+
+/**
+ * Compose a plan whose focus objectives follow kids-pcg's prerequisite-aware
+ * `next-objectives` sequence (skills not yet mastered whose prerequisites ARE
+ * mastered) rather than raw lowest-score ordering. A spaced-review warm-up (derived
+ * from Postgres history) still leads when available. Skill codes not present in the
+ * Postgres summary are kept as minimal objectives so freshly-unlocked skills can be
+ * planned. Falls back to score-based composition when no usable codes are supplied.
+ */
+export function composePlanWithNextObjectives(
+  summary: ChildSkillSummary | null,
+  nextObjectiveSkillCodes: string[],
+  limit: number,
+): PlannerObjective[] {
+  if (limit <= 0) {
+    return [];
+  }
+
+  const byCode = summary ? indexSkills(summary) : new Map<string, FlatSkill>();
+  const seen = new Set<string>();
+  const focus: PlannerObjective[] = [];
+
+  for (const raw of nextObjectiveSkillCodes) {
+    const code = `${raw ?? ''}`.trim();
+    if (!code || seen.has(code)) {
+      continue;
+    }
+    seen.add(code);
+    const found = byCode.get(code);
+    focus.push(found ? toObjective(found, 'practice') : synthesizeObjective(code));
+    if (focus.length >= limit) {
+      break;
+    }
+  }
+
+  if (focus.length === 0) {
+    // No usable next-objectives -> defer to score-based composition.
+    return summary ? composePlannedObjectives(summary, limit) : [];
+  }
+
+  const warmUp = summary
+    ? selectReviewWarmUp(summary, focus.map((objective) => objective.skillCode))
+    : null;
+
+  if (!warmUp) {
+    return focus.slice(0, limit);
+  }
+
   return [warmUp, ...focus].slice(0, limit);
 }
