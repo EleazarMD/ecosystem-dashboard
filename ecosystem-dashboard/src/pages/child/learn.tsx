@@ -49,6 +49,7 @@ import { useKidsPIC } from '@/hooks/useKidsPIC';
 
 interface PlanActivity {
   type: string;
+  kind?: 'review' | 'practice';
   skillCode: string;
   contentItemId: string;
   title: string;
@@ -513,7 +514,7 @@ function ChildLearnContent() {
   }
 
   const progressValue = total > 0 ? (currentIndex / total) * 100 : 0;
-  const isWarmUp = currentIndex === 0;
+  const isWarmUp = activity.kind === 'review';
   const stepLabel =
     step === 'intro'
       ? isWarmUp
@@ -570,7 +571,7 @@ function ChildLearnContent() {
                 <VStack align="stretch" spacing={4}>
                   <Box>
                     <Text fontWeight="bold" mb={1}>
-                      {isWarmUp ? "Let's warm up with" : "Next up"}: {prettifySkill(activity.skillCode)}
+                      {isWarmUp ? "Let's warm up by reviewing" : 'Next up'}: {prettifySkill(activity.skillCode)}
                     </Text>
                     <Text opacity={0.8}>
                       Read the {isQuestionType ? 'passage and question' : 'problem'} carefully and take

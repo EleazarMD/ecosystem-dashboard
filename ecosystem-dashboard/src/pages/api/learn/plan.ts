@@ -5,24 +5,17 @@ import { authOptions } from '../auth/[...nextauth]';
 import { getLearningPhase1Service } from '@/lib/kids-pic/LearningPhase1Service';
 import { SkillProgressService } from '@/lib/kids-pic/SkillProgressService';
 import { getLearningAccessState } from '@/lib/kids-pic/learning-access';
+import { composePlannedObjectives, type PlannerObjective } from '@/lib/kids-pic/learning-planner';
 import dbPool from '@/lib/db/client';
 import { readUserId } from './attempt';
 import type { LearnAgeBand } from '@/lib/kids-pic/phase1-starter-content';
-import type { ChildSkillSummary, SkillProgress } from '@/lib/kids-pic/SkillProgressService';
+import type { ChildSkillSummary } from '@/lib/kids-pic/SkillProgressService';
 
 const skillProgressService = new SkillProgressService(dbPool);
 
-interface PlanObjective {
-  skillCode: string;
-  skillName: string;
-  domainCode: string;
-  domainName: string;
-  currentScore: number;
-  proficiencyLevel: string;
-}
-
 interface PlanActivity {
   type: 'practice';
+  kind: 'review' | 'practice';
   skillCode: string;
   contentItemId: string;
   title: string;
@@ -97,7 +90,7 @@ async function buildPlan(input: {
   objectivesLimit: number;
 }): Promise<{
   childName: string | null;
-  objectives: PlanObjective[];
+  objectives: PlannerObjective[];
   activities: PlanActivity[];
   source: 'skill_progress_plus_catalog' | 'catalog_fallback';
 }> {
@@ -109,8 +102,10 @@ async function buildPlan(input: {
     console.warn('[api/learn/plan] getChildSkillSummary fallback:', error);
   }
 
+  // Compose a spaced-review warm-up (when the child has history) ahead of the
+  // lowest-score focus objectives (roadmap 9.1/9.2).
   const objectives = summary
-    ? selectLowestScoreObjectives(summary, input.objectivesLimit)
+    ? composePlannedObjectives(summary, input.objectivesLimit)
     : [];
 
   const activities: PlanActivity[] = [];
@@ -130,6 +125,7 @@ async function buildPlan(input: {
 
     activities.push({
       type: 'practice',
+      kind: objective.kind,
       skillCode: objective.skillCode,
       contentItemId: item.id,
       title: objective.skillName,
@@ -161,9 +157,11 @@ async function buildPlan(input: {
       domainName: item.subject,
       currentScore: 0,
       proficiencyLevel: 'unknown',
+      kind: 'practice',
     })),
     activities: fallbackItems.map((item) => ({
       type: 'practice',
+      kind: 'practice',
       skillCode: item.skillCode,
       contentItemId: item.id,
       title: item.skillCode,
@@ -172,45 +170,6 @@ async function buildPlan(input: {
     })),
     source: 'catalog_fallback',
   };
-}
-
-function selectLowestScoreObjectives(summary: ChildSkillSummary, limit: number): PlanObjective[] {
-  const skills = summary.domains.flatMap((domain) =>
-    domain.skills.map((skill) => ({
-      domainCode: domain.domain.code,
-      domainName: domain.domain.name,
-      skill,
-    })),
-  );
-
-  skills.sort((a, b) => {
-    if (a.skill.currentScore !== b.skill.currentScore) {
-      return a.skill.currentScore - b.skill.currentScore;
-    }
-
-    if (a.skill.assessmentsCount !== b.skill.assessmentsCount) {
-      return a.skill.assessmentsCount - b.skill.assessmentsCount;
-    }
-
-    return getAssessmentTime(a.skill) - getAssessmentTime(b.skill);
-  });
-
-  return skills.slice(0, limit).map((entry) => ({
-    skillCode: entry.skill.skillCode,
-    skillName: entry.skill.skillName,
-    domainCode: entry.domainCode,
-    domainName: entry.domainName,
-    currentScore: entry.skill.currentScore,
-    proficiencyLevel: entry.skill.proficiencyLevel.name,
-  }));
-}
-
-function getAssessmentTime(skill: SkillProgress): number {
-  if (!skill.lastAssessmentDate) {
-    return 0;
-  }
-
-  return new Date(skill.lastAssessmentDate).getTime();
 }
 
 export function asSingleQuery(value: string | string[] | undefined): string {
