@@ -34,6 +34,10 @@ Available GraphQL queries:
 - evolutionChain(speciesId: Int!): [EvolutionNode]
 - typeEffectiveness(typeName: String!): TypeEffectiveness
 - pokemonMoves(pokemonId: Int!, learnMethod: String): [Move]
+- pokemonForms(pokemonId: Int!): [Form]
+- teamSuggest(types: [String!]!, limit: Int): [TeamSuggestion]
+- teamWeakness(pokemonIds: [Int!]!): WeaknessCalc
+- teamCoverage(pokemonIds: [Int!]!): TypeCoverage
 - allTypes: [Type]
 - allGenerations: [Generation]
 - allNatures: [Nature]
@@ -44,6 +48,10 @@ Pokemon fields: id name pokedex_number height weight base_experience sprite_fron
 SearchResult fields: id name pokedex_number sprite_front official_artwork types
 TypeEffectiveness fields: type strong_against weak_against immune_to vulnerable_to resists_from
 Move fields: id name type power pp accuracy damage_class effect level learn_method
+Form fields: id name is_default is_battle_only form_order sprite_front sprite_back types
+TeamSuggestion fields: id name pokedex_number sprite_front official_artwork total_stats types is_legendary is_mythical
+WeaknessCalc fields: covered_types weak_to team_size
+TypeCoverage fields: super_effective not_covered coverage_pct
 Stats fields: total_nodes total_rels pokemon species types moves abilities items tcg_cards anime_episodes
 
 Rules:
@@ -53,7 +61,11 @@ Rules:
 4. For specific Pokemon questions, use pokemonByName or pokemonByDex.
 5. For type questions, use typeEffectiveness or allTypes.
 6. For stats/count questions, use graphStats.
-7. Limit results to 20 or fewer unless specifically asked for more.
+7. For "what forms does X have" or "mega evolution" questions, use pokemonForms.
+8. For "suggest a team with X and Y types" or "best pokemon for X type", use teamSuggest.
+9. For "what is my team weak to" or "team weaknesses", use teamWeakness with pokemon IDs.
+10. For "type coverage" or "what types can my team hit", use teamCoverage with pokemon IDs.
+11. Limit results to 20 or fewer unless specifically asked for more.
 `;
 
 interface PokedexGraphQLResponse {
@@ -196,6 +208,23 @@ function generateFallbackQuery(question: string): string {
   // "what types exist" / "all types"
   if (q.includes('types') && (q.includes('all') || q.includes('list') || q.includes('exist'))) {
     return `query { allTypes { id name } }`;
+  }
+
+  // "what forms does X have" / "mega evolution of X"
+  const formsMatch = q.match(/(?:what|show|tell|find).*(?:forms?|mega|gigantamax|regional).*(?:of|does|for)?\s*(\w+)/);
+  const formsMatch2 = q.match(/(\w+)\s+(?:forms?|mega|gigantamax)/);
+  const formName = (formsMatch?.[1] || formsMatch2?.[1]);
+  if (formName && formName !== 'all' && formName.length > 2) {
+    return `query { pokemonByName(name: "${formName}") { id name } }`;
+  }
+
+  // "suggest a team with fire and flying" / "best water pokemon"
+  const teamMatch = q.match(/(?:suggest|best|recommend|build).*(?:team|pokemon).*?(?:with|for|type)?\s*(\w+)(?:\s+(?:and|type)?\s*(\w+))?/);
+  if (teamMatch && (q.includes('team') || q.includes('suggest') || q.includes('best') || q.includes('recommend'))) {
+    const type1 = teamMatch[1];
+    const type2 = teamMatch[2] || '';
+    const types = type2 ? `["${type1}", "${type2}"]` : `["${type1}"]`;
+    return `query { teamSuggest(types: ${types}, limit: 10) { id name pokedex_number sprite_front official_artwork total_stats types is_legendary is_mythical } }`;
   }
 
   // "type effectiveness" / "X strong against"

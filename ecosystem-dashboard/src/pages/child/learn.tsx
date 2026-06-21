@@ -126,6 +126,37 @@ const SUBJECT_LABELS: Record<string, string> = {
   science: 'Science',
 };
 
+const SUBJECT_ICONS: Record<string, string> = {
+  math: '🔢',
+  reading: '📖',
+  writing: '✏️',
+  analytical: '🧠',
+  science: '🔬',
+};
+
+const SUBJECT_COLORS: Record<string, string> = {
+  math: 'blue',
+  reading: 'green',
+  writing: 'orange',
+  analytical: 'purple',
+  science: 'cyan',
+};
+
+function subjectOf(code: string): string {
+  const subject = code.split('.')[0] || '';
+  return SUBJECT_LABELS[subject] || 'Learn';
+}
+
+function subjectIconOf(code: string): string {
+  const subject = code.split('.')[0] || '';
+  return SUBJECT_ICONS[subject] || '⭐';
+}
+
+function subjectColorOf(code: string): string {
+  const subject = code.split('.')[0] || '';
+  return SUBJECT_COLORS[subject] || 'gray';
+}
+
 const ANALYTICAL_TAG_LABELS: Record<string, string> = {
   'analytical.infer_evidence': 'Inference with evidence',
   'analytical.compare_classify': 'Compare and classify',
@@ -161,11 +192,6 @@ function prettifySkill(code: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function subjectOf(code: string): string {
-  const subject = code.split('.')[0] || '';
-  return SUBJECT_LABELS[subject] || 'Learn';
-}
-
 function getHintStageLabel(hintLevel?: number): string {
   if (typeof hintLevel !== 'number') {
     return 'Hint support';
@@ -195,6 +221,8 @@ function ChildLearnContent() {
   const [grading, setGrading] = useState(false);
   const [result, setResult] = useState<AttemptResponse | null>(null);
   const [correctCount, setCorrectCount] = useState(0);
+  const [streak, setStreak] = useState(0);
+  const [bestStreak, setBestStreak] = useState(0);
   const [reflection, setReflection] = useState('');
   const [step, setStep] = useState<ActivityStep>('intro');
   const [understanding, setUnderstanding] = useState('');
@@ -252,6 +280,8 @@ function ChildLearnContent() {
       setPlan(data);
       setCurrentIndex(0);
       setCorrectCount(0);
+      setStreak(0);
+      setBestStreak(0);
       setResponseText('');
       setAttemptNumber(1);
       setResult(null);
@@ -429,8 +459,14 @@ function ChildLearnContent() {
       setResult(mergedResult);
       if (mergedResult.correct) {
         setCorrectCount((c) => c + 1);
+        setStreak((s) => {
+          const next = s + 1;
+          setBestStreak((b) => Math.max(b, next));
+          return next;
+        });
         setStep('understanding');
       } else {
+        setStreak(0);
         setAttemptNumber((n) => n + 1);
       }
     } catch (err) {
@@ -581,6 +617,9 @@ function ChildLearnContent() {
 
   if (phase === 'complete') {
     const pct = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+    const subjectsPracticed = Array.from(new Set(activities.map((a) => a.skillCode.split('.')[0])));
+    const skillsPracticed = activities.map((a) => prettifySkill(a.skillCode));
+
     return (
       <Container maxW={{ base: '4xl', md: '6xl', lg: '6xl' }} py={{ base: 6, md: 8 }}>
         <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={{ base: 4, md: 6 }}>
@@ -599,9 +638,23 @@ function ChildLearnContent() {
                 <Text fontSize="lg">
                   You got <b>{correctCount}</b> of <b>{total}</b> right.
                 </Text>
-                <HStack>
-                  <FiAward />
-                  <Text fontWeight="bold">Effort badge earned</Text>
+                <HStack spacing={6}>
+                  <VStack spacing={0}>
+                    <HStack>
+                      <FiAward />
+                      <Text fontWeight="bold">Effort badge</Text>
+                    </HStack>
+                  </VStack>
+                  {bestStreak >= 2 && (
+                    <VStack spacing={0}>
+                      <Text fontSize="2xl">🔥</Text>
+                      <Text fontWeight="bold" fontSize="sm">Best streak: {bestStreak}</Text>
+                    </VStack>
+                  )}
+                  <VStack spacing={0}>
+                    <Text fontSize="2xl">⏱️</Text>
+                    <Text fontWeight="bold" fontSize="sm">{formatElapsed(sessionElapsed)}</Text>
+                  </VStack>
                 </HStack>
                 <Wrap justify="center" spacing={2}>
                   {hasAssignments && (
@@ -648,6 +701,31 @@ function ChildLearnContent() {
             <CardBody p={{ base: 4, md: 6 }}>
               <VStack spacing={4} textAlign="center">
                 <Box w="full" pt={1}>
+                  <Text fontWeight="bold" mb={3} textAlign="left">
+                    What you practiced today
+                  </Text>
+                  <Wrap spacing={2} mb={3}>
+                    {subjectsPracticed.map((subj) => (
+                      <WrapItem key={subj}>
+                        <Badge colorScheme={SUBJECT_COLORS[subj] || 'gray'} variant="subtle">
+                          {SUBJECT_ICONS[subj] || '⭐'} {SUBJECT_LABELS[subj] || subj}
+                        </Badge>
+                      </WrapItem>
+                    ))}
+                  </Wrap>
+                  <VStack align="start" spacing={1} maxH="120px" overflowY="auto" w="full">
+                    {skillsPracticed.map((skill, i) => (
+                      <HStack key={i} spacing={2}>
+                        <Text fontSize="sm" color={i < correctCount ? 'green.500' : 'gray.500'}>
+                          {i < correctCount ? '✅' : '📝'}
+                        </Text>
+                        <Text fontSize="sm">{skill}</Text>
+                      </HStack>
+                    ))}
+                  </VStack>
+                </Box>
+
+                <Box w="full" pt={2}>
                   <Text fontWeight="bold" mb={2} textAlign="left">
                     One quick thought: what felt tricky today?
                   </Text>
@@ -819,21 +897,48 @@ function ChildLearnContent() {
                 </Text>
               )}
 
-              <HStack spacing={2} opacity={0.9}>
-                <Text fontSize="xs" fontFamily="mono">
-                  {formatElapsed(sessionElapsed)}
-                </Text>
-                {sessionElapsed >= sessionWarnAt && sessionElapsed < sessionOverAt && (
-                  <Badge colorScheme="orange" variant="solid" fontSize="0.65rem">
-                    Almost time to wrap up
-                  </Badge>
-                )}
-                {sessionElapsed >= sessionOverAt && (
-                  <Badge colorScheme="red" variant="solid" fontSize="0.65rem">
-                    Time to finish up
-                  </Badge>
-                )}
-              </HStack>
+              <Box>
+                <HStack spacing={4} opacity={0.95}>
+                  <HStack spacing={1}>
+                    <Text fontSize="xs" fontFamily="mono">
+                      {formatElapsed(sessionElapsed)}
+                    </Text>
+                    {sessionElapsed >= sessionWarnAt && sessionElapsed < sessionOverAt && (
+                      <Badge colorScheme="orange" variant="solid" fontSize="0.65rem">
+                        Almost time
+                      </Badge>
+                    )}
+                    {sessionElapsed >= sessionOverAt && (
+                      <Badge colorScheme="red" variant="solid" fontSize="0.65rem">
+                        Wrap up
+                      </Badge>
+                    )}
+                  </HStack>
+                  <HStack spacing={1}>
+                    <Text fontSize="xs">🎯</Text>
+                    <Text fontSize="xs" fontWeight="bold">
+                      {total > 0 ? Math.round((correctCount / Math.max(1, currentIndex + (step === 'understanding' ? 1 : 0))) * 100) : 0}%
+                    </Text>
+                  </HStack>
+                  {streak >= 2 && (
+                    <HStack spacing={1}>
+                      <Text fontSize="xs">🔥</Text>
+                      <Text fontSize="xs" fontWeight="bold">
+                        {streak} streak
+                      </Text>
+                    </HStack>
+                  )}
+                </HStack>
+                <Box h="4px" bg="whiteAlpha.300" borderRadius="full" mt={2}>
+                  <Box
+                    h="100%"
+                    w={`${Math.min(100, (sessionElapsed / sessionOverAt) * 100)}%`}
+                    bg={sessionElapsed >= sessionOverAt ? 'red.300' : sessionElapsed >= sessionWarnAt ? 'orange.300' : 'whiteAlpha.600'}
+                    borderRadius="full"
+                    transition="width 1s linear"
+                  />
+                </Box>
+              </Box>
             </VStack>
           </CardBody>
         </Card>
@@ -848,6 +953,7 @@ function ChildLearnContent() {
                 {activities.map((item, idx) => {
                   const isCurrent = idx === currentIndex;
                   const isDone = idx < currentIndex;
+                  const subjColor = subjectColorOf(item.skillCode);
                   return (
                     <Box
                       key={`${item.contentItemId}-${idx}`}
@@ -857,17 +963,27 @@ function ChildLearnContent() {
                       borderRadius="lg"
                       borderColor={isCurrent ? colors.primary : isDone ? 'green.300' : 'gray.200'}
                       bg={isCurrent ? 'blackAlpha.50' : 'transparent'}
+                      borderLeftWidth="4px"
+                      borderLeftColor={isDone ? 'green.400' : `${subjColor}.400`}
                     >
                       <HStack justify="space-between" mb={1}>
-                        <Text fontSize="xs" fontWeight="bold">
-                          Step {idx + 1}
-                        </Text>
+                        <HStack spacing={1}>
+                          <Text fontSize="sm">{subjectIconOf(item.skillCode)}</Text>
+                          <Text fontSize="xs" fontWeight="bold">
+                            Step {idx + 1}
+                          </Text>
+                        </HStack>
                         {isDone && <Text fontSize="xs">✅</Text>}
                       </HStack>
                       <Text fontWeight="semibold" fontSize="sm" noOfLines={1}>
                         {prettifySkill(item.skillCode)}
                       </Text>
                       <Wrap spacing={1} mt={2}>
+                        <WrapItem>
+                          <Badge colorScheme={subjColor} variant="subtle" fontSize="0.65rem">
+                            {subjectOf(item.skillCode)}
+                          </Badge>
+                        </WrapItem>
                         {item.isAssignment && (
                           <WrapItem>
                             <Badge colorScheme="yellow" variant="subtle" fontSize="0.65rem">
@@ -891,14 +1007,16 @@ function ChildLearnContent() {
           </CardBody>
         </Card>
 
-        <SegmentedStepRail total={total} currentIndex={currentIndex} step={step} />
+        <SegmentedStepRail total={total} currentIndex={currentIndex} step={step} activities={activities} />
 
         <Card borderRadius="card" boxShadow="card">
           <CardBody p={{ base: 4, md: 6 }}>
             <VStack align="stretch" spacing={4}>
               <Wrap spacing={2}>
                 <WrapItem>
-                  <Badge colorScheme="blue">{subjectOf(activity.skillCode)}</Badge>
+                  <Badge colorScheme={subjectColorOf(activity.skillCode)}>
+                    {subjectIconOf(activity.skillCode)} {subjectOf(activity.skillCode)}
+                  </Badge>
                 </WrapItem>
                 <WrapItem>
                   <Badge variant="subtle">{prettifySkill(activity.skillCode)}</Badge>
@@ -1338,10 +1456,12 @@ function SegmentedStepRail({
   total,
   currentIndex,
   step,
+  activities,
 }: {
   total: number;
   currentIndex: number;
   step: ActivityStep;
+  activities: LearnPlanActivity[];
 }) {
   if (total <= 0) {
     return null;
@@ -1354,6 +1474,7 @@ function SegmentedStepRail({
           const isDone = idx < currentIndex || (idx === currentIndex && step === 'understanding');
           const isCurrent = idx === currentIndex && step !== 'understanding';
           const isInstruction = idx === currentIndex && step === 'instruction';
+          const subjColor = activities[idx] ? subjectColorOf(activities[idx].skillCode) : 'gray';
 
           return (
             <Box
@@ -1361,7 +1482,7 @@ function SegmentedStepRail({
               flex="1"
               h={{ base: '8px', md: '10px' }}
               borderRadius="full"
-              bg={isDone ? 'green.400' : isInstruction ? 'purple.400' : isCurrent ? 'blue.400' : 'gray.200'}
+              bg={isDone ? 'green.400' : isInstruction ? 'purple.400' : isCurrent ? `${subjColor}.400` : 'gray.200'}
               transition="background-color 0.2s ease"
             />
           );

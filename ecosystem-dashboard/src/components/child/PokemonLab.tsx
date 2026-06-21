@@ -47,6 +47,7 @@ import {
   StarIcon,
 } from '@chakra-ui/icons';
 import { keyframes } from '@emotion/react';
+import { PokemonGraphViz } from './PokemonGraphViz';
 import {
   pokedexClient,
   getTypeColor,
@@ -61,6 +62,10 @@ import {
   GraphStats,
   EvolutionNode,
   PokemonMove,
+  PokemonForm,
+  TeamSuggestion,
+  WeaknessCalc,
+  TypeCoverage,
 } from '@/lib/pokedex-client';
 
 // ─── Animation keyframes ──────────────────────────────────────────────────
@@ -82,7 +87,7 @@ const shimmer = keyframes`
 
 // ─── Lesson definitions ───────────────────────────────────────────────────
 
-type LessonId = 'what-is-kg' | 'nodes-edges' | 'query-pokemon' | 'type-chart' | 'stats-analytics' | 'nl-queries';
+type LessonId = 'what-is-kg' | 'nodes-edges' | 'query-pokemon' | 'type-chart' | 'stats-analytics' | 'nl-queries' | 'graph-viz' | 'team-builder' | 'forms-lesson';
 
 interface Lesson {
   id: LessonId;
@@ -134,6 +139,27 @@ const LESSONS: Lesson[] = [
     emoji: '💬',
     description: 'Turn natural language into graph queries!',
     color: '#fa709a',
+  },
+  {
+    id: 'graph-viz',
+    title: 'Graph Visualizer',
+    emoji: '🕸️',
+    description: 'See Pokemon knowledge graphs come alive as interactive networks!',
+    color: '#a78bfa',
+  },
+  {
+    id: 'team-builder',
+    title: 'Team Builder',
+    emoji: '🏆',
+    description: 'Build the ultimate Pokemon team and check your type coverage!',
+    color: '#f6d365',
+  },
+  {
+    id: 'forms-lesson',
+    title: 'Pokemon Forms',
+    emoji: '✨',
+    description: 'Discover Mega Evolutions, Gigantamax, and regional forms!',
+    color: '#ff6b6b',
   },
 ];
 
@@ -511,6 +537,9 @@ function LessonView({
       {lesson.id === 'type-chart' && <TypeChartLesson onComplete={onComplete} />}
       {lesson.id === 'stats-analytics' && <StatsAnalyticsLesson onComplete={onComplete} />}
       {lesson.id === 'nl-queries' && <NLQueriesLesson onComplete={onComplete} />}
+      {lesson.id === 'graph-viz' && <GraphVizLesson onComplete={onComplete} onPokemonSelect={onPokemonSelect} />}
+      {lesson.id === 'team-builder' && <TeamBuilderLesson onComplete={onComplete} />}
+      {lesson.id === 'forms-lesson' && <FormsLesson onComplete={onComplete} onPokemonSelect={onPokemonSelect} />}
     </VStack>
   );
 }
@@ -2140,6 +2169,164 @@ function LessonResult({
   );
 }
 
+// ─── Lesson: Graph Visualizer ─────────────────────────────────────────────
+
+function GraphVizLesson({
+  onComplete,
+  onPokemonSelect,
+}: {
+  onComplete: () => void;
+  onPokemonSelect: (pokemon: PokemonDetail) => void;
+}) {
+  const [step, setStep] = useState(0);
+  const [pokemonName, setPokemonName] = useState('pikachu');
+  const [pokemon, setPokemon] = useState<PokemonDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const fetchPokemon = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await pokedexClient.pokemonByName(pokemonName);
+      if (!data) {
+        setError('Pokemon not found. Try another name!');
+        setPokemon(null);
+      } else {
+        setPokemon(data);
+      }
+    } catch {
+      setError('Could not reach the Pokedex service.');
+      setPokemon(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [pokemonName]);
+
+  useEffect(() => {
+    fetchPokemon();
+  }, []);
+
+  const steps = [
+    {
+      title: 'Seeing the Graph',
+      content: (
+        <VStack spacing={4} align="stretch">
+          <Text>
+            So far you've learned about nodes and edges. But what if you could
+            <strong> see</strong> them? A <strong>graph visualization</strong> turns
+            the knowledge graph into a picture you can interact with!
+          </Text>
+          <Text>
+            Each circle is a <strong>node</strong> (a Pokemon, a Type, a Move, etc.)
+            and each line is an <strong>edge</strong> showing a relationship.
+            The graph uses physics — like magnets — to arrange itself naturally!
+          </Text>
+          <Box
+            bg="rgba(167,139,250,0.1)"
+            borderRadius="lg"
+            p={4}
+            border="1px solid"
+            borderColor="rgba(167,139,250,0.3)"
+          >
+            <Text fontSize="sm" color="gray.300">
+              🖱️ In the next step, you'll see a live graph! You can:
+            </Text>
+            <VStack spacing={1} align="start" mt={2} fontSize="sm" color="gray.300">
+              <Text>• <strong>Drag</strong> nodes to move them around</Text>
+              <Text>• <strong>Scroll</strong> to zoom in and out</Text>
+              <Text>• <strong>Hover</strong> a node to highlight it</Text>
+              <Text>• <strong>Click</strong> a node to see what it is</Text>
+            </VStack>
+          </Box>
+        </VStack>
+      ),
+    },
+    {
+      title: 'Explore the Live Graph!',
+      content: (
+        <VStack spacing={4} align="stretch">
+          <Text>
+            Search for any Pokemon to see its knowledge graph neighborhood —
+            its Types, Abilities, Moves, Species, and Evolution chain!
+          </Text>
+          <HStack>
+            <InputGroup>
+              <InputLeftElement>
+                <SearchIcon color="gray.400" />
+              </InputLeftElement>
+              <Input
+                placeholder="Pokemon name..."
+                value={pokemonName}
+                onChange={(e) => setPokemonName(e.target.value.toLowerCase())}
+                onKeyDown={(e) => e.key === 'Enter' && fetchPokemon()}
+                bg="rgba(255,255,255,0.05)"
+                borderColor="whiteAlpha.200"
+              />
+            </InputGroup>
+            <Button colorScheme="purple" onClick={fetchPokemon} isLoading={loading}>
+              Visualize
+            </Button>
+          </HStack>
+
+          {error && <Text color="red.400" fontSize="sm">{error}</Text>}
+
+          {pokemon && !loading && (
+            <Box w="full">
+              <HStack spacing={2} mb={3}>
+                <Text fontSize="lg">{getTypeEmoji(pokemon.types[0] || '')}</Text>
+                <Text fontWeight="bold" fontSize="md" textTransform="capitalize">
+                  {pokemon.name}'s Graph
+                </Text>
+              </HStack>
+              <PokemonGraphViz pokemon={pokemon} height={450} />
+            </Box>
+          )}
+        </VStack>
+      ),
+    },
+    {
+      title: 'What Did You See?',
+      content: (
+        <VStack spacing={4} align="stretch">
+          <Text fontSize="lg" textAlign="center">
+            🕸️ You just explored a knowledge graph visually!
+          </Text>
+          <Text>
+            The graph visualization showed you how a Pokemon is connected to
+            its Types, Abilities, Moves, and Evolution chain. Each colored circle
+            is a node, and each line is an edge with a label like "HAS_TYPE"
+            or "CAN_LEARN".
+          </Text>
+          <Box
+            bg="rgba(167,139,250,0.1)"
+            borderRadius="lg"
+            p={4}
+            border="1px solid"
+            borderColor="rgba(167,139,250,0.3)"
+          >
+            <Text fontSize="sm" color="gray.300">
+              💡 Graph visualizations are used by scientists, companies, and
+              researchers to understand complex relationships. You're using
+              the same tools they do — just with Pokemon!
+            </Text>
+          </Box>
+        </VStack>
+      ),
+    },
+  ];
+
+  return (
+    <LessonStepView
+      step={step}
+      steps={steps}
+      onStepChange={setStep}
+      onComplete={onComplete}
+      canComplete={step === steps.length - 1}
+    />
+  );
+}
+
 // ─── Pokemon Explorer (Free Explore Mode) ─────────────────────────────────
 
 function PokemonExplorer({
@@ -2320,6 +2507,7 @@ function PokemonDetailView({
   const [loadingExtra, setLoadingExtra] = useState(true);
   const { isOpen: showMoves, onToggle: toggleMoves } = useDisclosure();
   const { isOpen: showEvolution, onToggle: toggleEvolution } = useDisclosure();
+  const { isOpen: showGraph, onToggle: toggleGraph } = useDisclosure();
 
   useEffect(() => {
     setLoadingExtra(true);
@@ -2532,6 +2720,18 @@ function PokemonDetailView({
         </Box>
       )}
 
+      {/* Graph visualization */}
+      <Box bg="rgba(255,255,255,0.05)" borderRadius="lg" p={4} border="1px solid" borderColor="whiteAlpha.200">
+        <Button variant="ghost" size="sm" onClick={toggleGraph} rightIcon={showGraph ? <ChevronLeftIcon transform="rotate(-90deg)" /> : <ChevronRightIcon />}>
+          🕸️ Knowledge Graph Visualization
+        </Button>
+        <Collapse in={showGraph}>
+          <Box mt={3}>
+            <PokemonGraphViz pokemon={pokemon} height={400} />
+          </Box>
+        </Collapse>
+      </Box>
+
       {loadingExtra && (
         <HStack justify="center" py={4}>
           <Spinner size="sm" color="purple.400" />
@@ -2539,6 +2739,613 @@ function PokemonDetailView({
         </HStack>
       )}
     </VStack>
+  );
+}
+
+// ─── Lesson: Team Builder ─────────────────────────────────────────────────
+
+function TeamBuilderLesson({ onComplete }: { onComplete: () => void }) {
+  const [step, setStep] = useState(0);
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<TeamSuggestion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [team, setTeam] = useState<TeamSuggestion[]>([]);
+  const [weakness, setWeakness] = useState<WeaknessCalc | null>(null);
+  const [coverage, setCoverage] = useState<TypeCoverage | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const allTypes = useMemo(
+    () => [
+      'fire', 'water', 'grass', 'electric', 'psychic', 'ice',
+      'dragon', 'dark', 'fairy', 'fighting', 'flying', 'ground',
+      'rock', 'steel', 'poison', 'bug', 'ghost', 'normal',
+    ],
+    [],
+  );
+
+  const toggleType = (t: string) => {
+    setSelectedTypes((prev) =>
+      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t],
+    );
+  };
+
+  const fetchSuggestions = useCallback(async () => {
+    if (selectedTypes.length === 0) return;
+    setLoading(true);
+    try {
+      const data = await pokedexClient.teamSuggest(selectedTypes, 12);
+      setSuggestions(data);
+    } catch {
+      setSuggestions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTypes]);
+
+  const addToTeam = (p: TeamSuggestion) => {
+    if (team.length >= 6 || team.some((t) => t.id === p.id)) return;
+    setTeam([...team, p]);
+  };
+
+  const removeFromTeam = (id: number) => {
+    setTeam(team.filter((t) => t.id !== id));
+  };
+
+  const analyzeTeam = useCallback(async () => {
+    if (team.length === 0) return;
+    setAnalyzing(true);
+    try {
+      const ids = team.map((t) => t.id);
+      const [w, c] = await Promise.all([
+        pokedexClient.teamWeakness(ids),
+        pokedexClient.teamCoverage(ids),
+      ]);
+      setWeakness(w);
+      setCoverage(c);
+    } catch {
+      setWeakness(null);
+      setCoverage(null);
+    } finally {
+      setAnalyzing(false);
+    }
+  }, [team]);
+
+  const steps = [
+    {
+      title: 'What is a Pokemon Team?',
+      content: (
+        <VStack spacing={4} align="stretch">
+          <Text>
+            In Pokemon battles, trainers bring a <strong>team</strong> of up to 6 Pokemon.
+            A great team has Pokemon that cover each other's weaknesses!
+          </Text>
+          <Box
+            bg="rgba(246,211,101,0.1)"
+            borderRadius="lg"
+            p={4}
+            border="1px solid"
+            borderColor="rgba(246,211,101,0.3)"
+          >
+            <Text fontSize="sm" color="gray.300">
+              💡 A knowledge graph can help us build teams! We can query it to find
+              Pokemon with specific types, check what types our team is weak to, and
+              see what types our team can hit super-effectively.
+            </Text>
+          </Box>
+          <Text>
+            Let's use our Pokedex graph to build a team. First, pick the types you want!
+          </Text>
+        </VStack>
+      ),
+    },
+    {
+      title: 'Pick Your Types',
+      content: (
+        <VStack spacing={4} align="stretch">
+          <Text>
+            Choose one or two types you want on your team. The graph will find Pokemon
+            that match!
+          </Text>
+          <Wrap spacing={2}>
+            {allTypes.map((t) => (
+              <WrapItem key={t}>
+                <Button
+                  size="sm"
+                  onClick={() => toggleType(t)}
+                  colorScheme={selectedTypes.includes(t) ? 'yellow' : 'gray'}
+                  bg={selectedTypes.includes(t) ? `${getTypeColor(t)}40` : 'whiteAlpha.100'}
+                  border="1px solid"
+                  borderColor={selectedTypes.includes(t) ? getTypeColor(t) : 'whiteAlpha.200'}
+                  borderRadius="full"
+                >
+                  {getTypeEmoji(t)} {t}
+                </Button>
+              </WrapItem>
+            ))}
+          </Wrap>
+
+          {selectedTypes.length > 0 && (
+            <Button
+              colorScheme="purple"
+              onClick={fetchSuggestions}
+              isLoading={loading}
+              rightIcon={<ChevronRightIcon />}
+              size="sm"
+            >
+              Find Pokemon with {selectedTypes.join(' + ')} types
+            </Button>
+          )}
+
+          {suggestions.length > 0 && (
+            <SimpleGrid columns={{ base: 2, md: 3, lg: 4 }} spacing={3}>
+              {suggestions.map((p) => (
+                <Box
+                  key={p.id}
+                  bg="rgba(255,255,255,0.05)"
+                  borderRadius="lg"
+                  p={3}
+                  border="1px solid"
+                  borderColor="whiteAlpha.200"
+                  _hover={{ transform: 'scale(1.05)', borderColor: 'yellow.400' }}
+                  transition="all 0.15s ease"
+                >
+                  <VStack spacing={1}>
+                    {p.sprite_front ? (
+                      <Avatar src={p.sprite_front} size="md" bg="whiteAlpha.100" />
+                    ) : (
+                      <Circle size="48px" bg="whiteAlpha.100">
+                        <Text fontSize="xl">🔴</Text>
+                      </Circle>
+                    )}
+                    <Text fontWeight="semibold" fontSize="sm" textTransform="capitalize">
+                      {p.name}
+                    </Text>
+                    <Text fontSize="xs" color="gray.400">#{p.pokedex_number}</Text>
+                    <HStack spacing={1}>
+                      {p.types.map((t) => (
+                        <Tag key={t} size="sm" bg={`${getTypeColor(t)}40`} color={getTypeColor(t)} borderRadius="full">
+                          <TagLabel fontSize="xs">{getTypeEmoji(t)} {t}</TagLabel>
+                        </Tag>
+                      ))}
+                    </HStack>
+                    <Text fontSize="xs" color="gray.500">Total: {p.total_stats}</Text>
+                    {p.is_legendary && <Badge colorScheme="yellow" fontSize="2xs">Legendary</Badge>}
+                    {p.is_mythical && <Badge colorScheme="purple" fontSize="2xs">Mythical</Badge>}
+                    <Button
+                      size="xs"
+                      colorScheme="green"
+                      onClick={() => addToTeam(p)}
+                      isDisabled={team.length >= 6 || team.some((t) => t.id === p.id)}
+                    >
+                      {team.some((t) => t.id === p.id) ? 'Added!' : '+ Add'}
+                    </Button>
+                  </VStack>
+                </Box>
+              ))}
+            </SimpleGrid>
+          )}
+        </VStack>
+      ),
+    },
+    {
+      title: 'Your Team',
+      content: (
+        <VStack spacing={4} align="stretch">
+          <Text>
+            Your team so far: <strong>{team.length}/6</strong> Pokemon
+          </Text>
+          {team.length === 0 ? (
+            <Text color="gray.400" textAlign="center" py={8}>
+              Go back and add some Pokemon to your team! 🎯
+            </Text>
+          ) : (
+            <>
+              <SimpleGrid columns={{ base: 2, md: 3 }} spacing={3}>
+                {team.map((p) => (
+                  <Box
+                    key={p.id}
+                    bg="rgba(246,211,101,0.1)"
+                    borderRadius="lg"
+                    p={3}
+                    border="1px solid"
+                    borderColor="rgba(246,211,101,0.3)"
+                  >
+                    <VStack spacing={1}>
+                      {p.sprite_front && <Avatar src={p.sprite_front} size="sm" bg="whiteAlpha.100" />}
+                      <Text fontWeight="semibold" fontSize="sm" textTransform="capitalize">{p.name}</Text>
+                      <HStack spacing={1}>
+                        {p.types.map((t) => (
+                          <Tag key={t} size="sm" bg={`${getTypeColor(t)}40`} color={getTypeColor(t)} borderRadius="full">
+                            <TagLabel fontSize="xs">{getTypeEmoji(t)} {t}</TagLabel>
+                          </Tag>
+                        ))}
+                      </HStack>
+                      <Button size="xs" variant="ghost" colorScheme="red" onClick={() => removeFromTeam(p.id)}>
+                        Remove
+                      </Button>
+                    </VStack>
+                  </Box>
+                ))}
+              </SimpleGrid>
+
+              <Button
+                colorScheme="yellow"
+                onClick={analyzeTeam}
+                isLoading={analyzing}
+                rightIcon={<ChevronRightIcon />}
+                size="sm"
+              >
+                Analyze Team
+              </Button>
+
+              {weakness && coverage && (
+                <VStack spacing={4} align="stretch">
+                  <Box bg="rgba(245,87,108,0.1)" borderRadius="lg" p={4} border="1px solid" borderColor="rgba(245,87,108,0.3)">
+                    <Text fontWeight="bold" fontSize="sm" mb={2}>⚠️ Team Weaknesses</Text>
+                    {weakness.weak_to.length > 0 ? (
+                      <Wrap spacing={2}>
+                        {weakness.weak_to.map((t) => (
+                          <WrapItem key={t}>
+                            <Tag size="sm" bg={`${getTypeColor(t)}30`} color={getTypeColor(t)} borderRadius="full">
+                              <TagLabel fontSize="xs">{getTypeEmoji(t)} {t}</TagLabel>
+                            </Tag>
+                          </WrapItem>
+                        ))}
+                      </Wrap>
+                    ) : (
+                      <Text fontSize="sm" color="green.300">No major weaknesses! 🛡️</Text>
+                    )}
+                  </Box>
+
+                  <Box bg="rgba(67,233,123,0.1)" borderRadius="lg" p={4} border="1px solid" borderColor="rgba(67,233,123,0.3)">
+                    <HStack justify="space-between" mb={2}>
+                      <Text fontWeight="bold" fontSize="sm">✅ Type Coverage</Text>
+                      <Badge colorScheme={coverage.coverage_pct >= 70 ? 'green' : coverage.coverage_pct >= 50 ? 'yellow' : 'red'}>
+                        {coverage.coverage_pct.toFixed(1)}%
+                      </Badge>
+                    </HStack>
+                    <Progress value={coverage.coverage_pct} colorScheme={coverage.coverage_pct >= 70 ? 'green' : 'yellow'} size="sm" mb={3} />
+                    {coverage.super_effective.length > 0 && (
+                      <Box mb={2}>
+                        <Text fontSize="xs" color="gray.400" mb={1}>Can hit super-effectively:</Text>
+                        <Wrap spacing={2}>
+                          {coverage.super_effective.map((t) => (
+                            <WrapItem key={t}>
+                              <Tag size="sm" bg={`${getTypeColor(t)}30`} color={getTypeColor(t)} borderRadius="full">
+                                <TagLabel fontSize="xs">{getTypeEmoji(t)} {t}</TagLabel>
+                              </Tag>
+                            </WrapItem>
+                          ))}
+                        </Wrap>
+                      </Box>
+                    )}
+                    {coverage.not_covered.length > 0 && (
+                      <Box>
+                        <Text fontSize="xs" color="gray.400" mb={1}>Not covered:</Text>
+                        <Wrap spacing={2}>
+                          {coverage.not_covered.filter((t) => !['stellar', 'unknown', 'shadow'].includes(t)).map((t) => (
+                            <WrapItem key={t}>
+                              <Tag size="sm" bg="whiteAlpha.100" color="gray.400" borderRadius="full">
+                                <TagLabel fontSize="xs">{t}</TagLabel>
+                              </Tag>
+                            </WrapItem>
+                          ))}
+                        </Wrap>
+                      </Box>
+                    )}
+                  </Box>
+                </VStack>
+              )}
+            </>
+          )}
+        </VStack>
+      ),
+    },
+    {
+      title: 'Quiz Time!',
+      content: (
+        <QuizView
+          questions={[
+            {
+              question: 'Why is type coverage important for a Pokemon team?',
+              options: [
+                'It makes your Pokemon look cooler',
+                'It ensures your team can deal super-effective damage to many types',
+                'It increases your Pokemon\'s level',
+                'It is not important at all',
+              ],
+              answer: 1,
+              explanation: 'Type coverage means your team can hit many different types super-effectively, making it stronger against diverse opponents!',
+            },
+            {
+              question: 'What does it mean if your team is "weak to Water"?',
+              options: [
+                'Your team has Water-type Pokemon',
+                'Water-type attacks will deal extra damage to your team',
+                'Your team can\'t swim',
+                'Water-type Pokemon are afraid of your team',
+              ],
+              answer: 1,
+              explanation: 'Being weak to Water means Water-type attacks will be super-effective against your team. You should add Pokemon that resist Water!',
+            },
+          ]}
+          answers={[]}
+          onAnswer={() => {}}
+          onComplete={onComplete}
+        />
+      ),
+    },
+  ];
+
+  return (
+    <LessonStepView
+      step={step}
+      steps={steps}
+      onStepChange={setStep}
+      onComplete={onComplete}
+      canComplete={step === steps.length - 1}
+    />
+  );
+}
+
+// ─── Lesson: Pokemon Forms ─────────────────────────────────────────────────
+
+function FormsLesson({
+  onComplete,
+  onPokemonSelect,
+}: {
+  onComplete: () => void;
+  onPokemonSelect: (pokemon: PokemonDetail) => void;
+}) {
+  const [step, setStep] = useState(0);
+  const [searchName, setSearchName] = useState('charizard');
+  const [forms, setForms] = useState<PokemonForm[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [currentPokemonId, setCurrentPokemonId] = useState<number | null>(null);
+
+  const fetchForms = useCallback(async (name: string) => {
+    setLoading(true);
+    setError('');
+    try {
+      const pokemon = await pokedexClient.pokemonByName(name);
+      if (!pokemon) {
+        setError('Pokemon not found. Try another name!');
+        setForms([]);
+        return;
+      }
+      setCurrentPokemonId(pokemon.id);
+      const data = await pokedexClient.pokemonForms(pokemon.id);
+      setForms(data);
+    } catch {
+      setError('Could not reach the Pokedex service.');
+      setForms([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchForms('charizard');
+  }, []);
+
+  const steps = [
+    {
+      title: 'What are Pokemon Forms?',
+      content: (
+        <VStack spacing={4} align="stretch">
+          <Text>
+            Some Pokemon have special <strong>forms</strong> — different versions of the
+            same Pokemon with unique appearances, types, and abilities!
+          </Text>
+          <SimpleGrid columns={1} spacing={3}>
+            <Box bg="rgba(255,107,107,0.1)" borderRadius="lg" p={4} border="1px solid" borderColor="rgba(255,107,107,0.3)">
+              <HStack spacing={3}>
+                <Text fontSize="2xl">💥</Text>
+                <Box>
+                  <Text fontWeight="bold" fontSize="sm">Mega Evolution</Text>
+                  <Text fontSize="xs" color="gray.400">A temporary, powerful form during battle. Mega Charizard X becomes Fire/Dragon!</Text>
+                </Box>
+              </HStack>
+            </Box>
+            <Box bg="rgba(102,126,234,0.1)" borderRadius="lg" p={4} border="1px solid" borderColor="rgba(102,126,234,0.3)">
+              <HStack spacing={3}>
+                <Text fontSize="2xl">🏔️</Text>
+                <Box>
+                  <Text fontWeight="bold" fontSize="sm">Regional Forms</Text>
+                  <Text fontSize="xs" color="gray.400">Pokemon adapt to different regions. Alolan Vulpix is Ice-type instead of Fire!</Text>
+                </Box>
+              </HStack>
+            </Box>
+            <Box bg="rgba(246,211,101,0.1)" borderRadius="lg" p={4} border="1px solid" borderColor="rgba(246,211,101,0.3)">
+              <HStack spacing={3}>
+                <Text fontSize="2xl">🎪</Text>
+                <Box>
+                  <Text fontWeight="bold" fontSize="sm">Gigantamax</Text>
+                  <Text fontSize="xs" color="gray.400">A massive form in Galar region battles. Gigantamax Charizard is enormous!</Text>
+                </Box>
+              </HStack>
+            </Box>
+          </SimpleGrid>
+          <Box
+            bg="rgba(255,107,107,0.1)"
+            borderRadius="lg"
+            p={4}
+            border="1px solid"
+            borderColor="rgba(255,107,107,0.3)"
+          >
+            <Text fontSize="sm" color="gray.300">
+              📝 In our knowledge graph, forms are stored as <strong>:Form</strong> nodes
+              connected to :Pokemon nodes via <strong>HAS_FORM</strong> edges. Each form
+              has its own types, sprites, and properties!
+            </Text>
+          </Box>
+        </VStack>
+      ),
+    },
+    {
+      title: 'Explore Forms',
+      content: (
+        <VStack spacing={4} align="stretch">
+          <Text>
+            Search for a Pokemon to see all its forms! Try "charizard", "mewtwo", or "pikachu".
+          </Text>
+          <HStack>
+            <InputGroup>
+              <InputLeftElement>
+                <SearchIcon color="gray.500" />
+              </InputLeftElement>
+              <Input
+                placeholder="Pokemon name..."
+                value={searchName}
+                onChange={(e) => setSearchName(e.target.value.toLowerCase())}
+                onKeyDown={(e) => { if (e.key === 'Enter') fetchForms(searchName); }}
+                bg="whiteAlpha.100"
+                border="1px solid"
+                borderColor="whiteAlpha.200"
+              />
+            </InputGroup>
+            <Button colorScheme="purple" onClick={() => fetchForms(searchName)} isLoading={loading} size="sm">
+              Search
+            </Button>
+          </HStack>
+
+          {error && <Text color="red.400" fontSize="sm">{error}</Text>}
+
+          {loading && (
+            <HStack justify="center" py={4}>
+              <Spinner size="sm" color="purple.400" />
+              <Text fontSize="sm" color="gray.400">Loading forms...</Text>
+            </HStack>
+          )}
+
+          {!loading && forms.length > 0 && (
+            <VStack spacing={3} align="stretch">
+              <Text fontSize="sm" color="gray.400">
+                Found <strong>{forms.length}</strong> form{forms.length !== 1 ? 's' : ''}:
+              </Text>
+              <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={3}>
+                {forms.map((f) => (
+                  <Box
+                    key={f.id}
+                    bg="rgba(255,255,255,0.05)"
+                    borderRadius="lg"
+                    p={4}
+                    border="1px solid"
+                    borderColor={f.is_default ? 'whiteAlpha.200' : 'rgba(255,107,107,0.3)'}
+                  >
+                    <VStack spacing={2}>
+                      {f.sprite_front ? (
+                        <Avatar src={f.sprite_front} size="lg" bg="whiteAlpha.100" />
+                      ) : (
+                        <Circle size="64px" bg="whiteAlpha.100">
+                          <Text fontSize="2xl">🔴</Text>
+                        </Circle>
+                      )}
+                      <Text fontWeight="semibold" fontSize="sm" textTransform="capitalize">
+                        {f.name.replace(/-/g, ' ')}
+                      </Text>
+                      {f.is_default ? (
+                        <Badge colorScheme="gray" fontSize="2xs">Default</Badge>
+                      ) : (
+                        <Badge colorScheme="red" fontSize="2xs">
+                          {f.is_battle_only ? 'Battle Only' : 'Special Form'}
+                        </Badge>
+                      )}
+                      {f.types.length > 0 && (
+                        <HStack spacing={1}>
+                          {f.types.map((t) => (
+                            <Tag key={t} size="sm" bg={`${getTypeColor(t)}40`} color={getTypeColor(t)} borderRadius="full">
+                              <TagLabel fontSize="xs">{getTypeEmoji(t)} {t}</TagLabel>
+                            </Tag>
+                          ))}
+                        </HStack>
+                      )}
+                      {currentPokemonId && (
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          colorScheme="purple"
+                          onClick={async () => {
+                            const detail = await pokedexClient.pokemonByName(f.name);
+                            if (detail) onPokemonSelect(detail);
+                          }}
+                        >
+                          View Details →
+                        </Button>
+                      )}
+                    </VStack>
+                  </Box>
+                ))}
+              </SimpleGrid>
+            </VStack>
+          )}
+
+          {!loading && !error && forms.length === 1 && forms[0].is_default && (
+            <Box bg="rgba(102,126,234,0.1)" borderRadius="lg" p={4} border="1px solid" borderColor="rgba(102,126,234,0.3)">
+              <Text fontSize="sm" color="gray.300">
+                This Pokemon only has its default form. Try "charizard" or "mewtwo" to see Pokemon with multiple forms!
+              </Text>
+            </Box>
+          )}
+        </VStack>
+      ),
+    },
+    {
+      title: 'Quiz Time!',
+      content: (
+        <QuizView
+          questions={[
+            {
+              question: 'What is a Mega Evolution?',
+              options: [
+                'A permanent evolution to a new Pokemon',
+                'A temporary powerful form during battle',
+                'A type of move',
+                'A way to catch Pokemon',
+              ],
+              answer: 1,
+              explanation: 'Mega Evolution is a temporary transformation that makes a Pokemon more powerful during battle. It reverts after the battle ends!',
+            },
+            {
+              question: 'In the knowledge graph, how are forms connected to Pokemon?',
+              options: [
+                'By HAS_TYPE edges',
+                'By HAS_FORM edges',
+                'By EVOLVES_INTO edges',
+                'Forms are not stored in the graph',
+              ],
+              answer: 1,
+              explanation: 'Forms are connected to Pokemon nodes via HAS_FORM edges. Each Form node has its own types, sprites, and properties!',
+            },
+            {
+              question: 'What makes Alolan Vulpix different from regular Vulpix?',
+              options: [
+                'It is a different Pokemon entirely',
+                'It has a different type (Ice instead of Fire)',
+                'It is always shiny',
+                'It has higher stats',
+              ],
+              answer: 1,
+              explanation: 'Alolan Vulpix adapted to the Alola region and became Ice-type instead of Fire-type. Regional forms can have completely different types!',
+            },
+          ]}
+          answers={[]}
+          onAnswer={() => {}}
+          onComplete={onComplete}
+        />
+      ),
+    },
+  ];
+
+  return (
+    <LessonStepView
+      step={step}
+      steps={steps}
+      onStepChange={setStep}
+      onComplete={onComplete}
+      canComplete={step === steps.length - 1}
+    />
   );
 }
 

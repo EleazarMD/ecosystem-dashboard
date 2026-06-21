@@ -123,6 +123,41 @@ export interface GenerationInfo {
   region: string;
 }
 
+export interface PokemonForm {
+  id: number;
+  name: string;
+  is_default: boolean;
+  is_battle_only: boolean;
+  form_order: number;
+  sprite_front: string | null;
+  sprite_back: string | null;
+  types: string[];
+}
+
+export interface TeamSuggestion {
+  id: number;
+  name: string;
+  pokedex_number: number;
+  sprite_front: string | null;
+  official_artwork: string | null;
+  total_stats: number;
+  types: string[];
+  is_legendary: boolean;
+  is_mythical: boolean;
+}
+
+export interface WeaknessCalc {
+  covered_types: string[];
+  weak_to: string[];
+  team_size: number;
+}
+
+export interface TypeCoverage {
+  super_effective: string[];
+  not_covered: string[];
+  coverage_pct: number;
+}
+
 const POKEDEX_PROXY = '/api/child/pokedex';
 
 async function gqlQuery<T>(
@@ -266,6 +301,54 @@ export const pokedexClient = {
       `query GraphStats { graphStats { total_nodes total_rels pokemon species types moves abilities items tcg_cards anime_episodes } }`,
     );
     return data.graphStats;
+  },
+
+  async pokemonForms(pokemonId: number): Promise<PokemonForm[]> {
+    const data = await gqlQuery<{ pokemonForms: PokemonForm[] }>(
+      `query Forms($pokemonId: Int!) {
+        pokemonForms(pokemonId: $pokemonId) {
+          id name is_default is_battle_only form_order sprite_front sprite_back types
+        }
+      }`,
+      { pokemonId },
+    );
+    return data.pokemonForms;
+  },
+
+  async teamSuggest(types: string[], limit = 10): Promise<TeamSuggestion[]> {
+    const data = await gqlQuery<{ teamSuggest: TeamSuggestion[] }>(
+      `query TeamSuggest($types: [String!]!, $limit: Int!) {
+        teamSuggest(types: $types, limit: $limit) {
+          id name pokedex_number sprite_front official_artwork total_stats types is_legendary is_mythical
+        }
+      }`,
+      { types, limit },
+    );
+    return data.teamSuggest;
+  },
+
+  async teamWeakness(pokemonIds: number[]): Promise<WeaknessCalc> {
+    const data = await gqlQuery<{ teamWeakness: WeaknessCalc }>(
+      `query TeamWeakness($pokemonIds: [Int!]!) {
+        teamWeakness(pokemonIds: $pokemonIds) {
+          covered_types weak_to team_size
+        }
+      }`,
+      { pokemonIds },
+    );
+    return data.teamWeakness;
+  },
+
+  async teamCoverage(pokemonIds: number[]): Promise<TypeCoverage> {
+    const data = await gqlQuery<{ teamCoverage: TypeCoverage }>(
+      `query TeamCoverage($pokemonIds: [Int!]!) {
+        teamCoverage(pokemonIds: $pokemonIds) {
+          super_effective not_covered coverage_pct
+        }
+      }`,
+      { pokemonIds },
+    );
+    return data.teamCoverage;
   },
 };
 
