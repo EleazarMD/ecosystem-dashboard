@@ -3,7 +3,7 @@
  * POST /api/calendar/analyze-event
  * 
  * Provides AI-powered analysis of calendar events by integrating:
- * - Personal Identity Core (PIC) for user context and preferences
+ * - Personal Context Graph (PCG) for user context and preferences
  * - Hermes Core for calendar intelligence and related events
  * - AI Gateway for natural language analysis
  */
@@ -15,9 +15,9 @@ import { getMobileOrSessionUserId } from '@/lib/mobile-auth';
 import { hermesFetch } from '@/lib/hermes-client';
 
 const HERMES_CORE_URL = process.env.HERMES_CORE_URL || 'http://localhost:8780';
-const PIC_BASE_URL = process.env.PIC_BASE_URL || 'http://localhost:8765/api/pic';
+const PCG_BASE_URL = process.env.PCG_BASE_URL || 'http://localhost:8765/api/pcg';
 const AI_GATEWAY_URL = process.env.AI_GATEWAY_URL || 'http://localhost:8787';
-const PIC_READ_KEY = process.env.PIC_READ_KEY || 'dev-read-key-change-in-prod';
+const PCG_READ_KEY = process.env.PCG_READ_KEY || 'dev-read-key-change-in-prod';
 
 interface CalendarEvent {
   id: string;
@@ -101,12 +101,12 @@ export default async function handler(
   try {
     // Parallel fetch from multiple sources
     const [
-      picContext,
+      pcgContext,
       relatedEvents,
       conflictCheck,
       relatedEmails,
     ] = await Promise.allSettled([
-      fetchPICContext(owner_id, event),
+      fetchPCGContext(owner_id, event),
       fetchRelatedEvents(event),
       checkScheduleConflicts(event),
       searchRelatedEmails(event),
@@ -115,7 +115,7 @@ export default async function handler(
     // Build analysis from gathered context
     const analysis = await buildAnalysis(
       event,
-      picContext.status === 'fulfilled' ? picContext.value : null,
+      pcgContext.status === 'fulfilled' ? pcgContext.value : null,
       relatedEvents.status === 'fulfilled' ? relatedEvents.value : [],
       conflictCheck.status === 'fulfilled' ? conflictCheck.value : [],
       relatedEmails.status === 'fulfilled' ? relatedEmails.value : [],
@@ -125,7 +125,8 @@ export default async function handler(
       success: true, 
       analysis,
       sources: {
-        pic: picContext.status === 'fulfilled',
+        pcg: pcgContext.status === 'fulfilled',
+        pic: pcgContext.status === 'fulfilled',
         hermes: relatedEvents.status === 'fulfilled',
         conflicts: conflictCheck.status === 'fulfilled',
         emails: relatedEmails.status === 'fulfilled',
@@ -142,16 +143,16 @@ export default async function handler(
 }
 
 /**
- * Fetch user context from Personal Identity Core
+ * Fetch user context from Personal Context Graph
  */
-async function fetchPICContext(userId: string, event: CalendarEvent): Promise<any> {
+async function fetchPCGContext(userId: string, event: CalendarEvent): Promise<any> {
   try {
-    // Get user preferences and context from PIC
-    const response = await fetch(`${PIC_BASE_URL}/context/calendar`, {
+    // Get user preferences and context from PCG
+    const response = await fetch(`${PCG_BASE_URL}/context/calendar`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-PIC-Read-Key': PIC_READ_KEY,
+        'X-PCG-Read-Key': PCG_READ_KEY,
       },
       body: JSON.stringify({
         user_id: userId,
@@ -166,7 +167,7 @@ async function fetchPICContext(userId: string, event: CalendarEvent): Promise<an
     }
     return null;
   } catch (error) {
-    console.error('[PIC Context] Failed to fetch:', error);
+    console.error('[PCG Context] Failed to fetch:', error);
     return null;
   }
 }
@@ -469,7 +470,7 @@ async function checkScheduleConflicts(event: CalendarEvent): Promise<string[]> {
  */
 async function buildAnalysis(
   event: CalendarEvent,
-  picContext: any,
+  pcgContext: any,
   relatedEvents: any[],
   conflicts: string[],
   relatedEmails: any[],
@@ -519,7 +520,7 @@ async function buildAnalysis(
   if (attendeeCount > 10) importance += 10;
   if (event.priority === 'high' || event.priority === 'urgent') importance += 20;
   if (conflicts.length > 0) importance += 10;
-  if (picContext?.highPriority) importance += 15;
+  if (pcgContext?.highPriority) importance += 15;
   importance = Math.min(100, importance);
 
   // Build preparation tips
@@ -612,8 +613,8 @@ async function buildAnalysis(
     relatedContext.push(`${relatedEmails.length} related email(s) found`);
   }
   
-  if (picContext?.previousMeetings) {
-    relatedContext.push(`${picContext.previousMeetings} previous meetings with attendees`);
+  if (pcgContext?.previousMeetings) {
+    relatedContext.push(`${pcgContext.previousMeetings} previous meetings with attendees`);
   }
 
   // Build summary
@@ -627,8 +628,8 @@ async function buildAnalysis(
     summary += ` Note: ${conflicts.length} scheduling concern${conflicts.length > 1 ? 's' : ''} detected.`;
   }
 
-  // Build attendee insights from PIC context
-  const attendeeInsights = picContext?.attendeeInsights || event.attendees?.slice(0, 5).map(a => ({
+  // Build attendee insights from PCG context
+  const attendeeInsights = pcgContext?.attendeeInsights || event.attendees?.slice(0, 5).map(a => ({
     email: a.email,
     name: a.name,
     relationship: undefined,

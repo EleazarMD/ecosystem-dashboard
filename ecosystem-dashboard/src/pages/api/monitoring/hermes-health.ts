@@ -8,7 +8,7 @@
  * - AI Gateway connectivity
  * - Email indexing status
  * - Calendar sync status
- * - PIC integration
+ * - PCG integration
  * 
  * GET /api/monitoring/hermes-health
  * 
@@ -174,7 +174,7 @@ export default async function handler(
         }
       }
 
-      // PIC
+      // PCG (dependency key remains `pic` for backward compatibility)
       if (detailed.dependencies?.pic) {
         const pic = detailed.dependencies.pic;
         components.pic = {
@@ -182,7 +182,7 @@ export default async function handler(
           latencyMs: pic.latency_ms,
           error: pic.error,
         };
-        // PIC is optional, don't alert if unavailable
+        // PCG is optional, don't alert if unavailable
       }
     }
 

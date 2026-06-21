@@ -124,8 +124,8 @@ export async function provisionUserAgent(config: UserAgentConfig): Promise<Agent
  * 
  * HYBRID APPROACH:
  * - Agent instructions (AGENTS.md, SOUL.md) are local to OpenClaw workspace
- * - Identity and preferences come from PIC via homelab-context skill
- * - Memory/observations are written to PIC, not local files
+ * - Identity and preferences come from PCG via homelab-context skill
+ * - Memory/observations are written to PCG, not local files
  */
 async function createWorkspaceFiles(workspaceDir: string, config: UserAgentConfig) {
   // AGENTS.md - Agent instructions (local - defines behavior)
@@ -136,9 +136,9 @@ You are a personal AI assistant for ${config.userName}.
 ## Memory Architecture (HYBRID)
 
 **DO NOT use local memory files.** Instead:
-- **Identity & Preferences**: Fetch from PIC via \`homelab-context\` skill
-- **Observations**: Record to PIC via \`homelab-context\` skill
-- **Goals**: Query from PIC via \`homelab-context\` skill
+- **Identity & Preferences**: Fetch from PCG via \`homelab-context\` skill
+- **Observations**: Record to PCG via \`homelab-context\` skill
+- **Goals**: Query from PCG via \`homelab-context\` skill
 
 At the start of each session, call:
 \`\`\`
@@ -218,13 +218,13 @@ ${config.tenantId ? `X-Tenant-Id: ${config.tenantId}` : ''}
 \`\`\`
 `;
 
-  // Write files (no USER.md or MEMORY.md - those come from PIC)
+  // Write files (no USER.md or MEMORY.md - those come from PCG)
   await fs.writeFile(path.join(workspaceDir, 'AGENTS.md'), agentsMd);
   await fs.writeFile(path.join(workspaceDir, 'SOUL.md'), soulMd);
   await fs.writeFile(path.join(workspaceDir, 'IDENTITY.md'), identityMd);
   await fs.writeFile(path.join(workspaceDir, 'TOOLS.md'), toolsMd);
   
-  // No local memory directory - memory is stored in PIC
+  // No local memory directory - memory is stored in PCG
 }
 
 /**

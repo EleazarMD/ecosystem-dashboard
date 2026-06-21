@@ -4,6 +4,8 @@ import dbPool from '../db/client';
 
 import { PHASE1_STARTER_CONTENT } from './phase1-starter-content';
 import type { DeterministicAnswerKey, LearnAgeBand, LearnContentItem } from './phase1-starter-content';
+import { evaluateWriting } from './writing-rubric';
+import type { WritingRubricResult } from './writing-rubric';
 
 export interface LearnContentQuery {
   skillCode?: string;
@@ -26,6 +28,8 @@ export interface GradeAttemptResult {
   feedback: string;
   masteryEligible: boolean;
   hint?: string;
+  /** Present when the content item uses rubric evaluation (writing/reasoning). */
+  rubricResult?: WritingRubricResult;
 }
 
 export class LearningPhase1Service {
@@ -70,14 +74,45 @@ export class LearningPhase1Service {
     }
 
     const normalizedResponse = normalizeResponse(input.learnerResponse);
-    const correct = scoreDeterministicAnswer(contentItem.answerKey, normalizedResponse);
-    const score = correct ? 1 : 0;
-
     const attemptId = randomUUID();
     const masteryEligible =
       contentItem.reviewStatus === 'approved' &&
       contentItem.safetyStatus === 'passed' &&
       !contentItem.lowStakesOnly;
+
+    // Writing and reasoning items use rubric evaluation instead of deterministic scoring
+    if (!contentItem.answerKey) {
+      const ageBand = contentItem.ageBand;
+      const rubricResult = evaluateWriting(normalizedResponse, ageBand);
+      const correct = rubricResult.percentage >= 60;
+      const score = rubricResult.percentage / 100;
+      const feedback = rubricResult.encouragement;
+
+      await this.persistAttempt({
+        attemptId,
+        childId: input.childId,
+        contentItem,
+        normalizedResponse,
+        correct,
+        score,
+        feedback,
+      });
+
+      return {
+        attemptId,
+        contentItem,
+        normalizedResponse,
+        correct,
+        score,
+        feedback,
+        masteryEligible,
+        hint: correct ? undefined : contentItem.hintSet[0],
+        rubricResult,
+      };
+    }
+
+    const correct = scoreDeterministicAnswer(contentItem.answerKey, normalizedResponse);
+    const score = correct ? 1 : 0;
 
     const feedback = correct
       ? 'Great work - that is correct.'

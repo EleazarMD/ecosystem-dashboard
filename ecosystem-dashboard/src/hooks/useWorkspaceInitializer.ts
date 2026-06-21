@@ -20,17 +20,15 @@ export function useWorkspaceInitializer(props: UseWorkspaceInitializerProps) {
 
   const loadBlocks = async (workspaceId: string) => {
     try {
-      const response = await fetch('/api/workspace/blocks', {
-        method: 'POST',
+      const response = await fetch(`/api/pi-workspace/workspaces/${workspaceId}/pages`, {
+        method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspaceId }),
       });
 
       if (response.ok) {
         const data = await response.json();
-        const pageBlocks = data.blocks?.filter((b: Block) => 
-          b.type === 'page' || b.type === 'database_full_page'
-        ) || [];
+        // Pi Workspace returns an array of pages directly
+        const pageBlocks = data || [];
         setBlocks(pageBlocks);
         console.log('[Workspace] Blocks updated:', pageBlocks.length);
       }
@@ -43,24 +41,22 @@ export function useWorkspaceInitializer(props: UseWorkspaceInitializerProps) {
     try {
       setLoading(true);
 
-      // Load user's workspaces
-      const response = await fetch('/api/workspace/list', {
-        method: 'POST',
+      // Load user's workspaces from Pi Workspace microservice via proxy
+      const response = await fetch('/api/pi-workspace/workspaces', {
+        method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ownerId: userId }),
       });
 
       if (response.ok) {
-        const data = await response.json();
-        const workspaces = data.workspaces || [];
+        const workspaces = await response.json();
         
-        if (workspaces.length > 0) {
+        if (workspaces && workspaces.length > 0) {
           const ws = workspaces[0];
           setWorkspace(ws);
           await loadBlocks(ws.id);
         } else {
-          // Create default workspace
-          const createResponse = await fetch('/api/workspace/create', {
+          // Create default workspace via Pi Workspace API
+          const createResponse = await fetch('/api/pi-workspace/workspaces', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

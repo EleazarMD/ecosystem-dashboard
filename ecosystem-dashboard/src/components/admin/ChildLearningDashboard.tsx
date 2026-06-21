@@ -1,7 +1,7 @@
 /**
  * Child Learning Dashboard Component
  * 
- * Displays a child's Personal Interest Catalog (PIC), achievements,
+ * Displays a child's Personal Context Graph (PCG), achievements,
  * and learning progress for parent oversight.
  */
 
@@ -277,7 +277,7 @@ export function ChildLearningDashboard({
           <TabPanel px={0}>
             <GlassPanel variant="light" p={5}>
               <Heading size="md" mb={4}>
-                ❤️ {childName}'s Personal Interest Catalog
+                ❤️ {childName}'s Personal Context Graph
               </Heading>
 
               {interests.length === 0 ? (

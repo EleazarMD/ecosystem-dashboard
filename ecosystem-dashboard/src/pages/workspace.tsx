@@ -765,18 +765,16 @@ export default function WorkspacePage() {
 
       // Try to get existing workspace (includes shared workspaces from agents)
       console.log('🔄 [InitWorkspace] Fetching workspace list (including shared)...');
-      const response = await fetch('/api/workspace/list', {
-        method: 'POST',
+      const response = await fetch('/api/pi-workspace/workspaces', {
+        method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: currentUserId, include_shared: true })
       });
 
       let workspaceData = null;
 
       if (response.ok) {
-        const data = await response.json();
-        const workspaces = data.workspaces || [];
-        console.log('✅ [InitWorkspace] Found workspaces:', workspaces.length, '(owned:', data.owned_count, ', shared:', data.shared_count, ')');
+        const workspaces = await response.json();
+        console.log('✅ [InitWorkspace] Found workspaces:', workspaces.length);
 
         // Priority 1: Use workspace ID from URL if provided
         if (urlWorkspaceId && typeof urlWorkspaceId === 'string') {
@@ -799,7 +797,7 @@ export default function WorkspacePage() {
 
         // Priority 3: Use first owned workspace
         if (!workspaceData) {
-          workspaceData = workspaces.find((ws: any) => !ws.is_shared);
+          workspaceData = workspaces.find((ws: any) => ws.ownerId === currentUserId);
           if (workspaceData) {
             console.log('✅ [InitWorkspace] Using first owned workspace:', workspaceData.id);
           }
@@ -818,11 +816,11 @@ export default function WorkspacePage() {
       // If no workspace exists, create one
       if (!workspaceData) {
         console.log('🆕 [InitWorkspace] No workspace found, creating new one...');
-        const createResponse = await fetch('/api/workspace/create', {
+        const createResponse = await fetch('/api/pi-workspace/workspaces', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            user_id: userId,
+            ownerId: userId,
             name: 'My Workspace'
           })
         });
@@ -868,18 +866,18 @@ export default function WorkspacePage() {
 
   const loadBlocks = async (workspaceId: string, forceUpdate = false) => {
     try {
-      // Load all root-level blocks (pages AND databases)
-      const response = await fetch(`/api/workspace/${workspaceId}/blocks`);
+      // Load all root-level pages from Pi Workspace
+      const response = await fetch(`/api/pi-workspace/workspaces/${workspaceId}/pages`);
 
       if (response.ok) {
-        const data = await response.json();
-        // Filter for root-level blocks only (no parent)
-        const rootBlocks = data.blocks?.filter((b: Block) => !b.parent_id) || [];
+        const pageArray = await response.json();
+        // Pi Workspace returns Page[] — adapt to dashboard Block[]
+        const rootBlocks: Block[] = pageArray.map((page: any) => adaptPiPageToBlock(page));
 
         // Helper to extract title for comparison
-        const getBlockSignature = (b: Block) => {
-          const title = b.properties?.title?.[0]?.text?.content || '';
-          return `${b.id}:${title}:${b.type}`;
+        const getBlockSignature = (b: Block | any) => {
+          const title = extractPageTitle(b);
+          return `${b.id}:${title}:${b.type || 'page'}`;
         };
 
         // Compare IDs AND titles to detect renames
@@ -958,71 +956,116 @@ export default function WorkspacePage() {
     });
   }, [selectedPage, userId]);
 
-  // Helper to fetch and parse page blocks
+  // Helper to convert Pi Workspace block properties to RichTextSegment[]
+  const extractContent = (properties: any): any[] => {
+    if (!properties) return [{ text: '', annotations: {} }];
+
+    // Pi Workspace uses `title` for text content in blocks (string or RichText[])
+    const titleField = properties.title;
+
+    if (typeof titleField === 'string' && titleField.length > 0) {
+      return [{ text: titleField, annotations: {} }];
+    }
+
+    if (Array.isArray(titleField) && titleField.length > 0) {
+      return titleField.map((rt: any) => {
+        const textValue = rt.plainText
+          || (rt.text?.content)
+          || (typeof rt.text === 'string' ? rt.text : '')
+          || '';
+        return {
+          text: textValue,
+          annotations: rt.annotations || {}
+        };
+      });
+    }
+
+    // Fallback: richText array (Pi Workspace alternate field)
+    if (Array.isArray(properties.richText) && properties.richText.length > 0) {
+      return properties.richText.map((rt: any) => ({
+        text: rt.plainText || rt.text?.content || '',
+        annotations: rt.annotations || {}
+      }));
+    }
+
+    // Legacy fallback
+    if (typeof properties.content === 'string') {
+      return [{ text: properties.content, annotations: {} }];
+    }
+
+    return [{ text: '', annotations: {} }];
+  };
+
+  // Helper to fetch and parse page blocks from Pi Workspace
   const fetchPageBlocks = async (pageId: string): Promise<EditorBlock[]> => {
     try {
       console.log('📄 [fetchPageBlocks] Fetching blocks for page:', pageId);
-      const fetchUrl = `/api/blocks/${pageId}`;
+      const fetchUrl = `/api/pi-workspace/pages/${pageId}/blocks`;
       const response = await fetch(fetchUrl);
 
       if (response.ok) {
         const data = await response.json();
-        // Convert to EditorBlock format
-        return data.children?.map((child: any) => {
-          // Handle multiple formats: rich_text (standard), title (headings), content (legacy MCP)
-          let contentArray: any[] = [];
+        // Pi Workspace returns an array of blocks directly
+        const blockArray = Array.isArray(data) ? data : (data.blocks || data.children || []);
 
-          if (child.properties?.rich_text && Array.isArray(child.properties.rich_text)) {
-            // Standard Notion format: rich_text array
-            contentArray = child.properties.rich_text.map((rt: any) => {
-              // Handle both rt.text.content and rt.text being the object itself
-              const textValue = typeof rt.text === 'object' && rt.text !== null
-                ? (rt.text.content || rt.text.text || '')
-                : (rt.text || '');
-              return {
-                text: textValue,
-                annotations: rt.annotations || {}
-              };
-            });
-          } else if (child.properties?.title && Array.isArray(child.properties.title)) {
-            // Toggle/heading format: title array
-            contentArray = child.properties.title.map((rt: any) => {
-              // Handle both rt.text.content and rt.text being the object itself
-              const textValue = typeof rt.text === 'object' && rt.text !== null
-                ? (rt.text.content || rt.text.text || '')
-                : (rt.text || '');
-              return {
-                text: textValue,
-                annotations: rt.annotations || {}
-              };
-            });
-          } else if (child.properties?.content && typeof child.properties.content === 'string') {
-            // Legacy MCP format: simple string content
-            contentArray = [{ text: child.properties.content }];
-          } else {
-            contentArray = [{ text: '' }];
+        // Recursively flatten nested Pi Workspace block trees
+        const flattenBlocks = (blocks: any[], parentId: string | null = null): EditorBlock[] => {
+          const result: EditorBlock[] = [];
+          for (const child of blocks) {
+            const contentArray = extractContent(child.properties);
+
+            // Normalize children: Pi Workspace returns Block[] but dashboard expects string[] (IDs)
+            const nestedChildIds: string[] = [];
+            if (Array.isArray(child.children)) {
+              child.children.forEach((c: any) => {
+                if (typeof c === 'string') nestedChildIds.push(c);
+                else if (c?.id) nestedChildIds.push(c.id);
+              });
+            }
+
+            // Map Pi Workspace block types to dashboard-compatible types
+            const typeMap: Record<string, string> = {
+              bulleted_list_item: 'bulleted_list',
+              numbered_list_item: 'numbered_list',
+              child_page: 'page',
+              database_full_page: 'database_full',
+            };
+            const mappedType = typeMap[child.type] || child.type;
+
+            const editorBlock: EditorBlock = {
+              id: child.id,
+              type: mappedType,
+              content: contentArray,
+              properties: child.properties || {},
+              parentId: parentId,
+              children: nestedChildIds,
+              createdTime: new Date(child.createdAt || child.created_at || Date.now()).getTime(),
+              lastEditedTime: new Date(child.updatedAt || child.updated_at || Date.now()).getTime(),
+              createdBy: child.createdBy || child.created_by || 'system',
+              lastEditedBy: child.lastEditedBy || child.last_edited_by || 'system',
+            };
+            result.push(editorBlock);
+
+            // Recursively add nested children blocks to the flat list
+            if (Array.isArray(child.children)) {
+              for (const nested of child.children) {
+                if (typeof nested === 'object' && nested?.id) {
+                  result.push(...flattenBlocks([nested], child.id));
+                }
+              }
+            }
           }
+          return result;
+        };
 
-          return {
-            id: child.id,
-            type: child.type,
-            content: contentArray,
-            properties: child.properties || {},
-            parentId: null, // Content blocks are root in the editor
-            children: [],
-            createdTime: new Date(child.created_at || child.created_time).getTime(),
-            lastEditedTime: new Date(child.updated_at || child.last_edited_time).getTime(),
-            createdBy: child.created_by || 'system',
-            lastEditedBy: child.last_edited_by || 'system',
-          };
-        }) || [];
-      } else {
-        console.warn('📄 [fetchPageBlocks] Fetch failed with status:', response.status);
-        throw new Error(`Failed to fetch blocks: ${response.status}`);
+        return flattenBlocks(blockArray, null);
       }
+
+      console.warn('[fetchPageBlocks] Failed to fetch blocks, status:', response.status);
+      return [];
     } catch (error) {
-      console.error('❌ [fetchPageBlocks] Error:', error);
-      throw error;
+      console.error('[fetchPageBlocks] Error fetching page blocks:', error);
+      return [];
     }
   };
 
@@ -1056,7 +1099,34 @@ export default function WorkspacePage() {
   };
 
   // Handler for full page navigation (used by dashboard cards)
-  const handlePageClick = async (pageId: string) => {
+  // Adapter: Convert Pi Workspace Page to Dashboard Block format
+  const adaptPiPageToBlock = (page: any): Block => {
+    // Map Pi Workspace page types to dashboard Block types
+    const pageTypeMap: Record<string, string> = {
+      database_full_page: 'database_full_page',
+      page: 'page',
+    };
+    return {
+      id: page.id,
+      workspace_id: page.workspaceId || page.workspace_id,
+      type: (pageTypeMap[page.type] || 'page') as any,
+      properties: {
+        title: page.title || page.properties?.title || [{ type: 'text', text: { content: 'Untitled' } }],
+        icon: page.icon || page.properties?.icon,
+        cover: page.cover?.imageUrl
+          ? { type: page.cover.type || 'image', url: page.cover.imageUrl }
+          : page.properties?.cover,
+      },
+      parent_id: page.parentId || page.parent_id || null,
+      created_at: page.createdAt ? new Date(page.createdAt) : new Date(),
+      updated_at: page.updatedAt ? new Date(page.updatedAt) : new Date(),
+      created_by: page.createdBy || page.created_by || 'system',
+      last_edited_by: page.lastEditedBy || page.last_edited_by || 'system',
+      archived: page.archived || false,
+    };
+  };
+
+  const handlePageClick = async (pageId: string, newPage?: Block) => {
     console.log('📄 [handlePageClick] Navigating to Page ID:', pageId);
 
     // If we are already on the workspace page, just update the selected page
@@ -1067,13 +1137,16 @@ export default function WorkspacePage() {
       setLoadingContent(true);
 
       // Fetch page details
-      const response = await fetch(`/api/workspace/pages/${pageId}`);
+      const response = await fetch(`/api/pi-workspace/pages/${pageId}`);
       if (response.ok) {
-        const fetchedPage = await response.json();
+        const data = await response.json();
+        // Pi-workspace returns { page, blocks } — normalize to dashboard Block format
+        const fetchedPageRaw = data.page || data;
+        const adaptedPage = adaptPiPageToBlock(fetchedPageRaw);
         const editorBlocks = await fetchPageBlocks(pageId);
 
         setPageBlocks(editorBlocks);
-        setSelectedPage(fetchedPage);
+        setSelectedPage(adaptedPage);
         setSelectedPageId(pageId);
         setShowHome(false);
 
@@ -1436,7 +1509,7 @@ export default function WorkspacePage() {
 
     try {
       // Update page with cover
-      const response = await fetch(`/api/blocks/${selectedPage.id}`, {
+      const response = await fetch(`/api/pi-workspace/blocks/${selectedPage.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1492,7 +1565,7 @@ export default function WorkspacePage() {
     if (!selectedPage) return;
 
     try {
-      const response = await fetch(`/api/blocks/${selectedPage.id}`, {
+      const response = await fetch(`/api/pi-workspace/blocks/${selectedPage.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1556,7 +1629,7 @@ export default function WorkspacePage() {
         onPageClick={handlePageClick}
         onDeletePage={async (pageId) => {
           try {
-            const response = await fetch(`/api/blocks/${pageId}`, {
+            const response = await fetch(`/api/pi-workspace/blocks/${pageId}`, {
               method: 'DELETE',
             });
             if (response.ok) {
@@ -1944,7 +2017,7 @@ export default function WorkspacePage() {
                     // Auto-save title to database
                     if (selectedPage?.id) {
                       try {
-                        await fetch(`/api/workspace/pages/${selectedPage.id}`, {
+                        await fetch(`/api/pi-workspace/pages/${selectedPage.id}`, {
                           method: 'PUT',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
@@ -1965,7 +2038,7 @@ export default function WorkspacePage() {
                       // Auto-save to backend
                       if (selectedPage?.id && workspace?.id) {
                         try {
-                          await fetch(`/api/workspace/pages/${selectedPage.id}/blocks`, {
+                          await fetch(`/api/pi-workspace/pages/${selectedPage.id}/blocks`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -2003,7 +2076,7 @@ export default function WorkspacePage() {
                   }}
                   onSave={async () => {
                     if (selectedPage?.id) {
-                      await fetch(`/api/workspace/pages/${selectedPage.id}/blocks`, {
+                      await fetch(`/api/pi-workspace/pages/${selectedPage.id}/blocks`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -2098,7 +2171,7 @@ export default function WorkspacePage() {
               if (res.ok) {
                 const page = await res.json();
                 // Save imported blocks
-                await fetch(`/api/workspace/pages/${page.id}/blocks`, {
+                await fetch(`/api/pi-workspace/pages/${page.id}/blocks`, {
                   method: 'PUT',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ blocks: result.blocks, user_id: userId }),

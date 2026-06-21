@@ -9,9 +9,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]';
 import { Pool } from 'pg';
 import { filterChildContent, logChildActivity } from '@/lib/platform/content-filter-service';
-import { getPICCharacterContext } from '@/lib/kids-pic/PICCharacterContext';
-import { getKidsPICService } from '@/lib/kids-pic/KidsPICService';
-import { getAIChildSafetyMonitor } from '@/lib/kids-pic/AIChildSafetyMonitor';
+import { getPCGCharacterContext } from '@/domains/learning/entities/character-context';
+import { getKidsPCGService } from '@/domains/learning/entities/child-pcg';
+import { getAIChildSafetyMonitor } from '@/domains/learning/features/safety-monitor';
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://eleazar@localhost/ecosystem_unified',
@@ -129,10 +129,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Process the filtered message
       const processedMessage = filterResult.filteredContent || message;
 
-      // Get PIC context for personalized responses
-      const picService = getKidsPICService(pool);
-      const picContext = getPICCharacterContext(pool);
-      const childProfile = await picService.getOrCreateProfile(user.id);
+      // Get PCG context for personalized responses
+      const pcgService = getKidsPCGService(pool);
+      const pcgContext = getPCGCharacterContext(pool);
+      const childProfile = await pcgService.getOrCreateProfile(user.id);
       
       // Get character context for personalized, motivating responses
       let characterSystemPrompt = '';
@@ -141,7 +141,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                            serviceId === 'minecraft' ? 'Steve' : 'Buddy';
       
       try {
-        characterSystemPrompt = await picContext.generateCharacterSystemPrompt(
+        characterSystemPrompt = await pcgContext.generateCharacterSystemPrompt(
           childProfile.id,
           {
             characterId,
@@ -155,10 +155,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }
         );
       } catch (err) {
-        console.error('[Child Chat] Failed to get PIC context:', err);
+        console.error('[Child Chat] Failed to get PCG context:', err);
       }
 
-      // Generate response with PIC context and Llama Guard 3 safety
+      // Generate response with PCG context and Llama Guard 3 safety
       const safetyCategories = userData.safety_categories || ['S1', 'S3', 'S4', 'S9', 'S10', 'S11', 'S12'];
       const aiResponse = await generateChildSafeResponse(
         processedMessage, 
@@ -170,9 +170,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         safetyCategories
       );
       
-      // Log chat session to PIC
+      // Log chat session to PCG
       try {
-        await picService.logActivity({
+        await pcgService.logActivity({
           childId: childProfile.id,
           activityType: 'chat_session',
           activityCategory: 'chat',
@@ -182,13 +182,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           metadata: { characterId, characterName },
         });
         
-        await picService.recordCharacterInteraction(
+        await pcgService.recordCharacterInteraction(
           childProfile.id,
           characterId,
           characterName
         );
       } catch (err) {
-        console.error('[Child Chat] Failed to log to PIC:', err);
+        console.error('[Child Chat] Failed to log to PCG:', err);
       }
 
       // Filter the AI response as well
@@ -313,7 +313,7 @@ async function generateChildSafeResponse(
   message: string, 
   filterLevel: string, 
   childName?: string,
-  picContextPrompt?: string,
+  pcgContextPrompt?: string,
   conversationId?: string,
   childId?: string,
   safetyCategories?: string[]
@@ -343,7 +343,7 @@ async function generateChildSafeResponse(
             // Child context
             child_name: childName,
             child_id: childId,
-            pic_context: picContextPrompt,
+            pcg_context: pcgContextPrompt,
             safety_categories: safetyCategories || ['S1', 'S3', 'S4', 'S9', 'S10', 'S11', 'S12'],
             
             // Tool restrictions for child safety
@@ -395,9 +395,9 @@ RESPONSE STYLE:
 - Ask follow-up questions to keep the conversation going
 `.trim();
 
-  // Add PIC context for personalized, motivating responses
-  if (picContextPrompt) {
-    systemPrompt += picContextPrompt;
+  // Add PCG context for personalized, motivating responses
+  if (pcgContextPrompt) {
+    systemPrompt += pcgContextPrompt;
   }
 
   try {

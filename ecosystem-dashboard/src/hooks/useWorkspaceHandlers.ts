@@ -62,14 +62,16 @@ export function useWorkspaceHandlers(props: UseWorkspaceHandlersProps) {
     if (page) {
       try {
         console.log('📄 [handlePageClick] Fetching blocks for page:', pageId);
-        const response = await fetch(`/api/blocks/${pageId}`);
+        const response = await fetch(`/api/pi-workspace/pages/${pageId}`);
         
         if (response.ok) {
           const data = await response.json();
+          // Pi-workspace returns { page, blocks }
           const contentBlocks = data.blocks || [];
           console.log('[Workspace] 📦 Loaded content blocks:', contentBlocks.length);
           setPageBlocks(contentBlocks);
-          setSelectedPage(page);
+          // If we got the page data, update it. Otherwise use what we had
+          setSelectedPage(data.page || page);
         } else {
           console.warn('📄 [handlePageClick] Fetch failed with status:', response.status);
           setSelectedPage(page);

@@ -60,9 +60,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     
     // Add Anthropic models from AI Gateway config
     const anthropicModels = [
-      { id: 'claude-haiku-4-5', name: 'Claude 3.5 Haiku', description: 'Fast, efficient', isDefault: true },
-      { id: 'claude-sonnet-4', name: 'Claude 3.5 Sonnet', description: 'Balanced performance' },
-      { id: 'claude-opus-4', name: 'Claude 3 Opus', description: 'Most capable' },
+      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', description: 'Fast, efficient', isDefault: true },
+      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', description: 'Latest Sonnet, 1M context, extended thinking' },
+      { id: 'claude-opus-4-7', name: 'Claude Opus 4.7', description: 'Most capable Opus with extended thinking' },
+      { id: 'claude-fable-5', name: 'Claude Fable 5', description: 'Mythos-class frontier model, 1M context, 128k output' },
     ];
     
     for (const model of anthropicModels) {

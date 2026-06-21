@@ -2,8 +2,8 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth';
 
 import { authOptions } from '../auth/[...nextauth]';
-import { getLearningPhase1Service } from '@/lib/kids-pic/LearningPhase1Service';
-import type { LearnAgeBand } from '@/lib/kids-pic/phase1-starter-content';
+import { getLearningPhase1Service } from '@/domains/learning/features/attempt-grading';
+import type { LearnAgeBand } from '@/domains/learning/shared/phase1-content';
 
 interface PublicLearnContentItem {
   id: string;

@@ -471,140 +471,140 @@ const KNOWLEDGE_GRAPH: KGNode[] = [
   { id: 'habit_loop', label: 'Habit Loop', type: 'concept' },
 ];
 
-// ── PIC Integration Matrix ──────────────────────────────────────────
-// Shows how PIC (Personal Intelligence Context) serves each LIAM dimension
+// ── PCG Integration Matrix ──────────────────────────────────────────
+// Shows how PCG (Personal Context Graph) serves each LIAM dimension
 
-interface PICIntegration {
+interface PCGIntegration {
   dimension: string;
-  picRole: 'primary' | 'significant' | 'supporting' | 'none';
+  pcgRole: 'primary' | 'significant' | 'supporting' | 'none';
   dataFlows: string[];
-  picEndpoints: string[];
+  pcgEndpoints: string[];
 }
 
-const PIC_INTEGRATIONS: PICIntegration[] = [
+const PCG_INTEGRATIONS: PCGIntegration[] = [
   {
     dimension: 'clinical',
-    picRole: 'supporting',
+    pcgRole: 'supporting',
     dataFlows: ['Clinical profile → MedGemma context', 'CME goals tracking'],
-    picEndpoints: ['/api/pic/goals', '/api/pic/identity'],
+    pcgEndpoints: ['/api/pcg/goals', '/api/pcg/identity'],
   },
   {
     dimension: 'communication',
-    picRole: 'primary',
+    pcgRole: 'primary',
     dataFlows: [
       'Relationships → Tone calibration',
       'Writing style → Voice-of-Eleazar',
       'Preferences → Reply drafting',
     ],
-    picEndpoints: ['/api/pic/relationships', '/api/pic/preferences', '/api/pic/identity'],
+    pcgEndpoints: ['/api/pcg/relationships', '/api/pcg/preferences', '/api/pcg/identity'],
   },
   {
     dimension: 'family',
-    picRole: 'primary',
+    pcgRole: 'primary',
     dataFlows: [
       'Kids data → Activity tracking',
       'Family relationships → Calendar optimization',
       'Preferences → Meal planning',
     ],
-    picEndpoints: ['/api/pic/family', '/api/pic/preferences', '/api/pic/goals'],
+    pcgEndpoints: ['/api/pcg/family', '/api/pcg/preferences', '/api/pcg/goals'],
   },
   {
     dimension: 'research',
-    picRole: 'significant',
+    pcgRole: 'significant',
     dataFlows: ['Research interests → Literature filtering', 'Learning goals → Knowledge graph'],
-    picEndpoints: ['/api/pic/goals', '/api/pic/learn/observations'],
+    pcgEndpoints: ['/api/pcg/goals', '/api/pcg/learn/observations'],
   },
   {
     dimension: 'health',
-    picRole: 'significant',
+    pcgRole: 'significant',
     dataFlows: ['Health goals → Fitness tracking', 'Preferences → Nutrition awareness'],
-    picEndpoints: ['/api/pic/goals', '/api/pic/preferences'],
+    pcgEndpoints: ['/api/pcg/goals', '/api/pcg/preferences'],
   },
   {
     dimension: 'financial',
-    picRole: 'supporting',
+    pcgRole: 'supporting',
     dataFlows: ['MBA profile → NPV/IRR analysis', 'Investment goals → Thesis tracking'],
-    picEndpoints: ['/api/pic/identity', '/api/pic/goals'],
+    pcgEndpoints: ['/api/pcg/identity', '/api/pcg/goals'],
   },
   {
     dimension: 'goals',
-    picRole: 'primary',
+    pcgRole: 'primary',
     dataFlows: [
       'All goals → Progress dashboard',
       'Goal dependencies → Critical path',
       'Milestones → Quarterly reviews',
     ],
-    picEndpoints: ['/api/pic/goals', '/api/pic/learn/observations'],
+    pcgEndpoints: ['/api/pcg/goals', '/api/pcg/learn/observations'],
   },
   {
     dimension: 'infrastructure',
-    picRole: 'none',
+    pcgRole: 'none',
     dataFlows: [],
-    picEndpoints: [],
+    pcgEndpoints: [],
   },
   {
     dimension: 'metacognition',
-    picRole: 'primary',
+    pcgRole: 'primary',
     dataFlows: [
       'Decision journal → Bias detection',
       'Skill assessments → Dunning-Kruger guard',
       'Observations → Pattern recognition',
     ],
-    picEndpoints: ['/api/pic/learn/observations', '/api/pic/goals'],
+    pcgEndpoints: ['/api/pcg/learn/observations', '/api/pcg/goals'],
   },
   {
     dimension: 'decision_fatigue',
-    picRole: 'significant',
+    pcgRole: 'significant',
     dataFlows: ['Decision count → Budget tracking', 'Preferences → Auto-delegation rules'],
-    picEndpoints: ['/api/pic/preferences', '/api/pic/learn/observations'],
+    pcgEndpoints: ['/api/pcg/preferences', '/api/pcg/learn/observations'],
   },
   {
     dimension: 'flow',
-    picRole: 'supporting',
+    pcgRole: 'supporting',
     dataFlows: ['Priorities → Deep work scheduling', 'Context → Flow trigger activation'],
-    picEndpoints: ['/api/pic/goals', '/api/pic/preferences'],
+    pcgEndpoints: ['/api/pcg/goals', '/api/pcg/preferences'],
   },
   {
     dimension: 'attention',
-    picRole: 'significant',
+    pcgRole: 'significant',
     dataFlows: ['Learning goals → Germane load optimization', 'Preferences → Notification filtering'],
-    picEndpoints: ['/api/pic/goals', '/api/pic/preferences'],
+    pcgEndpoints: ['/api/pcg/goals', '/api/pcg/preferences'],
   },
   {
     dimension: 'chronobiology',
-    picRole: 'significant',
+    pcgRole: 'significant',
     dataFlows: ['Preferences → Chronotype profiling', 'Observations → Energy mapping'],
-    picEndpoints: ['/api/pic/preferences', '/api/pic/learn/observations'],
+    pcgEndpoints: ['/api/pcg/preferences', '/api/pcg/learn/observations'],
   },
   {
     dimension: 'social_capital',
-    picRole: 'primary',
+    pcgRole: 'primary',
     dataFlows: [
       'Relationships → Health dashboard',
       'Interaction frequency → Dunbar layers',
       'Network graph → Brokerage opportunities',
     ],
-    picEndpoints: ['/api/pic/relationships', '/api/pic/learn/observations'],
+    pcgEndpoints: ['/api/pcg/relationships', '/api/pcg/learn/observations'],
   },
   {
     dimension: 'meaning',
-    picRole: 'primary',
+    pcgRole: 'primary',
     dataFlows: [
       'Goals → Purpose alignment',
       'Values → Decision anchors',
       'Observations → PERMA profiling',
     ],
-    picEndpoints: ['/api/pic/goals', '/api/pic/identity', '/api/pic/learn/observations'],
+    pcgEndpoints: ['/api/pcg/goals', '/api/pcg/identity', '/api/pcg/learn/observations'],
   },
   {
     dimension: 'habits',
-    picRole: 'primary',
+    pcgRole: 'primary',
     dataFlows: [
       'Observations → Habit tracking',
       'Daily routine → Anchor habits',
       'Goals → Implementation intentions',
     ],
-    picEndpoints: ['/api/pic/learn/observations', '/api/pic/preferences', '/api/pic/goals'],
+    pcgEndpoints: ['/api/pcg/learn/observations', '/api/pcg/preferences', '/api/pcg/goals'],
   },
 ];
 
@@ -618,7 +618,7 @@ interface TechIntegration {
 
 const TECH_INTEGRATIONS: TechIntegration[] = [
   {
-    name: 'PIC',
+    name: 'PCG',
     icon: '🧠',
     dimensions: [
       { id: 'communication', role: 'primary' },
@@ -636,7 +636,7 @@ const TECH_INTEGRATIONS: TechIntegration[] = [
       { id: 'clinical', role: 'supporting' },
       { id: 'financial', role: 'supporting' },
     ],
-    description: 'Personal Intelligence Context — the memory and identity backbone of LIAM',
+    description: 'Personal Context Graph — the memory and identity backbone of LIAM',
   },
   {
     name: 'Hermes Core',
@@ -990,26 +990,26 @@ const LIAMPage: React.FC = () => {
                           </VStack>
                         </Box>
 
-                        {/* PIC Integration */}
+                        {/* PCG Integration */}
                         {(() => {
-                          const picInfo = PIC_INTEGRATIONS.find(p => p.dimension === dim.id);
-                          if (!picInfo || picInfo.picRole === 'none') return null;
+                          const pcgInfo = PCG_INTEGRATIONS.find(p => p.dimension === dim.id);
+                          if (!pcgInfo || pcgInfo.pcgRole === 'none') return null;
                           const roleColors = {
                             primary: { bg: '#38A16920', text: '#38A169', label: 'Primary' },
                             significant: { bg: '#ECC94B20', text: '#ECC94B', label: 'Significant' },
                             supporting: { bg: '#A0AEC020', text: '#A0AEC0', label: 'Supporting' },
                             none: { bg: '#71809620', text: '#718096', label: 'None' },
                           };
-                          const rc = roleColors[picInfo.picRole];
+                          const rc = roleColors[pcgInfo.pcgRole];
                           return (
                             <Box>
                               <HStack mb={2}>
                                 <FiDatabase size={14} color={dim.accent} />
-                                <Text fontSize="xs" fontWeight="600" color={dim.accent}>PIC INTEGRATION</Text>
+                                <Text fontSize="xs" fontWeight="600" color={dim.accent}>PCG INTEGRATION</Text>
                                 <Badge bg={rc.bg} color={rc.text} fontSize="9px">{rc.label}</Badge>
                               </HStack>
                               <VStack align="start" spacing={1}>
-                                {picInfo.dataFlows.map((flow, i) => (
+                                {pcgInfo.dataFlows.map((flow, i) => (
                                   <HStack key={i} spacing={2}>
                                     <Box w="4px" h="4px" borderRadius="full" bg="#38A169" />
                                     <Text fontSize="xs" color={textMuted}>{flow}</Text>

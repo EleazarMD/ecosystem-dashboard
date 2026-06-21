@@ -35,7 +35,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import { GlassPanel } from '@/components/ui/GlassPanel';
 
 const ATLAS_API = '/api/atlas';
-const PIC_API = '/api/pic';
+const PCG_API = '/api/pcg';
 
 // Animation keyframes
 const pulseAnimation = keyframes`
@@ -111,7 +111,7 @@ const AtlasInsightsDashboard = () => {
   const loadInsights = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const response = await fetch(`${PIC_API}/insights?limit=100`);
+      const response = await fetch(`${PCG_API}/insights?limit=100`);
       if (!response.ok) throw new Error('Failed to fetch insights');
       const data = await response.json();
       setInsights(data.insights || []);
@@ -132,7 +132,7 @@ const AtlasInsightsDashboard = () => {
 
   const loadStats = async () => {
     try {
-      const response = await fetch(`${PIC_API}/insights/stats/summary`);
+      const response = await fetch(`${PCG_API}/insights/stats/summary`);
       if (response.ok) {
         const data = await response.json();
         setStats(data);

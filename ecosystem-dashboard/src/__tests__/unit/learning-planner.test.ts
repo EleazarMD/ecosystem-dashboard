@@ -1,14 +1,15 @@
 import {
+  composePlan,
   composePlannedObjectives,
   composePlanWithNextObjectives,
   selectLowestScoreObjectives,
   selectReviewWarmUp,
-} from '@/lib/kids-pic/learning-planner';
+} from '@/domains/learning/features/plan-generation';
 import type {
   ChildSkillSummary,
   ProficiencyLevel,
   SkillProgress,
-} from '@/lib/kids-pic/SkillProgressService';
+} from '@/domains/learning/entities/skill-graph';
 
 function makeSkill(over: Partial<SkillProgress> & { skillCode: string }): SkillProgress {
   return {
@@ -212,5 +213,85 @@ describe('composePlanWithNextObjectives', () => {
 
   it('returns nothing for a non-positive limit', () => {
     expect(composePlanWithNextObjectives(summary, ['a', 'b'], 0)).toEqual([]);
+  });
+});
+
+describe('composePlan (parent assignments)', () => {
+  it('leads with the warm-up, then tagged assignments, then focus', () => {
+    const summary = summaryOf([
+      makeSkill({ skillCode: 'asg', currentScore: 0.3, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+      makeSkill({ skillCode: 'low1', currentScore: 0.1, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+      makeSkill({ skillCode: 'low2', currentScore: 0.2, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+      makeSkill({ skillCode: 'rev', currentScore: 0.7, assessmentsCount: 5, lastAssessmentDate: new Date('2024-01-01') }),
+    ]);
+
+    const plan = composePlan({ summary, assignmentSkillCodes: ['asg'], limit: 3 });
+
+    expect(plan.map((o) => o.skillCode)).toEqual(['rev', 'asg', 'low1']);
+    expect(plan.map((o) => o.kind)).toEqual(['review', 'practice', 'practice']);
+    expect(plan[1].isAssignment).toBe(true);
+    expect(plan[0].isAssignment).toBeFalsy();
+    expect(plan[2].isAssignment).toBeFalsy();
+  });
+
+  it('lets parent assignments fill the plan and outrank the warm-up when numerous', () => {
+    const summary = summaryOf([
+      makeSkill({ skillCode: 'a1', currentScore: 0.3, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+      makeSkill({ skillCode: 'a2', currentScore: 0.3, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+      makeSkill({ skillCode: 'a3', currentScore: 0.3, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+      makeSkill({ skillCode: 'rev', currentScore: 0.8, assessmentsCount: 5, lastAssessmentDate: new Date('2024-01-01') }),
+    ]);
+
+    const plan = composePlan({ summary, assignmentSkillCodes: ['a1', 'a2', 'a3'], limit: 3 });
+
+    expect(plan.map((o) => o.skillCode)).toEqual(['a1', 'a2', 'a3']);
+    expect(plan.every((o) => o.isAssignment)).toBe(true);
+  });
+
+  it('de-duplicates an assigned skill out of the focus list', () => {
+    const summary = summaryOf([
+      makeSkill({ skillCode: 'a', currentScore: 0.1, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+      makeSkill({ skillCode: 'b', currentScore: 0.2, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+    ]);
+
+    const plan = composePlan({
+      summary,
+      assignmentSkillCodes: ['a'],
+      nextObjectiveSkillCodes: ['a', 'b'],
+      limit: 3,
+    });
+
+    expect(plan.map((o) => o.skillCode)).toEqual(['a', 'b']);
+    expect(plan.filter((o) => o.skillCode === 'a')).toHaveLength(1);
+    expect(plan[0].isAssignment).toBe(true);
+    expect(plan[1].isAssignment).toBeFalsy();
+  });
+
+  it('synthesizes and tags assigned skills absent from the Postgres summary', () => {
+    const plan = composePlan({ summary: null, assignmentSkillCodes: ['new.skill'], limit: 3 });
+
+    expect(plan.map((o) => o.skillCode)).toEqual(['new.skill']);
+    expect(plan[0].isAssignment).toBe(true);
+    expect(plan[0].skillName).toBe('new.skill');
+    expect(plan[0].kind).toBe('practice');
+  });
+
+  it('keeps the prereq-aware focus and warm-up when there are no assignments', () => {
+    const summary = summaryOf([
+      makeSkill({ skillCode: 'a', currentScore: 0.2, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+      makeSkill({ skillCode: 'b', currentScore: 0.4, assessmentsCount: 1, lastAssessmentDate: new Date('2024-03-01') }),
+      makeSkill({ skillCode: 'rev', currentScore: 0.7, assessmentsCount: 5, lastAssessmentDate: new Date('2024-01-01') }),
+    ]);
+
+    const plan = composePlan({ summary, nextObjectiveSkillCodes: ['b', 'a'], limit: 3 });
+
+    expect(plan.map((o) => o.skillCode)).toEqual(['rev', 'b', 'a']);
+    expect(plan.some((o) => o.isAssignment)).toBe(false);
+  });
+
+  it('returns nothing for a non-positive limit even with assignments', () => {
+    const summary = summaryOf([makeSkill({ skillCode: 'a', currentScore: 0.1 })]);
+
+    expect(composePlan({ summary, assignmentSkillCodes: ['a'], limit: 0 })).toEqual([]);
   });
 });

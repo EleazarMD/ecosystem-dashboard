@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 
-import { getLearningAccessState, recordLearningUsage } from '@/lib/kids-pic/learning-access';
+import { getLearningAccessState, recordLearningUsage } from '@/domains/learning/features/access-control';
 
 function poolReturning(row: Record<string, unknown> | null): { pool: Pool; query: jest.Mock } {
   const query = jest.fn(async () => ({ rows: row ? [row] : [] }));
@@ -121,5 +121,75 @@ describe('recordLearningUsage', () => {
     await recordLearningUsage(pool, 'user-1', 0);
 
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it('swallows errors from the usage upsert (best-effort)', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const query = jest.fn(async () => {
+      throw new Error('connection refused');
+    });
+    const pool = { query } as unknown as Pool;
+
+    await expect(recordLearningUsage(pool, 'user-1', 1)).resolves.toBeUndefined();
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+});
+
+describe('getLearningAccessState edge cases', () => {
+  it('treats a non-child account with controls_active as uncontrolled', async () => {
+    const { pool } = poolReturning({
+      account_type: 'parent',
+      controls_active: true,
+      daily_limit: 120,
+      within_hours: true,
+      current_minutes: 0,
+    });
+
+    const state = await getLearningAccessState(pool, 'user-1');
+
+    expect(state.controlled).toBe(false);
+    expect(state.allowed).toBe(true);
+  });
+
+  it('blocks when current usage exactly equals daily limit', async () => {
+    const { pool } = poolReturning({
+      account_type: 'child',
+      controls_active: true,
+      daily_limit: 45,
+      within_hours: true,
+      current_minutes: 45,
+    });
+
+    const state = await getLearningAccessState(pool, 'user-1');
+
+    expect(state.controlled).toBe(true);
+    expect(state.allowed).toBe(false);
+    expect(state.reason).toMatch(/time's up/i);
+    expect(state.remainingMinutes).toBe(0);
+  });
+
+  it('clamps remaining minutes to zero when usage exceeds limit', async () => {
+    const { pool } = poolReturning({
+      account_type: 'child',
+      controls_active: true,
+      daily_limit: 30,
+      within_hours: true,
+      current_minutes: 50,
+    });
+
+    const state = await getLearningAccessState(pool, 'user-1');
+
+    expect(state.remainingMinutes).toBe(0);
+    expect(state.allowed).toBe(false);
+  });
+
+  it('returns uncontrolled when user row is not found', async () => {
+    const { pool } = poolReturning(null);
+
+    const state = await getLearningAccessState(pool, 'nonexistent-user');
+
+    expect(state.controlled).toBe(false);
+    expect(state.allowed).toBe(true);
   });
 });

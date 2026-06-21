@@ -100,7 +100,7 @@ async function buildWorkflowRegistry(): Promise<WorkflowStatus[]> {
       name: 'Event Enrichment Service',
       status: 'running',
       lastUpdate: now,
-      details: 'Active: Adding PIC + Hermes + Ticket context to system events',
+      details: 'Active: Adding PCG + Hermes + Ticket context to system events',
       dimension: 'infrastructure',
       category: 'real-time',
       schedule: 'Continuous',
@@ -127,12 +127,12 @@ async function buildWorkflowRegistry(): Promise<WorkflowStatus[]> {
     },
     {
       id: 'wf_pic_consolidation',
-      name: 'PIC Observation Consolidation',
+      name: 'PCG Observation Consolidation',
       status: picHealth.healthy ? 'running' : 'failed',
       lastUpdate: now,
       details: picHealth.healthy
         ? 'Hourly: Processing observations → preferences, goals, relationships'
-        : `PIC unavailable: ${picHealth.details}`,
+        : `PCG unavailable: ${picHealth.details}`,
       dimension: 'goals',
       category: 'periodic',
       schedule: 'Every 1 hour',
@@ -227,7 +227,7 @@ async function buildWorkflowRegistry(): Promise<WorkflowStatus[]> {
       name: 'Voice-of-Eleazar Reply Drafting',
       status: 'pending',
       lastUpdate: now,
-      details: 'Planned: Personalized reply drafts using writing style model + PIC context',
+      details: 'Planned: Personalized reply drafts using writing style model + PCG context',
       dimension: 'communication',
       category: 'real-time',
       schedule: 'On-demand + Daily 6:30 PM batch',
@@ -364,8 +364,8 @@ async function buildWorkflowRegistry(): Promise<WorkflowStatus[]> {
       status: picHealth.healthy ? 'running' : 'pending',
       lastUpdate: now,
       details: picHealth.healthy
-        ? 'Active: Visual progress on all active goals from PIC'
-        : 'PIC required for goal tracking',
+        ? 'Active: Visual progress on all active goals from PCG'
+        : 'PCG required for goal tracking',
       dimension: 'goals',
       category: 'periodic',
       schedule: 'Weekly Sunday',
@@ -659,7 +659,7 @@ async function buildWorkflowRegistry(): Promise<WorkflowStatus[]> {
       lastUpdate: now,
       details: picHealth.healthy
         ? 'Active: Track inner circle (5), close (15), friends (50), acquaintances (150)'
-        : 'PIC required for relationship tracking',
+        : 'PCG required for relationship tracking',
       dimension: 'social_capital',
       category: 'periodic',
       schedule: 'Monthly',

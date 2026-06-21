@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 
-import { AIChildSafetyMonitor } from '@/lib/kids-pic/AIChildSafetyMonitor';
+import { AIChildSafetyMonitor } from '@/domains/learning/features/safety-monitor';
 
 type InteractionRow = {
   childId: string;

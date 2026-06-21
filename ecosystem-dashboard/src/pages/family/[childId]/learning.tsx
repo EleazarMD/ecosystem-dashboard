@@ -1,7 +1,7 @@
 /**
  * Child Learning Insights Page
  * 
- * Parent view of child's PIC-powered learning progress and wellness.
+ * Parent view of child's PCG-powered learning progress and wellness.
  * Shows aggregated insights while protecting child privacy.
  */
 
@@ -27,19 +27,23 @@ import {
   Badge,
   Wrap,
   WrapItem,
+  Card,
+  CardBody,
+  Progress,
 } from '@chakra-ui/react';
-import { FiArrowLeft, FiTrendingUp, FiShield, FiTarget } from 'react-icons/fi';
+import { FiArrowLeft, FiTrendingUp, FiShield, FiTarget, FiHeart, FiCompass } from 'react-icons/fi';
 import { useRouter } from 'next/router';
 import NextLink from 'next/link';
 import { GetServerSideProps } from 'next';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../../api/auth/[...nextauth]';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import PICInsightsDashboard from '@/components/family/PICInsightsDashboard';
+import PCGInsightsDashboard from '@/components/family/PCGInsightsDashboard';
 import AISafetyDashboard from '@/components/family/AISafetyDashboard';
 import SkillProgressDashboard from '@/components/family/SkillProgressDashboard';
 import { useSemanticToken } from '@/hooks/useSemanticToken';
 import { query } from '@/lib/db';
+import { buildFamilyLearningSnapshot } from '@/domains/learning/shared/family-presenter';
 
 interface LearningPageProps {
   child: {
@@ -66,11 +70,11 @@ export default function ChildLearningPage({ child, childProfileId, attemptSummar
 
   return (
     <DashboardLayout>
-      <Box bg={bg} minH="100vh" py={8}>
+      <Box bg={bg} minH="100vh" py={{ base: 6, md: 8 }}>
         <Container maxW="container.xl">
-          <VStack spacing={6} align="stretch">
+          <VStack spacing={{ base: 5, md: 6 }} align="stretch">
             {/* Header */}
-            <HStack justify="space-between">
+            <HStack justify="space-between" align={{ base: 'stretch', md: 'flex-start' }} flexWrap="wrap" gap={3}>
               <VStack align="start" spacing={1}>
                 <Breadcrumb fontSize="sm">
                   <BreadcrumbItem>
@@ -96,50 +100,54 @@ export default function ChildLearningPage({ child, childProfileId, attemptSummar
                 leftIcon={<FiArrowLeft />}
                 variant="outline"
                 onClick={() => router.push(`/family/${child.id}`)}
+                minH={{ base: '44px', md: '48px' }}
+                w={{ base: 'full', md: 'auto' }}
               >
                 Back to {child.name}
               </Button>
             </HStack>
 
+            <ParentLearningSnapshot summary={attemptSummary} childName={child.name} />
+
             <LearningActivityCard summary={attemptSummary} childName={child.name} />
 
             {/* Tabbed Dashboard */}
             <Tabs colorScheme="purple" variant="enclosed">
-              <TabList>
-                <Tab>
-                  <HStack spacing={2}>
+              <TabList flexWrap="wrap" gap={{ base: 2, md: 3 }}>
+                <Tab minH={{ base: '44px', md: '48px' }} px={{ base: 3, md: 4 }} flex={{ base: '1 1 auto', md: '1 1 0' }}>
+                  <HStack spacing={2} justify="center">
                     <Icon as={FiTrendingUp} />
-                    <Text>Learning Progress</Text>
+                    <Text fontSize="sm">Learning Progress</Text>
                   </HStack>
                 </Tab>
-                <Tab>
-                  <HStack spacing={2}>
+                <Tab minH={{ base: '44px', md: '48px' }} px={{ base: 3, md: 4 }} flex={{ base: '1 1 auto', md: '1 1 0' }}>
+                  <HStack spacing={2} justify="center">
                     <Icon as={FiTarget} />
-                    <Text>Skill Progress</Text>
+                    <Text fontSize="sm">Skill Progress</Text>
                   </HStack>
                 </Tab>
-                <Tab>
-                  <HStack spacing={2}>
+                <Tab minH={{ base: '44px', md: '48px' }} px={{ base: 3, md: 4 }} flex={{ base: '1 1 auto', md: '1 1 0' }}>
+                  <HStack spacing={2} justify="center">
                     <Icon as={FiShield} />
-                    <Text>AI Safety</Text>
+                    <Text fontSize="sm">AI Safety</Text>
                   </HStack>
                 </Tab>
               </TabList>
 
               <TabPanels>
-                <TabPanel px={0}>
-                  <PICInsightsDashboard 
+                <TabPanel px={0} pt={{ base: 4, md: 5 }}>
+                  <PCGInsightsDashboard 
                     childId={childProfileId} 
                     childName={child.name}
                   />
                 </TabPanel>
-                <TabPanel px={0}>
+                <TabPanel px={0} pt={{ base: 4, md: 5 }}>
                   <SkillProgressDashboard 
                     childId={childProfileId} 
                     childName={child.name}
                   />
                 </TabPanel>
-                <TabPanel px={0}>
+                <TabPanel px={0} pt={{ base: 4, md: 5 }}>
                   <AISafetyDashboard 
                     childId={childProfileId} 
                     childName={child.name}
@@ -151,6 +159,126 @@ export default function ChildLearningPage({ child, childProfileId, attemptSummar
         </Container>
       </Box>
     </DashboardLayout>
+  );
+}
+
+function ParentLearningSnapshot({
+  summary,
+  childName,
+}: {
+  summary: LearningActivitySummary;
+  childName: string;
+}) {
+  const { strongest, support, sessionGoal, consistencyProgress, recommendations } = buildFamilyLearningSnapshot({
+    sessionsCompleted: summary.sessionsCompleted,
+    bySubject: summary.bySubject,
+  });
+
+  return (
+    <Card borderRadius="xl" borderWidth="1px" boxShadow="sm">
+      <CardBody p={{ base: 4, md: 6 }}>
+        <VStack align="stretch" spacing={{ base: 4, md: 5 }}>
+          <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={{ base: 3, md: 4 }} alignItems="start">
+            <Box>
+              <HStack spacing={2} mb={1} color="purple.600">
+                <FiCompass />
+                <Text fontWeight="bold" fontSize="sm" textTransform="uppercase" letterSpacing="0.04em">
+                  Family Learning Snapshot
+                </Text>
+              </HStack>
+              <Heading size="sm">Celebrate and support this week</Heading>
+              <Text fontSize="sm" color="gray.600" mt={1}>
+                Adaptive mastery signals from {childName}'s guided sessions, without exposing private responses.
+              </Text>
+            </Box>
+            <Wrap spacing={2} justify={{ base: 'flex-start', lg: 'flex-end' }}>
+              <WrapItem>
+                <Badge colorScheme="purple" variant="subtle" px={2} py={1} borderRadius="md">
+                  Adaptive plan enabled
+                </Badge>
+              </WrapItem>
+              <WrapItem>
+                <Badge colorScheme="blue" variant="subtle" px={2} py={1} borderRadius="md">
+                  Mastery signals only
+                </Badge>
+              </WrapItem>
+              <WrapItem>
+                <Badge colorScheme="green" variant="subtle" px={2} py={1} borderRadius="md">
+                  Privacy-first insights
+                </Badge>
+              </WrapItem>
+            </Wrap>
+          </SimpleGrid>
+
+          <SimpleGrid columns={{ base: 1, md: 2, lg: 2, xl: 3 }} spacing={{ base: 3, md: 4 }}>
+            <Box borderWidth="1px" borderRadius="lg" p={{ base: 4, md: 5 }}>
+              <HStack spacing={2} color="green.600" mb={1}>
+                <FiHeart />
+                <Text fontSize="xs" fontWeight="bold" textTransform="uppercase">
+                  Celebrate
+                </Text>
+              </HStack>
+              <Text fontWeight="semibold">
+                {strongest
+                  ? `${SUBJECT_LABELS[strongest.subject] || strongest.subject} momentum`
+                  : 'Getting started'}
+              </Text>
+              <Text fontSize="sm" color="gray.600" mt={1}>
+                {strongest
+                  ? `${strongest.accuracy}% accuracy over ${strongest.attempts} attempts.`
+                  : `${childName} has not started practice yet this week.`}
+              </Text>
+            </Box>
+
+            <Box borderWidth="1px" borderRadius="lg" p={{ base: 4, md: 5 }}>
+              <HStack spacing={2} color="orange.600" mb={1}>
+                <FiTarget />
+                <Text fontSize="xs" fontWeight="bold" textTransform="uppercase">
+                  Support Next
+                </Text>
+              </HStack>
+              <Text fontWeight="semibold">
+                {support ? SUBJECT_LABELS[support.subject] || support.subject : 'Build routine'}
+              </Text>
+              <Text fontSize="sm" color="gray.600" mt={1}>
+                {support
+                  ? `Coach confidence in this area (${support.accuracy}% accuracy).`
+                  : `Encourage one short session to keep the learning rhythm.`}
+              </Text>
+            </Box>
+
+            <Box borderWidth="1px" borderRadius="lg" p={{ base: 4, md: 5 }}>
+              <HStack spacing={2} color="blue.600" mb={1}>
+                <FiTrendingUp />
+                <Text fontSize="xs" fontWeight="bold" textTransform="uppercase">
+                  Weekly Rhythm
+                </Text>
+              </HStack>
+              <Text fontWeight="semibold">
+                {summary.sessionsCompleted} of {sessionGoal} guided sessions
+              </Text>
+              <Progress mt={2} value={consistencyProgress} size="sm" borderRadius="full" colorScheme="blue" />
+              <Text fontSize="sm" color="gray.600" mt={1}>
+                Consistency matters more than long sessions.
+              </Text>
+            </Box>
+          </SimpleGrid>
+
+          <Box borderWidth="1px" borderRadius="lg" p={{ base: 4, md: 5 }}>
+            <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="bold" mb={2}>
+              Suggested Parent Actions
+            </Text>
+            <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={2}>
+              {recommendations.map((recommendation) => (
+                <Text key={recommendation} fontSize="sm" color="gray.700">
+                  - {recommendation}
+                </Text>
+              ))}
+            </SimpleGrid>
+          </Box>
+        </VStack>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -185,7 +313,7 @@ function LearningActivityCard({
   const hasActivity = summary.attemptsLast7Days > 0 || summary.sessionsCompleted > 0;
 
   return (
-    <Box borderWidth="1px" borderRadius="lg" p={5}>
+    <Box borderWidth="1px" borderRadius="lg" p={{ base: 4, md: 6 }}>
       <HStack justify="space-between" align="start" mb={4} flexWrap="wrap">
         <Heading size="sm">Practice activity (last 7 days)</Heading>
         {summary.latestAttemptAt && (
@@ -202,7 +330,7 @@ function LearningActivityCard({
         </Text>
       ) : (
         <VStack align="stretch" spacing={4}>
-          <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4}>
+          <SimpleGrid columns={{ base: 2, md: 2, lg: 4 }} spacing={{ base: 3, md: 4 }}>
             <StatCell label="Attempts" value={summary.attemptsLast7Days} />
             <StatCell label="Accuracy" value={accuracy === null ? '\u2014' : `${accuracy}%`} />
             <StatCell label="Skills practiced" value={summary.skillsPracticed} />

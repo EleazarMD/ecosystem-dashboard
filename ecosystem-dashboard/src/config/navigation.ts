@@ -69,7 +69,7 @@ export const navigationItems: NavItem[] = [
         label: 'Personal Context',
         path: '/personal-context',
         icon: UserGroupIcon,
-        badge: 'PIC',
+        badge: 'PCG',
         badgeColorScheme: 'purple',
       },
       {

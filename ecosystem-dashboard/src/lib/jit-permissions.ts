@@ -48,12 +48,12 @@ const ACTION_RISK_OVERRIDES: Record<string, RiskLevel> = {
   'child_content_unlock': 'medium',
   'child_feature_request': 'low',
   
-  // PIC memory injection is sensitive
-  'pic_memory_injection': 'high',
-  'pic_identity_update': 'critical',
-  'pic_preference_update': 'medium',
-  'pic_goal_update': 'low',
-  'pic_relationship_update': 'medium',
+  // PCG memory injection is sensitive
+  'pcg_memory_injection': 'high',
+  'pcg_identity_update': 'critical',
+  'pcg_preference_update': 'medium',
+  'pcg_goal_update': 'low',
+  'pcg_relationship_update': 'medium',
   
   // Tesla vehicle control
   'tesla_door_unlock': 'high',      // Security risk

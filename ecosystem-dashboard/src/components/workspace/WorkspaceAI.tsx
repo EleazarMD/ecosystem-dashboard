@@ -9,7 +9,7 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { useDeepResearchPolling } from '../../../hooks/useDeepResearchPolling';
+import { useDeepResearchPolling } from '../../hooks/useDeepResearchPolling';
 import {
   Box,
   VStack,

@@ -260,7 +260,7 @@ export function CalendarEventDetailsPanel() {
     setAnalysisError(null);
     
     try {
-      // Call the real API endpoint that integrates with PIC and Hermes Core
+      // Call the real API endpoint that integrates with PCG and Hermes Core
       const response = await fetch('/api/calendar/analyze-event', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

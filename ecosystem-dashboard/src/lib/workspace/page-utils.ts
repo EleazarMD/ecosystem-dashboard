@@ -13,19 +13,22 @@ import { Block } from '@/lib/editor/BlockModel';
  * @returns The page title as a string, or 'Untitled' if not found
  */
 export function extractPageTitle(page: Block | any): string {
-  if (!page?.properties?.title) {
+  // Try Pi-workspace top-level format first
+  const titleField = page?.title || page?.properties?.title;
+
+  if (!titleField) {
     return 'Untitled';
   }
 
-  // Handle MCP format: properties.title is a string
-  if (typeof page.properties.title === 'string') {
-    return page.properties.title || 'Untitled';
+  // Handle string format
+  if (typeof titleField === 'string') {
+    return titleField || 'Untitled';
   }
 
-  // Handle Notion format: properties.title is a rich text array
-  if (Array.isArray(page.properties.title) && page.properties.title.length > 0) {
-    const firstSegment = page.properties.title[0];
-    return firstSegment?.text?.content || 'Untitled';
+  // Handle Notion format: rich text array
+  if (Array.isArray(titleField) && titleField.length > 0) {
+    const firstSegment = titleField[0];
+    return firstSegment?.text?.content || firstSegment?.plainText || 'Untitled';
   }
 
   return 'Untitled';
@@ -39,18 +42,20 @@ export function extractPageTitle(page: Block | any): string {
  * @returns The page icon as a string, or '📄' if not found
  */
 export function extractPageIcon(page: Block | any): string {
-  if (!page?.properties?.icon) {
+  const iconField = page?.icon || page?.properties?.icon;
+
+  if (!iconField || (typeof iconField === 'object' && Object.keys(iconField).length === 0)) {
     return '📄';
   }
 
-  // Handle MCP format: properties.icon is a string
-  if (typeof page.properties.icon === 'string') {
-    return page.properties.icon || '📄';
+  // Handle string format
+  if (typeof iconField === 'string') {
+    return iconField || '📄';
   }
 
-  // Handle Notion format: properties.icon is an object with emoji property
-  if (typeof page.properties.icon === 'object' && page.properties.icon.emoji) {
-    return page.properties.icon.emoji;
+  // Handle object format (emoji property)
+  if (typeof iconField === 'object' && iconField.emoji) {
+    return iconField.emoji;
   }
 
   return '📄';

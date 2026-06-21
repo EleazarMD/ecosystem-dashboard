@@ -109,6 +109,42 @@ export default async function handler(
       }
     }
 
+    // 4. Process calendar event reminders (minutes_before triggers)
+    const dueEventReminders = await query(
+      `SELECT er.id        AS er_id,
+              er.minutes_before,
+              e.title      AS event_title,
+              e.start_time,
+              c.owner_id   AS user_id
+         FROM calendar.event_reminders er
+         JOIN calendar.events    e ON e.id = er.event_id
+         JOIN calendar.calendars c ON c.id = e.calendar_id
+        WHERE er.triggered = FALSE
+          AND (e.status IS NULL OR e.status NOT IN ('cancelled'))
+          AND e.start_time - (er.minutes_before || ' minutes')::interval <= NOW()
+        ORDER BY e.start_time ASC
+        LIMIT 50`
+    );
+
+    for (const row of dueEventReminders.rows) {
+      try {
+        const minsLabel = row.minutes_before === 0
+          ? 'now'
+          : `in ${row.minutes_before} min`;
+        await sendNotification(
+          { id: row.er_id, user_id: row.user_id, title: `${row.event_title} — ${minsLabel}` },
+          'calendar_reminder',
+        );
+        await query(
+          `UPDATE calendar.event_reminders SET triggered = TRUE, triggered_at = NOW() WHERE id = $1`,
+          [row.er_id]
+        );
+        results.reminders_sent++;
+      } catch (e) {
+        results.errors.push(`EventReminder ${row.er_id}: ${e}`);
+      }
+    }
+
     return res.status(200).json({
       success: true,
       ...results,
@@ -155,7 +191,7 @@ function calculateNextDue(currentDate: string | Date, recurrence: string): Date 
   return date;
 }
 
-async function sendNotification(job: any, eventType: 'reminder' | 'overdue') {
+async function sendNotification(job: any, eventType: 'reminder' | 'overdue' | 'calendar_reminder') {
   const notifyUrl = process.env.DASHBOARD_URL || 'http://localhost:8404';
   const apiKey = process.env.AI_GATEWAY_API_KEY || 'ai-gateway-api-key-2024';
 
@@ -169,6 +205,11 @@ async function sendNotification(job: any, eventType: 'reminder' | 'overdue') {
       title: '⚠️ Overdue Task',
       body: `${job.title} is past due`,
       category: 'SYSTEM_ALERT',
+    },
+    calendar_reminder: {
+      title: '📅 Upcoming Event',
+      body: job.title,
+      category: 'CALENDAR_REMINDER',
     },
   };
 

@@ -45,12 +45,12 @@ export type ApprovalActionType =
   | 'openclaw_gateway_provider_toggle'
   | 'openclaw_gateway_project_create'
   | 'openclaw_gateway_service_create'
-  // PIC memory injection types
-  | 'pic_memory_injection'
-  | 'pic_identity_update'
-  | 'pic_preference_update'
-  | 'pic_goal_update'
-  | 'pic_relationship_update'
+  // PCG memory injection types
+  | 'pcg_memory_injection'
+  | 'pcg_identity_update'
+  | 'pcg_preference_update'
+  | 'pcg_goal_update'
+  | 'pcg_relationship_update'
   // Tesla vehicle control types
   | 'tesla_door_unlock'
   | 'tesla_trunk_open'
@@ -58,7 +58,9 @@ export type ApprovalActionType =
   | 'tesla_charging_control'
   | 'tesla_navigation_send'
   | 'tesla_sentry_toggle'
-  | 'tesla_honk_flash';
+  | 'tesla_honk_flash'
+  // Nova privacy gate
+  | 'nova_conversation_display';
 
 // Priority levels for approval requests
 export type ApprovalPriority = 'critical' | 'high' | 'normal' | 'low';
@@ -194,8 +196,8 @@ export interface OpenClawGatewayPayload {
   execution_headers?: Record<string, string>;
 }
 
-// PIC Memory Injection payload
-export interface PicMemoryPayload {
+// PCG Memory Injection payload
+export interface PCGMemoryPayload {
   memory_type: 'observation' | 'identity' | 'preference' | 'goal' | 'relationship';
   key: string;
   value: string | Record<string, unknown>;
@@ -233,7 +235,7 @@ export type ApprovalPayload =
   | CloudApiCallPayload
   | LlmInferencePayload
   | OpenClawGatewayPayload
-  | PicMemoryPayload
+  | PCGMemoryPayload
   | TeslaControlPayload;
 
 // Risk assessment for an action
@@ -607,7 +609,7 @@ export function isLlmInferencePayload(payload: ApprovalPayload): payload is LlmI
   return 'provider' in payload && 'model' in payload && 'input_tokens' in payload;
 }
 
-export function isPicMemoryPayload(payload: ApprovalPayload): payload is PicMemoryPayload {
+export function isPCGMemoryPayload(payload: ApprovalPayload): payload is PCGMemoryPayload {
   return 'memory_type' in payload && 'key' in payload && 'source_agent' in payload && 'risk_category' in payload;
 }
 
@@ -650,12 +652,22 @@ export const ACTION_TYPE_LABELS: Record<ApprovalActionType, string> = {
   openclaw_gateway_provider_toggle: 'Gateway Provider Toggle',
   openclaw_gateway_project_create: 'Gateway Project Create',
   openclaw_gateway_service_create: 'Gateway Service Create',
-  // PIC memory injection labels
-  pic_memory_injection: 'Memory Injection',
-  pic_identity_update: 'Identity Update',
-  pic_preference_update: 'Preference Update',
-  pic_goal_update: 'Goal Update',
-  pic_relationship_update: 'Relationship Update',
+  // PCG memory injection labels
+  pcg_memory_injection: 'Memory Injection',
+  pcg_identity_update: 'Identity Update',
+  pcg_preference_update: 'Preference Update',
+  pcg_goal_update: 'Goal Update',
+  pcg_relationship_update: 'Relationship Update',
+  // Tesla vehicle control labels
+  tesla_door_unlock: 'Tesla Door Unlock',
+  tesla_trunk_open: 'Tesla Trunk Open',
+  tesla_climate_control: 'Tesla Climate Control',
+  tesla_charging_control: 'Tesla Charging Control',
+  tesla_navigation_send: 'Tesla Navigation Send',
+  tesla_sentry_toggle: 'Tesla Sentry Toggle',
+  tesla_honk_flash: 'Tesla Honk/Flash',
+  // Nova privacy gate label
+  nova_conversation_display: 'Nova Conversation Display',
 };
 
 // Cloud provider display names and info

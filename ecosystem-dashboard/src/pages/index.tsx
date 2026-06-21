@@ -49,6 +49,7 @@ import {
   Zap,
   Activity,
   Lock,
+  Clock,
 } from 'lucide-react';
 import { useSemanticToken } from '@/hooks/useSemanticToken';
 import { useTeslaDetection, getTeslaCSSVariables } from '@/hooks/useTeslaDetection';
@@ -265,6 +266,69 @@ function StatusIndicator({ label, value, color }: { label: string; value: string
 }
 
 // ============================================================
+// Today Widget — live counts of upcoming reminders, events, tasks
+// ============================================================
+interface TodayCounts {
+  reminders_4h: number;
+  events_today: number;
+  tasks_open: number;
+}
+
+function TodayWidget({ isTesla }: { isTesla?: boolean }) {
+  const router = useRouter();
+  const [counts, setCounts] = useState<TodayCounts | null>(null);
+  const textPrimary = useSemanticToken('text.primary');
+  const textSecondary = useSemanticToken('text.secondary');
+  const borderSubtle = useSemanticToken('border.subtle');
+  const surfaceElevated = useSemanticToken('surface.elevated');
+
+  useEffect(() => {
+    fetch('/api/home/today-counts', { headers: { 'X-User-Id': 'eleazar' } })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => d && setCounts(d))
+      .catch(() => {});
+  }, []);
+
+  if (!counts) return null;
+  if (counts.reminders_4h === 0 && counts.events_today === 0 && counts.tasks_open === 0) return null;
+
+  const rows = [
+    { emoji: '⏰', label: `${counts.reminders_4h} reminder${counts.reminders_4h !== 1 ? 's' : ''} in the next 4 hours`, href: '/reminders', show: counts.reminders_4h > 0 },
+    { emoji: '📅', label: `${counts.events_today} calendar event${counts.events_today !== 1 ? 's' : ''} today`, href: '/calendar', show: counts.events_today > 0 },
+    { emoji: '📋', label: `${counts.tasks_open} open task${counts.tasks_open !== 1 ? 's' : ''}`, href: '/workspace', show: counts.tasks_open > 0 },
+  ].filter((r) => r.show);
+
+  return (
+    <Box
+      bg={surfaceElevated}
+      borderWidth="1px"
+      borderColor={borderSubtle}
+      borderRadius={isTesla ? '2xl' : 'xl'}
+      px={5}
+      py={4}
+    >
+      <VStack align="stretch" spacing={2}>
+        {rows.map((row) => (
+          <HStack
+            key={row.href}
+            cursor="pointer"
+            onClick={() => router.push(row.href)}
+            _hover={{ opacity: 0.8 }}
+            spacing={3}
+          >
+            <Text fontSize={isTesla ? 'md' : 'sm'}>{row.emoji}</Text>
+            <Text fontSize={isTesla ? 'md' : 'sm'} color={textPrimary} fontWeight="500">
+              {row.label}
+            </Text>
+            <Icon as={ChevronRight} boxSize={3} color={textSecondary} ml="auto" />
+          </HStack>
+        ))}
+      </VStack>
+    </Box>
+  );
+}
+
+// ============================================================
 // Main Dashboard — Redesigned with Tesla compatibility
 // ============================================================
 const DashboardHome = () => {
@@ -318,6 +382,7 @@ const DashboardHome = () => {
     { icon: MessageSquare, label: 'AI Chat', description: 'Converse with your local AI agent', href: '/workspace-ai', accentColor: 'blue' },
     { icon: Mail, label: 'Email', description: 'Inbox, drafts, and smart replies', href: '/email', accentColor: 'purple' },
     { icon: Calendar, label: 'Calendar', description: 'AI-synced schedule and events', href: '/calendar', accentColor: 'cyan' },
+    { icon: Clock, label: 'Reminders', description: "Today's list + scheduled pings", href: '/reminders', accentColor: 'teal' },
     { icon: FileText, label: 'Workspace', description: 'Notes, pages, and documents', href: '/workspace', accentColor: 'green' },
     { icon: BookOpen, label: 'Research', description: 'Deep research and analysis', href: '/ai-research', accentColor: 'orange' },
     { icon: ImageIcon, label: 'Image Studio', description: 'AI image generation', href: '/image-studio', accentColor: 'pink' },
@@ -429,6 +494,9 @@ const DashboardHome = () => {
                 </InputRightElement>
               </InputGroup>
             </Box>
+
+            {/* ============ Today Widget ============ */}
+            <TodayWidget isTesla={tesla.isTesla} />
 
             {/* ============ Featured: Voice Agent & Chat ============ */}
             <Grid

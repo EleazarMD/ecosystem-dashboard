@@ -51,21 +51,21 @@ const DEFAULT_BATTERY_CONFIG = {
  * GET /api/tesla/automation/config
  * 
  * Retrieve Tesla automation configuration for a user.
- * Fetches from PIC Neo4j via personal-kg service.
+ * Fetches from PCG Neo4j via personal-kg service.
  */
 async function getConfig(req: NextApiRequest, res: NextApiResponse) {
   const userId = (req.query.user_id as string) || 'default';
 
   try {
-    // Fetch from PIC service
+    // Fetch from PCG service
     const picResponse = await fetch(
-      `http://localhost:8765/api/pic/tesla/preferences?user_id=${userId}`
+      `http://localhost:8765/api/pcg/tesla/preferences?user_id=${userId}`
     );
 
     if (!picResponse.ok) {
-      console.error('[Tesla Automation] PIC fetch failed:', picResponse.status);
+      console.error('[Tesla Automation] PCG fetch failed:', picResponse.status);
       
-      // Return defaults if PIC unavailable
+      // Return defaults if PCG unavailable
       return res.status(200).json({
         charging_schedule: DEFAULT_CHARGING_CONFIG,
         security_reminders: DEFAULT_SECURITY_CONFIG,
@@ -94,7 +94,7 @@ async function getConfig(req: NextApiRequest, res: NextApiResponse) {
  * POST /api/tesla/automation/config
  * 
  * Save Tesla automation configuration for a user.
- * Saves to PIC Neo4j via personal-kg service.
+ * Saves to PCG Neo4j via personal-kg service.
  */
 async function saveConfig(req: NextApiRequest, res: NextApiResponse) {
   const { user_id, preference_type, config, enabled } = req.body;
@@ -120,9 +120,9 @@ async function saveConfig(req: NextApiRequest, res: NextApiResponse) {
   }
 
   try {
-    // Save to PIC service
+    // Save to PCG service
     const picResponse = await fetch(
-      'http://localhost:8765/api/pic/tesla/preferences',
+      'http://localhost:8765/api/pcg/tesla/preferences',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -137,7 +137,7 @@ async function saveConfig(req: NextApiRequest, res: NextApiResponse) {
 
     if (!picResponse.ok) {
       const errorText = await picResponse.text();
-      console.error('[Tesla Automation] PIC save failed:', errorText);
+      console.error('[Tesla Automation] PCG save failed:', errorText);
       return res.status(picResponse.status).json({ error: 'Failed to save configuration' });
     }
 
@@ -169,7 +169,7 @@ async function toggleConfig(req: NextApiRequest, res: NextApiResponse) {
 
   try {
     const picResponse = await fetch(
-      'http://localhost:8765/api/pic/tesla/preferences/toggle',
+      'http://localhost:8765/api/pcg/tesla/preferences/toggle',
       {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

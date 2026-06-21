@@ -1,11 +1,17 @@
+import { randomUUID } from 'crypto';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth';
 
 import { authOptions } from '../auth/[...nextauth]';
-import { getLearningPhase1Service } from '@/lib/kids-pic/LearningPhase1Service';
-import { SkillProgressService } from '@/lib/kids-pic/SkillProgressService';
-import { getLearningAccessState, recordLearningUsage } from '@/lib/kids-pic/learning-access';
+import { getLearningPhase1Service } from '@/domains/learning/features/attempt-grading';
+import { SkillProgressService } from '@/domains/learning/entities/skill-graph';
+import { getLearningAccessState, recordLearningUsage } from '@/domains/learning/features/access-control';
+import { captureMisconception } from '@/domains/learning/features/misconception-tracker';
 import dbPool from '@/lib/db/client';
+import { HARNESS_EVENT_TYPES } from '@/lib/harness/events/types';
+import { emitHarnessEventSafe, runHarnessPipeline, toApiHarnessMetadata } from '@/lib/harness/runtime/pipeline';
+import type { HarnessPipelineEventInput } from '@/lib/harness/runtime/pipeline';
+import type { HarnessAgentRequest } from '@/lib/harness/types';
 
 const skillProgressService = new SkillProgressService(dbPool);
 
@@ -15,6 +21,9 @@ const KIDS_PCG_DEFAULT_OWNER_ID = process.env.KIDS_PCG_DEFAULT_OWNER_ID || '';
 const KIDS_PCG_EVIDENCE_PATH = process.env.KIDS_PCG_EVIDENCE_PATH || '/api/learner/mastery/evidence';
 const LEARN_REQUIRE_PCG_WRITE = parseBool(process.env.LEARN_REQUIRE_PCG_WRITE, false);
 const LEARN_REQUIRE_POSTGRES_WRITE = parseBool(process.env.LEARN_REQUIRE_POSTGRES_WRITE, false);
+const LEARN_ATTEMPT_MODEL = 'deterministic_grade_engine';
+const LEARN_ATTEMPT_CONTRACT = 'learn-attempt-v1';
+const LEARN_ATTEMPT_SOURCE = 'deterministic_learn_attempt';
 
 type MasteryWriteStatus = { status: 'recorded' | 'skipped' | 'failed'; detail?: string };
 
@@ -38,6 +47,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
+    const startedAt = Date.now();
+    const policyDecisions: string[] = ['auth:allow', 'method:post'];
+
     const body = (req.body || {}) as AttemptRequestBody;
     const childId = `${body.childId || ''}`.trim();
     const contentItemId = `${body.contentItemId || ''}`.trim();
@@ -47,12 +59,46 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         error: 'childId and contentItemId are required',
       });
     }
+    policyDecisions.push('payload:valid');
 
     // Learning is child-facing and must respect the same parental controls as chat
     // (allowed hours + daily usage limit), keyed by the authenticated child USER id.
     const userId = readUserId(session);
+    const harnessRequest: HarnessAgentRequest = {
+      requestId: randomUUID(),
+      domain: 'learning',
+      agentId: 'learn_attempt',
+      agentRole: 'evaluator',
+      userId,
+      goal: 'Evaluate learner response and update mastery signals',
+      payload: {
+        childId,
+        contentItemId,
+        attemptNumber: normalizeAttemptNumber(body.attemptNumber),
+      },
+      priority: 'normal',
+      metadata: {
+        route: '/api/learn/attempt',
+      },
+    };
+
     const access = await getLearningAccessState(dbPool, userId);
     if (!access.allowed) {
+      policyDecisions.push('learning_access:block');
+      await emitHarnessEventSafe(
+        {
+          domain: harnessRequest.domain,
+          type: HARNESS_EVENT_TYPES.POLICY_BLOCKED,
+          userId: harnessRequest.userId,
+          payload: {
+            requestId: harnessRequest.requestId,
+            reason: access.reason || 'Learning time limit reached',
+            control: 'learning_access',
+          },
+        },
+        '[api/learn/attempt] harness event emission failed:',
+      );
+
       return res.status(403).json({
         error: 'Learning time limit reached',
         message: access.reason || 'Learning is currently unavailable.',
@@ -64,6 +110,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         },
       });
     }
+    policyDecisions.push('learning_access:allow');
 
     const gradeResult = await getLearningPhase1Service().gradeAttempt({
       childId,
@@ -81,6 +128,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!gradeResult.correct && hintsAvailable > 0) {
       hintLevel = Math.min(attemptNumber - 1, hintsAvailable - 1);
       hint = hintSet[hintLevel];
+    }
+
+    // Capture misconception for later targeted review (Phase 3).
+    if (!gradeResult.correct && gradeResult.contentItem.answerKey) {
+      const correctAnswer = gradeResult.contentItem.answerKey.kind === 'number'
+        ? String(gradeResult.contentItem.answerKey.value)
+        : String(gradeResult.contentItem.answerKey.value);
+      captureMisconception({
+        childId,
+        skillCode: gradeResult.contentItem.skillCode,
+        incorrectResponse: gradeResult.normalizedResponse,
+        correctApproach: correctAnswer,
+      });
     }
 
     const notEligible: MasteryWriteStatus = {
@@ -122,6 +182,67 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       await recordLearningUsage(dbPool, userId, 1);
     }
 
+    const harnessEvents: HarnessPipelineEventInput[] = [
+      {
+        domain: harnessRequest.domain,
+        type: HARNESS_EVENT_TYPES.ATTEMPT_SUBMITTED,
+        userId: harnessRequest.userId,
+        payload: {
+          requestId: harnessRequest.requestId,
+          attemptId: gradeResult.attemptId,
+          childId,
+          contentItemId,
+          skillCode: gradeResult.contentItem.skillCode,
+          correct: gradeResult.correct,
+          score: gradeResult.score,
+          masteryEligible: gradeResult.masteryEligible,
+        },
+      },
+    ];
+
+    if (gradeResult.masteryEligible) {
+      harnessEvents.push({
+        domain: harnessRequest.domain,
+        type: HARNESS_EVENT_TYPES.MASTERY_UPDATED,
+        userId: harnessRequest.userId,
+        payload: {
+          requestId: harnessRequest.requestId,
+          attemptId: gradeResult.attemptId,
+          childId,
+          skillCode: gradeResult.contentItem.skillCode,
+          correct: gradeResult.correct,
+          score: gradeResult.score,
+          postgres: postgresResult.status,
+          kidsPcg: pcgResult.status,
+        },
+      });
+    }
+
+    const { response: harnessResponse } = await runHarnessPipeline({
+      request: harnessRequest,
+      startedAt,
+      policyDecisions,
+      safetyInputResult: 'pass',
+      safetyOutputResult: 'pass',
+      status: 'success',
+      content: {
+        correct: gradeResult.correct,
+        score: gradeResult.score,
+        feedback: gradeResult.feedback,
+      },
+      source: LEARN_ATTEMPT_SOURCE,
+      model: LEARN_ATTEMPT_MODEL,
+      contract: LEARN_ATTEMPT_CONTRACT,
+      evaluation: {
+        correct: gradeResult.correct,
+        score: gradeResult.score,
+        feedback: gradeResult.feedback,
+        method: gradeResult.rubricResult ? 'rubric' : 'deterministic',
+      },
+      events: harnessEvents,
+      eventWarnPrefix: '[api/learn/attempt] harness event emission failed:',
+    });
+
     return res.status(200).json({
       attemptId: gradeResult.attemptId,
       contentItemId: gradeResult.contentItem.id,
@@ -132,6 +253,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       hint,
       hintLevel,
       hintsAvailable,
+      rubricResult: gradeResult.rubricResult,
       mastery: {
         eligible: gradeResult.masteryEligible,
         postgres: postgresResult,
@@ -145,6 +267,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             limitReached: access.currentUsageMinutes + 1 >= access.dailyLimitMinutes,
           }
         : null,
+      harness: toApiHarnessMetadata(harnessResponse),
     });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('Unknown content item:')) {

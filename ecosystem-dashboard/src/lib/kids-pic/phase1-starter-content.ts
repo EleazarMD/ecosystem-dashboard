@@ -1,6 +1,6 @@
 export type LearnAgeBand = 'early' | 'middle' | 'tween';
 
-export type LearnContentType = 'problem' | 'question';
+export type LearnContentType = 'problem' | 'question' | 'writing' | 'reasoning';
 
 export type LearnReviewStatus = 'draft' | 'approved' | 'retired';
 
@@ -17,7 +17,7 @@ export interface DeterministicAnswerKey {
 export interface LearnContentItem {
   id: string;
   version: number;
-  subject: 'math' | 'reading';
+  subject: 'math' | 'reading' | 'writing' | 'analytical';
   skillCode: string;
   analyticalTags: string[];
   type: LearnContentType;
@@ -26,8 +26,12 @@ export interface LearnContentItem {
   maxGrade: string;
   difficulty: number;
   prompt: string;
-  answerKey: DeterministicAnswerKey;
+  answerKey?: DeterministicAnswerKey;
   hintSet: string[];
+  /** For writing/reasoning items: rubric criteria or expected reasoning steps. */
+  rubricCriteria?: string[];
+  /** Expected reasoning steps for reasoning activities (for AI evaluation). */
+  expectedReasoning?: string[];
   provenance: 'authored' | 'ai_generated';
   reviewStatus: LearnReviewStatus;
   safetyStatus: LearnSafetyStatus;
@@ -142,6 +146,121 @@ export const PHASE1_STARTER_CONTENT: LearnContentItem[] = [
     hintSet: [
       'Think about how the word changes when "un-" is added.',
       'happy becomes unhappy. finished becomes unfinished.',
+    ],
+    provenance: 'ai_generated',
+    reviewStatus: 'approved',
+    safetyStatus: 'passed',
+    lowStakesOnly: false,
+  },
+  {
+    id: 'phase3.writing.describe_favorite.v1',
+    version: 1,
+    subject: 'writing',
+    skillCode: 'writing.narrative.describe',
+    analyticalTags: ['analytical.infer_evidence'],
+    type: 'writing',
+    ageBand: 'middle',
+    minGrade: '2',
+    maxGrade: '4',
+    difficulty: 2,
+    prompt:
+      'Write a short paragraph (4-6 sentences) describing your favorite place to go. Use describing words so the reader can picture it.',
+    hintSet: [
+      'Start with a topic sentence: "My favorite place is..."',
+      'Add what you see, hear, or feel there.',
+      'Use at least two describing words (adjectives).',
+    ],
+    rubricCriteria: [
+      'Clear topic sentence about the favorite place',
+      'At least 2 descriptive adjectives',
+      'Complete sentences with capital letters and end marks',
+      'Stays on topic throughout',
+    ],
+    provenance: 'ai_generated',
+    reviewStatus: 'approved',
+    safetyStatus: 'passed',
+    lowStakesOnly: false,
+  },
+  {
+    id: 'phase3.writing.opinion_why.v1',
+    version: 1,
+    subject: 'writing',
+    skillCode: 'writing.opinion.reasons',
+    analyticalTags: ['analytical.cause_effect'],
+    type: 'writing',
+    ageBand: 'tween',
+    minGrade: '4',
+    maxGrade: '5',
+    difficulty: 3,
+    prompt:
+      'Should kids have homework every night? Write 5-8 sentences stating your opinion and give at least two reasons to support it.',
+    hintSet: [
+      'Start with your opinion: "I think kids should/should not have homework because..."',
+      'Give your first reason with an example.',
+      'Give a second reason with an example.',
+      'End with a sentence that wraps up your argument.',
+    ],
+    rubricCriteria: [
+      'Clear opinion statement in the first sentence',
+      'At least two distinct reasons with support',
+      'Logical organization with transitions',
+      'Varied sentence structure and word choice',
+    ],
+    provenance: 'ai_generated',
+    reviewStatus: 'approved',
+    safetyStatus: 'passed',
+    lowStakesOnly: false,
+  },
+  {
+    id: 'phase3.analytical.inference_picture.v1',
+    version: 1,
+    subject: 'analytical',
+    skillCode: 'analytical.infer_evidence',
+    analyticalTags: ['analytical.infer_evidence'],
+    type: 'reasoning',
+    ageBand: 'middle',
+    minGrade: '2',
+    maxGrade: '4',
+    difficulty: 2,
+    prompt:
+      'Sam saw muddy footprints leading from the garden to the back door. The dog was sleeping inside. What do you think happened? Explain your reasoning.',
+    hintSet: [
+      'What do the muddy footprints tell you?',
+      'Who could have made the footprints?',
+      'How do you know it was not the dog?',
+    ],
+    expectedReasoning: [
+      'Identify that footprints indicate someone walked from garden to door',
+      'Rule out the dog because it was sleeping inside',
+      'Conclude a person (family member or visitor) walked in from the garden',
+    ],
+    provenance: 'ai_generated',
+    reviewStatus: 'approved',
+    safetyStatus: 'passed',
+    lowStakesOnly: false,
+  },
+  {
+    id: 'phase3.analytical.patterns_number.v1',
+    version: 1,
+    subject: 'analytical',
+    skillCode: 'analytical.patterns',
+    analyticalTags: ['analytical.patterns'],
+    type: 'reasoning',
+    ageBand: 'tween',
+    minGrade: '4',
+    maxGrade: '5',
+    difficulty: 3,
+    prompt:
+      'Look at this pattern: 2, 6, 18, 54, ... What are the next two numbers? Explain the rule you found.',
+    hintSet: [
+      'Look at how each number relates to the one before it.',
+      'Try multiplying: 2 x 3 = 6. Does the same rule work for 6 to 18?',
+      'Apply the rule to 54 to find the next number.',
+    ],
+    expectedReasoning: [
+      'Identify the multiplicative rule (x3)',
+      'Verify the rule across all given terms',
+      'Apply the rule to get 162 and 486',
     ],
     provenance: 'ai_generated',
     reviewStatus: 'approved',

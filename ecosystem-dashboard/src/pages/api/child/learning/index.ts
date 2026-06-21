@@ -1,7 +1,7 @@
 /**
  * Child Learning API
  * 
- * Endpoints for managing child's Personal Interest Catalog (PIC),
+ * Endpoints for managing child's Personal Context Graph (PCG),
  * Knowledge Base, and learning progress.
  */
 

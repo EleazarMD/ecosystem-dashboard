@@ -1,7 +1,7 @@
 /**
  * Atlas Trigger API
  * 
- * Triggers the Atlas insight generation script to analyze PIC data
+ * Triggers the Atlas insight generation script to analyze PCG data
  * and generate new insights on demand.
  */
 

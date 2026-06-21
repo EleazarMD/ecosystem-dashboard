@@ -76,14 +76,18 @@ export function CustomNotionEditor({
   initialCoverType = 'image',
   readOnly = false,
 }: CustomNotionEditorProps) {
-  const [blockModel] = useState(() => new BlockModel(initialBlocks));
+  const [blockModel, setBlockModel] = useState(() => new BlockModel(initialBlocks));
 
-  // Expose blockModel via ref
+  // Reset block model and blocks when pageId changes (page navigation)
   useEffect(() => {
+    const newModel = new BlockModel(initialBlocks);
+    setBlockModel(newModel);
+    setBlocks(newModel.getAllBlocks());
     if (blockModelRef) {
-      blockModelRef.current = blockModel;
+      blockModelRef.current = newModel;
     }
-  }, [blockModel, blockModelRef]);
+  }, [pageId, blockModelRef]);
+
   const [dragManager] = useState(() => new DragDropManager());
   const [blocks, setBlocks] = useState<Block[]>(initialBlocks);
   const [title, setTitle] = useState(initialTitle);

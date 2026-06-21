@@ -97,7 +97,7 @@ interface InferenceTrafficProps {
 
 const getClientColor = (clientName: string): string => {
   if (clientName.includes('Hermes')) return 'purple';
-  if (clientName.includes('PIC')) return 'blue';
+  if (clientName.includes('PCG')) return 'blue';
   if (clientName.includes('OpenClaw')) return 'green';
   if (clientName.includes('Clinical')) return 'red';
   if (clientName.includes('Child')) return 'pink';

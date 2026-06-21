@@ -341,13 +341,13 @@ async function seedKidsPCG(): Promise<void> {
       continue;
     }
 
-    await pcgPut('/api/pic/identity', ownerId, {
+    await pcgPut('/api/pcg/identity', ownerId, {
       name: child.name,
       age_band: child.ageBand,
       grade: child.grade,
     });
 
-    await pcgPost('/api/pic/readiness-targets', ownerId, {
+    await pcgPost('/api/pcg/readiness-targets', ownerId, {
       target_code: child.readinessTargetCode,
       title: child.readinessTargetTitle,
       description: child.readinessDescription,

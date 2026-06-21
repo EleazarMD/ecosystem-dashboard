@@ -139,7 +139,7 @@ interface ExtractedEvent {
   confidence: number;
 }
 
-interface PICContext {
+interface PCGContext {
   identity?: {
     name: string;
     role?: string;
@@ -400,7 +400,7 @@ export default function EmailIntelligencePage() {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [draftSuggestions, setDraftSuggestions] = useState<DraftSuggestion[]>([]);
   const [extractedEvents, setExtractedEvents] = useState<ExtractedEvent[]>([]);
-  const [picContext, setPicContext] = useState<PICContext | null>(null);
+  const [pcgContext, setPcgContext] = useState<PCGContext | null>(null);
   const [hubLoading, setHubLoading] = useState(false);
   const [sendingDraft, setSendingDraft] = useState<string | null>(null);
   const [creatingEvent, setCreatingEvent] = useState<string | null>(null);
@@ -551,7 +551,7 @@ export default function EmailIntelligencePage() {
         fetch('/api/hermes-proxy?path=v1/intelligence/hub/draft-suggestions&limit=3'),
         fetch('/api/hermes-proxy?path=v1/intelligence/hub/extracted-events&period_hours=168'),
         fetch('/api/hermes-proxy?path=v1/intelligence/mining-recommendations'),
-        fetch('/api/pic/context', {
+        fetch('/api/pcg/context', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -590,7 +590,7 @@ export default function EmailIntelligencePage() {
 
       if (picRes && picRes.ok) {
         const data = await picRes.json();
-        setPicContext(data);
+        setPcgContext(data);
       }
     } catch (error) {
       console.error('Failed to fetch intelligence hub:', error);

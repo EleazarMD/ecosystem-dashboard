@@ -9,4 +9,4 @@ export { ApprovalQueue } from './ApprovalQueue';
 export { ApprovalSettings } from './ApprovalSettings';
 export { ApprovalBadge } from './ApprovalBadge';
 export { ChildApprovalQueue } from './ChildApprovalQueue';
-export { PICApprovalQueue } from './PICApprovalQueue';
+export { PCGApprovalQueue } from './PCGApprovalQueue';

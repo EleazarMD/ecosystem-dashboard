@@ -616,7 +616,7 @@ export default function TeslaDashboard() {
   const devSpeechRef = useRef<any>(null);
   const { colorMode, setColorMode } = useColorMode();
   const { data: _novaSession } = useSession();
-  // Single source of truth: authenticated PIC UUID (no more 'eleazar' / 'default' aliases)
+  // Single source of truth: authenticated PCG UUID (no more 'eleazar' / 'default' aliases)
   const novaUserId = _novaSession?.user?.id ?? 'dfd9379f-a9cd-4241-99e7-140f5e89e3cd';
   useEffect(() => { if (colorMode !== 'dark') setColorMode('dark'); }, [colorMode, setColorMode]);
   const { isOpen: isEmailOpen, onOpen: onEmailOpen, onClose: onEmailClose } = useDisclosure();

@@ -29,7 +29,7 @@ import {
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { GlassPanel } from '@/components/ui/GlassPanel';
 
-const PIC_API = '/api/pic';
+const PCG_API = '/api/pcg';
 
 const PersonalContextDashboard = () => {
   const [identity, setIdentity] = useState(null);
@@ -59,24 +59,24 @@ const PersonalContextDashboard = () => {
   const loadContextData = async () => {
     setLoading(true);
     try {
-      // Fetch identity from PIC (via proxy)
-      const identityRes = await fetch(`${PIC_API}/identity`);
+      // Fetch identity from PCG (via proxy)
+      const identityRes = await fetch(`${PCG_API}/identity`);
       if (!identityRes.ok) {
         throw new Error(`Failed to fetch identity: ${identityRes.statusText}`);
       }
       const identityData = await identityRes.json();
       setIdentity(identityData.identity);
       
-      // Fetch preferences from PIC (via proxy)
-      const prefsRes = await fetch(`${PIC_API}/preferences`);
+      // Fetch preferences from PCG (via proxy)
+      const prefsRes = await fetch(`${PCG_API}/preferences`);
       if (!prefsRes.ok) {
         throw new Error(`Failed to fetch preferences: ${prefsRes.statusText}`);
       }
       const prefsData = await prefsRes.json();
       setPreferences(prefsData.preferences || []);
       
-      // Fetch observations from PIC (via proxy)
-      const obsRes = await fetch(`${PIC_API}/learn/observations?processed=false&limit=100`);
+      // Fetch observations from PCG (via proxy)
+      const obsRes = await fetch(`${PCG_API}/learn/observations?processed=false&limit=100`);
       if (!obsRes.ok) {
         throw new Error(`Failed to fetch observations: ${obsRes.statusText}`);
       }
@@ -104,7 +104,7 @@ const PersonalContextDashboard = () => {
       });
       
     } catch (error) {
-      console.error('Failed to load PIC data:', error);
+      console.error('Failed to load PCG data:', error);
       toast({
         title: 'Failed to load context',
         description: error.message,
@@ -132,7 +132,7 @@ const PersonalContextDashboard = () => {
 
   const handleSaveEdit = async (obsId) => {
     try {
-      const response = await fetch(`${PIC_API}/learn/observations/${obsId}`, {
+      const response = await fetch(`${PCG_API}/learn/observations/${obsId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -303,7 +303,7 @@ const IdentityPanel = ({ identity, onUpdate }) => {
 
   const handleSave = async () => {
     try {
-      const response = await fetch(`${PIC_API}/identity`, {
+      const response = await fetch(`${PCG_API}/identity`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
@@ -448,7 +448,7 @@ const PreferencesPanel = ({ preferences, onUpdate }) => {
 
   const handleDelete = async (prefId) => {
     try {
-      const response = await fetch(`${PIC_API}/preferences/${prefId}`, {
+      const response = await fetch(`${PCG_API}/preferences/${prefId}`, {
         method: 'DELETE',
       });
       
@@ -559,7 +559,7 @@ const ObservationsPanel = ({
 
   const handleApprove = async (obsId) => {
     try {
-      const response = await fetch(`${PIC_API}/learn/observations/${obsId}/process`, {
+      const response = await fetch(`${PCG_API}/learn/observations/${obsId}/process`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -591,7 +591,7 @@ const ObservationsPanel = ({
 
   const handleReject = async (obsId) => {
     try {
-      const response = await fetch(`${PIC_API}/learn/observations/${obsId}/process`, {
+      const response = await fetch(`${PCG_API}/learn/observations/${obsId}/process`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

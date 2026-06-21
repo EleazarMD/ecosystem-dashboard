@@ -5,7 +5,7 @@
  * 1. Loads assigned recipe with character persona
  * 2. Uses personalization context (interests, achievements)
  * 3. Filters all input/output through content filter
- * 4. Updates Personal Interest Catalog from conversations
+ * 4. Updates Personal Context Graph from conversations
  * 5. Tracks achievements and learning progress
  * 6. Routes through AI Gateway
  */
@@ -773,7 +773,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         if (config.recipe?.characterName) {
           const characterKey = config.recipe.characterName.toLowerCase().replace(/[^a-z]/g, '');
-          const defaultChar = DEFAULT_CHARACTERS[characterKey] || {};
+          const defaultCharacters = DEFAULT_CHARACTERS as Record<string, {
+            emoji?: string;
+            personality?: string;
+            greetings?: string[];
+          }>;
+          const defaultChar = defaultCharacters[characterKey] || {};
           character = {
             ...defaultChar,
             name: config.recipe.characterName,
@@ -1173,7 +1178,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ).catch(err => console.error('[Child GooseMind] A/B event logging error:', err));
       }
       
-      // Post-processing: Update PIC and track learning
+      // Post-processing: Update PCG and track learning
       try {
         // Analyze message for interests
         await analyzeAndUpdateInterests(context.userId, message, cleanResponse);

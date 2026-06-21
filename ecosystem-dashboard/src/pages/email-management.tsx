@@ -1,6 +1,6 @@
 /**
  * Email Management Dashboard
- * UI for managing emails with PIC context, Hermes intelligence, and approval workflows
+ * UI for managing emails with PCG context, Hermes intelligence, and approval workflows
  */
 
 import { useState, useEffect } from 'react';
@@ -65,7 +65,7 @@ interface Draft {
   subject: string;
   body: string;
   created_at: string;
-  pic_context_used: boolean;
+  pcg_context_used?: boolean;
 }
 
 export default function EmailManagement() {
@@ -158,14 +158,14 @@ export default function EmailManagement() {
         recipient: draftForm.recipient,
         subject: draftForm.subject,
         tone: draftForm.tone,
-        include_pic_context: true
+        include_pcg_context: true
       }, {
         headers: { 'X-Internal-Service-Key': process.env.NEXT_PUBLIC_INTERNAL_SERVICE_KEY }
       });
 
       toast({
         title: 'Draft created',
-        description: 'Email draft created with PIC context',
+        description: 'Email draft created with PCG context',
         status: 'success',
         duration: 3000
       });
@@ -356,7 +356,7 @@ export default function EmailManagement() {
                     <Th>To</Th>
                     <Th>Subject</Th>
                     <Th>Created</Th>
-                    <Th>PIC Context</Th>
+                    <Th>PCG Context</Th>
                     <Th>Actions</Th>
                   </Tr>
                 </Thead>
@@ -367,8 +367,8 @@ export default function EmailManagement() {
                       <Td>{draft.subject}</Td>
                       <Td>{new Date(draft.created_at).toLocaleDateString()}</Td>
                       <Td>
-                        <Badge colorScheme={draft.pic_context_used ? 'green' : 'gray'}>
-                          {draft.pic_context_used ? 'Yes' : 'No'}
+                        <Badge colorScheme={(draft.pcg_context_used ?? false) ? 'green' : 'gray'}>
+                          {(draft.pcg_context_used ?? false) ? 'Yes' : 'No'}
                         </Badge>
                       </Td>
                       <Td>
@@ -429,7 +429,7 @@ export default function EmailManagement() {
               </FormControl>
 
               <Text fontSize="sm" color="gray.600">
-                Draft will be generated with PIC context (relationship data, communication preferences)
+                Draft will be generated with PCG context (relationship data, communication preferences)
               </Text>
             </VStack>
           </ModalBody>

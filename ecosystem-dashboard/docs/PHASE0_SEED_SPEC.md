@@ -26,7 +26,7 @@ Per L1, **skill_id is the single shared namespace** across both stores.
 
 "Readiness" = mastered the grade **below** the target, i.e. ready to *enter* it.
 
-| Child | Age | Target | Meaning | Age band | `grade` (PIC) | Current level |
+| Child | Age | Target | Meaning | Age band | `grade` (PCG) | Current level |
 |-------|-----|--------|---------|----------|---------------|----------------|
 | **Luca** | turning **8** | **Grade 3 readiness** | Master end-of-Grade-2 skills | `middle` | `"3"` (entering) | set by diagnostic |
 | **Sofia** | **10** | **Grade 5 readiness** | Master end-of-Grade-4 skills | `tween` | `"5"` (entering) | set by diagnostic |
@@ -62,7 +62,7 @@ Grade-2 band; Sofia's at the Grade-4 band. No per-child graphs.
 - Prerequisites reference other `skill_id`s exactly.
 
 Band tags used below: `early` (≈K–1), `middle` (≈2–4), `tween` (≈5–7). These align
-with PIC `age_band`. Grade ranges (`min_grade`/`max_grade`) give finer placement.
+with PCG `age_band`. Grade ranges (`min_grade`/`max_grade`) give finer placement.
 
 ---
 
@@ -203,14 +203,14 @@ For codex — described, not code:
    analytical) and `skills` (with `min_grade`, `max_grade`, `skill_level`,
    `assessment_type`, `mastery_threshold`, `sort_order`). Key on `code` = `skill_id`.
 3. **Readiness targets:** persist Luca's and Sofia's frontier sets (§7) as data
-   (new lightweight table or PIC goal records) so the planner can prioritize them.
-4. **PIC identities:** ensure each child's PIC `identity` has `age_band` + `grade`
+   (new lightweight table or PCG goal records) so the planner can prioritize them.
+4. **PCG identities:** ensure each child's PCG `identity` has `age_band` + `grade`
    per §2 (set `reading_level` from the Phase-1 diagnostic, not assumed).
 5. **Verify:** `GET /next-objectives?subject=math` and `?subject=reading` for each
    child returns frontier-aligned skills with prerequisites satisfied.
 
 Seeding order: domains → skills (parents before children via `skill_level`) →
-prerequisite edges → readiness targets → PIC identities.
+prerequisite edges → readiness targets → PCG identities.
 
 ### 8.1 Implemented seed entrypoint (current repo)
 
@@ -300,7 +300,7 @@ difficulty, and (for closed items) an answer key + accepted forms.
 
 - All §4–6 skills exist in kids-pcg with correct `:REQUIRES` edges (no dupes on
   re-seed) and mirrored in Postgres `skills`/`skill_domains`.
-- Luca and Sofia have PIC identities with correct band/grade and stored readiness
+- Luca and Sofia have PCG identities with correct band/grade and stored readiness
   targets (§7).
 - `GET /next-objectives` returns frontier-aligned, prerequisite-satisfied skills for
   each child in both subjects.

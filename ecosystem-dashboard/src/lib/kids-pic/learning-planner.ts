@@ -22,6 +22,8 @@ export interface PlannerObjective {
   currentScore: number;
   proficiencyLevel: string;
   kind: 'review' | 'practice';
+  /** True when this objective comes from a parent assignment (mandated, graded). */
+  isAssignment?: boolean;
 }
 
 /** Minimum competence for a skill to be eligible as a spaced-review warm-up. */
@@ -90,12 +92,17 @@ function synthesizeObjective(skillCode: string): PlannerObjective {
  * Lowest-scoring skills first (most in need of practice), tie-broken by fewest
  * assessments, then least-recently assessed.
  */
-export function selectLowestScoreObjectives(summary: ChildSkillSummary, limit: number): PlannerObjective[] {
+export function selectLowestScoreObjectives(
+  summary: ChildSkillSummary,
+  limit: number,
+  excludeSkillCodes: Iterable<string> = [],
+): PlannerObjective[] {
   if (limit <= 0) {
     return [];
   }
 
-  const skills = flattenSkills(summary);
+  const exclude = new Set(excludeSkillCodes);
+  const skills = flattenSkills(summary).filter((entry) => !exclude.has(entry.skill.skillCode));
   skills.sort((a, b) => {
     if (a.skill.currentScore !== b.skill.currentScore) {
       return a.skill.currentScore - b.skill.currentScore;
@@ -146,73 +153,112 @@ export function selectReviewWarmUp(
   return toObjective(candidates[0], 'review');
 }
 
-/**
- * Compose the ordered objective list for a plan: a spaced-review warm-up (if one is
- * available) followed by the lowest-score focus objectives, de-duplicated and capped
- * to `limit` total activities. Returns focus-only on cold start (no warm-up yet).
- */
-export function composePlannedObjectives(summary: ChildSkillSummary, limit: number): PlannerObjective[] {
-  if (limit <= 0) {
-    return [];
-  }
-
-  const focus = selectLowestScoreObjectives(summary, limit);
-  const warmUp = selectReviewWarmUp(summary, focus.map((objective) => objective.skillCode));
-
-  if (!warmUp) {
-    return focus;
-  }
-
-  // Warm-up takes the first slot; trim focus so the total respects `limit`.
-  return [warmUp, ...focus].slice(0, limit);
-}
-
-/**
- * Compose a plan whose focus objectives follow kids-pcg's prerequisite-aware
- * `next-objectives` sequence (skills not yet mastered whose prerequisites ARE
- * mastered) rather than raw lowest-score ordering. A spaced-review warm-up (derived
- * from Postgres history) still leads when available. Skill codes not present in the
- * Postgres summary are kept as minimal objectives so freshly-unlocked skills can be
- * planned. Falls back to score-based composition when no usable codes are supplied.
- */
-export function composePlanWithNextObjectives(
-  summary: ChildSkillSummary | null,
-  nextObjectiveSkillCodes: string[],
+function orderedObjectivesFromCodes(
+  byCode: Map<string, FlatSkill>,
+  codes: string[],
+  isAssignment: boolean,
+  seen: Set<string>,
   limit: number,
 ): PlannerObjective[] {
+  const out: PlannerObjective[] = [];
   if (limit <= 0) {
-    return [];
+    return out;
   }
 
-  const byCode = summary ? indexSkills(summary) : new Map<string, FlatSkill>();
-  const seen = new Set<string>();
-  const focus: PlannerObjective[] = [];
-
-  for (const raw of nextObjectiveSkillCodes) {
+  for (const raw of codes) {
     const code = `${raw ?? ''}`.trim();
     if (!code || seen.has(code)) {
       continue;
     }
     seen.add(code);
     const found = byCode.get(code);
-    focus.push(found ? toObjective(found, 'practice') : synthesizeObjective(code));
-    if (focus.length >= limit) {
+    const objective = found ? toObjective(found, 'practice') : synthesizeObjective(code);
+    out.push(isAssignment ? { ...objective, isAssignment: true } : objective);
+    if (out.length >= limit) {
       break;
     }
   }
 
-  if (focus.length === 0) {
-    // No usable next-objectives -> defer to score-based composition.
-    return summary ? composePlannedObjectives(summary, limit) : [];
+  return out;
+}
+
+export interface ComposePlanInput {
+  summary: ChildSkillSummary | null;
+  /** Parent-assigned skill codes (mandated). Lead the plan and are tagged. */
+  assignmentSkillCodes?: string[];
+  /** kids-pcg prerequisite-aware sequence; when empty, focus is score-based. */
+  nextObjectiveSkillCodes?: string[];
+  limit: number;
+}
+
+/**
+ * Single composition entry point for "Today's Plan" (roadmap 9.1/9.2). Inclusion
+ * priority is assignments > warm-up > focus; display order is warm-up, then
+ * assignments, then focus. Focus follows kids-pcg's prerequisite-aware next-objectives
+ * when supplied, otherwise the lowest-score skills. The spaced-review warm-up is
+ * derived from Postgres history and never displaces a parent assignment. Skill codes
+ * absent from the Postgres summary are kept as minimal objectives so freshly-unlocked
+ * or assigned skills can still be planned.
+ */
+export function composePlan(input: ComposePlanInput): PlannerObjective[] {
+  const { summary, limit } = input;
+  if (limit <= 0) {
+    return [];
   }
 
-  const warmUp = summary
-    ? selectReviewWarmUp(summary, focus.map((objective) => objective.skillCode))
-    : null;
+  const byCode = summary ? indexSkills(summary) : new Map<string, FlatSkill>();
+  const seen = new Set<string>();
 
-  if (!warmUp) {
-    return focus.slice(0, limit);
+  // 1) Parent assignments lead and may fill the whole plan if numerous.
+  const assignments = orderedObjectivesFromCodes(byCode, input.assignmentSkillCodes ?? [], true, seen, limit);
+
+  // 2) Focus: prereq-aware next-objectives when supplied, else score-based lowest,
+  //    always excluding anything already chosen as an assignment.
+  const focusLimit = limit - assignments.length;
+  let focus: PlannerObjective[] = [];
+  if (focusLimit > 0) {
+    const nextCodes = (input.nextObjectiveSkillCodes ?? [])
+      .map((code) => `${code ?? ''}`.trim())
+      .filter((code) => code.length > 0);
+
+    if (nextCodes.length > 0) {
+      focus = orderedObjectivesFromCodes(byCode, nextCodes, false, seen, focusLimit);
+    } else if (summary) {
+      focus = selectLowestScoreObjectives(summary, focusLimit, seen);
+      for (const objective of focus) {
+        seen.add(objective.skillCode);
+      }
+    }
   }
 
-  return [warmUp, ...focus].slice(0, limit);
+  // 3) Spaced-review warm-up opens the session; it outranks the last focus item but
+  //    only fills a slot left over after assignments (never displaces an assignment).
+  const warmUp = summary ? selectReviewWarmUp(summary, seen) : null;
+  const remaining = limit - assignments.length;
+  const includeWarmUp = !!warmUp && remaining > 0;
+  const focusKept = focus.slice(0, Math.max(0, remaining - (includeWarmUp ? 1 : 0)));
+  const lead = includeWarmUp && warmUp ? [warmUp] : [];
+
+  return [...lead, ...assignments, ...focusKept].slice(0, limit);
+}
+
+/**
+ * Compose a plan as a spaced-review warm-up followed by lowest-score focus objectives.
+ * Thin wrapper over composePlan (score-based focus, no assignments).
+ */
+export function composePlannedObjectives(summary: ChildSkillSummary, limit: number): PlannerObjective[] {
+  return composePlan({ summary, limit });
+}
+
+/**
+ * Compose a plan whose focus objectives follow kids-pcg's prerequisite-aware
+ * `next-objectives` sequence, with a spaced-review warm-up leading when available.
+ * Thin wrapper over composePlan; falls back to score-based focus when no codes are supplied.
+ */
+export function composePlanWithNextObjectives(
+  summary: ChildSkillSummary | null,
+  nextObjectiveSkillCodes: string[],
+  limit: number,
+): PlannerObjective[] {
+  return composePlan({ summary, nextObjectiveSkillCodes, limit });
 }

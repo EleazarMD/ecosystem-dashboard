@@ -2,8 +2,8 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth';
 
 import { authOptions } from '../auth/[...nextauth]';
-import { getLearningSessionService, type CreateLearningSessionInput, type LearningSessionStatus } from '@/lib/kids-pic/LearningSessionService';
-import { getLearningAccessState } from '@/lib/kids-pic/learning-access';
+import { getLearningSessionService, type CreateLearningSessionInput, type LearningSessionStatus } from '@/domains/learning/processes/session-loop';
+import { getLearningAccessState } from '@/domains/learning/features/access-control';
 import dbPool from '@/lib/db/client';
 import { readUserId } from './attempt';
 

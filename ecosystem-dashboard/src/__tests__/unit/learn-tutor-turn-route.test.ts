@@ -12,6 +12,14 @@ jest.mock('@/lib/kids-pic/AIChildSafetyMonitor', () => ({
   getAIChildSafetyMonitor: jest.fn(),
 }));
 
+jest.mock('@/lib/kids-pic/KidsPCGService', () => ({
+  getKidsPCGService: jest.fn(),
+}));
+
+jest.mock('@/lib/platform/child-service-middleware', () => ({
+  getChildServiceContext: jest.fn(),
+}));
+
 jest.mock('@/lib/platform/content-filter-service', () => ({
   filterChildContent: jest.fn(),
   logChildActivity: jest.fn(),
@@ -23,11 +31,16 @@ jest.mock('@/lib/kids-pic/learning-access', () => ({
 }));
 
 import { getServerSession } from 'next-auth';
-import { getLearningPhase1Service } from '@/lib/kids-pic/LearningPhase1Service';
-import { getAIChildSafetyMonitor } from '@/lib/kids-pic/AIChildSafetyMonitor';
+import { getLearningPhase1Service } from '@/domains/learning/features/attempt-grading';
+import { getAIChildSafetyMonitor } from '@/domains/learning/features/safety-monitor';
+import { getKidsPCGService } from '@/domains/learning/entities/child-pcg';
 import { filterChildContent, logChildActivity } from '@/lib/platform/content-filter-service';
-import { getLearningAccessState } from '@/lib/kids-pic/learning-access';
-import handler from '../../pages/api/learn/tutor/turn';
+import { getChildServiceContext } from '@/lib/platform/child-service-middleware';
+import { getLearningAccessState } from '@/domains/learning/features/access-control';
+import handler, {
+  LEARN_TUTOR_CONTRACT,
+  LEARN_TUTOR_MODEL,
+} from '../../pages/api/learn/tutor/turn';
 
 type MockState = {
   statusCode: number;
@@ -80,12 +93,16 @@ describe('POST /api/learn/tutor/turn', () => {
   const mockGetServerSession = getServerSession as jest.Mock;
   const mockGetLearningPhase1Service = getLearningPhase1Service as jest.Mock;
   const mockGetAIChildSafetyMonitor = getAIChildSafetyMonitor as jest.Mock;
+  const mockGetKidsPCGService = getKidsPCGService as jest.Mock;
+  const mockGetChildServiceContext = getChildServiceContext as jest.Mock;
   const mockGetLearningAccessState = getLearningAccessState as jest.Mock;
   const mockFilterChildContent = filterChildContent as jest.Mock;
   const mockLogChildActivity = logChildActivity as jest.Mock;
 
   const mockGetContentById = jest.fn();
   const mockAnalyzeMessage = jest.fn();
+  const mockGetOrCreateProfile = jest.fn();
+  const mockFetch = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -97,6 +114,44 @@ describe('POST /api/learn/tutor/turn', () => {
     mockGetLearningPhase1Service.mockReturnValue({
       getContentById: mockGetContentById,
     });
+
+    mockGetKidsPCGService.mockReturnValue({
+      getOrCreateProfile: mockGetOrCreateProfile,
+    });
+
+    mockGetOrCreateProfile.mockResolvedValue({
+      id: 'child-profile-1',
+      displayName: 'Luca',
+      ageGroup: 'middle',
+      interests: ['math', 'minecraft'],
+      currentGoals: [{ title: 'Practice multiplication' }],
+    });
+
+    mockGetChildServiceContext.mockResolvedValue({
+      userId: 'child-auth-user',
+      childName: 'Luca',
+      accountType: 'child',
+      parentalControls: {
+        logAllConversations: true,
+      },
+      safetySystemPrompt: 'Child-safe prompt',
+      remainingMinutes: 120,
+    });
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: 'Nice effort! Hint 2 of 3: Now count on 5 more from that starting number.',
+            },
+          },
+        ],
+      }),
+    });
+
+    (global as any).fetch = mockFetch;
 
     mockGetContentById.mockResolvedValue({
       id: 'phase1.math.word_1step.v1',
@@ -157,7 +212,7 @@ describe('POST /api/learn/tutor/turn', () => {
     expect(state.body).toEqual({ error: 'message is required' });
   });
 
-  it('returns deterministic hint guidance for the given attempt number', async () => {
+  it('returns AI gateway tutor guidance for the given attempt number', async () => {
     const { req, res, state } = createMockReqRes({
       body: {
         childId: 'child-1',
@@ -176,11 +231,47 @@ describe('POST /api/learn/tutor/turn', () => {
     expect(state.body.hintsAvailable).toBe(3);
     expect(state.body.tutorMessage).toContain('Hint 2 of 3:');
     expect(state.body.response).toBe(state.body.tutorMessage);
+    expect(state.body.source).toBe('ai_gateway_learn_tutor');
+    expect(state.body.model).toBe(LEARN_TUTOR_MODEL);
+    expect(state.body.contract).toBe(LEARN_TUTOR_CONTRACT);
+    expect(state.body.harness).toEqual(
+      expect.objectContaining({
+        requestId: expect.any(String),
+        status: 'success',
+        source: 'ai_gateway_learn_tutor',
+        channel: 'ai_gateway',
+        audit: expect.objectContaining({
+          auditId: expect.any(String),
+          agentId: 'learn_tutor',
+          model: LEARN_TUTOR_MODEL,
+          contract: LEARN_TUTOR_CONTRACT,
+          policyDecisions: expect.arrayContaining(['auth:allow', 'method:post', 'payload:valid']),
+          safetyInputResult: 'pass',
+          safetyOutputResult: 'pass',
+        }),
+      }),
+    );
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/chat/completions'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: expect.stringContaining('Bearer '),
+        }),
+      }),
+    );
+
+    const requestBody = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body || '{}'));
+    expect(requestBody.model).toBe(LEARN_TUTOR_MODEL);
+    expect(requestBody.contract).toBe(LEARN_TUTOR_CONTRACT);
+    expect(requestBody.metadata?.contract).toBe(LEARN_TUTOR_CONTRACT);
 
     expect(mockGetContentById).toHaveBeenCalledWith('phase1.math.word_1step.v1');
     expect(mockAnalyzeMessage).toHaveBeenCalledTimes(1);
     expect(mockLogChildActivity).toHaveBeenCalledWith(
-      'child-1',
+      'child-auth-user',
       'learn_tutor_turn',
       expect.objectContaining({
         conversationId: 'sess-123',

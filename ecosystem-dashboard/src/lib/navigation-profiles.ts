@@ -106,7 +106,7 @@ export const FEATURE_NAV_ITEMS: FeatureNavItem[] = [
         label: 'Personal Context',
         path: '/personal-context',
         icon: UserGroupIcon,
-        badge: 'PIC',
+        badge: 'PCG',
         badgeColorScheme: 'purple',
         requiredFeature: 'personal-context',
       },

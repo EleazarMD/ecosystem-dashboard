@@ -1,7 +1,7 @@
 /**
- * PIC/Context API Authentication
+ * PCG/Context API Authentication
  * 
- * Adds authentication layer to Knowledge Graph and PIC APIs
+ * Adds authentication layer to Knowledge Graph and PCG APIs
  * to ensure per-user data isolation.
  */
 
@@ -131,14 +131,14 @@ async function validateAPIKey(apiKey: string, userId: string): Promise<boolean> 
   
   // TODO: Check against database of valid API keys
   // For now, validate format and check environment variable
-  const validKeyHash = process.env.PIC_API_KEY_HASH;
+  const validKeyHash = process.env.PCG_API_KEY_HASH;
   
   if (validKeyHash && hashedKey === validKeyHash) {
     return true;
   }
   
   // Check if it's a user-specific key
-  const userKeyHash = process.env[`PIC_API_KEY_${userId.toUpperCase()}_HASH`];
+  const userKeyHash = process.env[`PCG_API_KEY_${userId.toUpperCase()}_HASH`];
   if (userKeyHash && hashedKey === userKeyHash) {
     return true;
   }

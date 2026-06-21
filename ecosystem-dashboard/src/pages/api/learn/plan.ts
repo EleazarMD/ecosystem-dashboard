@@ -1,19 +1,30 @@
+import { randomUUID } from 'crypto';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth';
 
 import { authOptions } from '../auth/[...nextauth]';
-import { getLearningPhase1Service } from '@/lib/kids-pic/LearningPhase1Service';
-import { SkillProgressService } from '@/lib/kids-pic/SkillProgressService';
-import { getLearningAccessState } from '@/lib/kids-pic/learning-access';
+import { getLearningPhase1Service } from '@/domains/learning/features/attempt-grading';
+import { SkillProgressService } from '@/domains/learning/entities/skill-graph';
+import { getLearningAccessState } from '@/domains/learning/features/access-control';
 import {
-  composePlannedObjectives,
-  composePlanWithNextObjectives,
+  composePlan,
   type PlannerObjective,
-} from '@/lib/kids-pic/learning-planner';
+} from '@/domains/learning/features/plan-generation';
+import type {
+  LearnPlanActivity,
+  LearnPlanSource,
+  LearnPlanSpacedReview,
+} from '@/domains/learning/shared/plan-types';
+import { getSkillsNeedingReview, markMisconceptionAddressed } from '@/domains/learning/features/misconception-tracker';
+import { buildReviewSchedule } from '@/domains/learning/processes/spaced-review';
 import dbPool from '@/lib/db/client';
+import { HARNESS_EVENT_TYPES } from '@/lib/harness/events/types';
+import { emitHarnessEventSafe, runHarnessPipeline, toApiHarnessMetadata } from '@/lib/harness/runtime/pipeline';
+import type { HarnessPipelineEventInput } from '@/lib/harness/runtime/pipeline';
+import type { HarnessAgentRequest } from '@/lib/harness/types';
 import { readUserId } from './attempt';
-import type { LearnAgeBand } from '@/lib/kids-pic/phase1-starter-content';
-import type { ChildSkillSummary } from '@/lib/kids-pic/SkillProgressService';
+import type { LearnAgeBand } from '@/domains/learning/shared/phase1-content';
+import type { ChildSkillSummary } from '@/domains/learning/entities/skill-graph';
 
 const skillProgressService = new SkillProgressService(dbPool);
 
@@ -24,16 +35,14 @@ const KIDS_PCG_READ_KEY = process.env.KIDS_PCG_READ_KEY || '';
 // OFF until an operator points it at the confirmed route (mirrors KIDS_PCG_EVIDENCE_PATH
 // in attempt.ts); when unset, planning is score-based.
 const KIDS_PCG_NEXT_OBJECTIVES_PATH = process.env.KIDS_PCG_NEXT_OBJECTIVES_PATH || '';
+const LEARN_PLAN_MODEL = 'deterministic_plan_engine';
+const LEARN_PLAN_CONTRACT = 'learn-plan-v1';
+const LEARN_PLAN_SOURCE = 'deterministic_learn_plan';
 
-interface PlanActivity {
+type PlanActivity = LearnPlanActivity & {
   type: 'practice';
   kind: 'review' | 'practice';
-  skillCode: string;
-  contentItemId: string;
-  title: string;
-  prompt: string;
-  difficulty: number;
-}
+};
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getServerSession(req, res, authOptions);
@@ -47,21 +56,58 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
+    const startedAt = Date.now();
+    const policyDecisions: string[] = ['auth:allow', 'method:get'];
+
     const childId = asSingleQuery(req.query.childId).trim();
     if (!childId) {
       return res.status(400).json({ error: 'childId is required' });
     }
+    policyDecisions.push('payload:valid');
+
+    const childUserId = readUserId(session);
+    const harnessRequest: HarnessAgentRequest = {
+      requestId: randomUUID(),
+      domain: 'learning',
+      agentId: 'learn_plan',
+      agentRole: 'planner',
+      userId: childUserId,
+      goal: 'Generate adaptive learning plan objectives and activities',
+      payload: {
+        childId,
+      },
+      priority: 'normal',
+      metadata: {
+        route: '/api/learn/plan',
+      },
+    };
 
     // Block the plan entirely when the child is out of allowed hours / daily time so
     // they see a friendly "time's up" screen rather than activities they can't submit.
-    const access = await getLearningAccessState(dbPool, readUserId(session));
+    const access = await getLearningAccessState(dbPool, childUserId);
     if (!access.allowed) {
+      policyDecisions.push('learning_access:block');
+      await emitHarnessEventSafe(
+        {
+          domain: harnessRequest.domain,
+          type: HARNESS_EVENT_TYPES.POLICY_BLOCKED,
+          userId: harnessRequest.userId,
+          payload: {
+            requestId: harnessRequest.requestId,
+            reason: access.reason || 'Learning time limit reached',
+            control: 'learning_access',
+          },
+        },
+        '[api/learn/plan] harness event emission failed:',
+      );
+
       return res.status(403).json({
         error: 'Learning time limit reached',
         message: access.reason || 'Learning is currently unavailable.',
         usageLimitReached: true,
       });
     }
+    policyDecisions.push('learning_access:allow');
 
     const ageBandRaw = asSingleQuery(req.query.ageBand);
     if (ageBandRaw && !isAgeBand(ageBandRaw)) {
@@ -76,13 +122,58 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const ownerId = (asSingleQuery(req.query.ownerId) || readOwnerIdHeader(req)).trim();
+    if (ageBand) {
+      (harnessRequest.payload as Record<string, unknown>).ageBand = ageBand;
+    }
+    if (ownerId) {
+      (harnessRequest.payload as Record<string, unknown>).ownerId = ownerId;
+    }
 
     const cappedObjectivesLimit = Math.min(objectivesLimit || 3, 5);
+    (harnessRequest.payload as Record<string, unknown>).objectivesLimit = cappedObjectivesLimit;
     const result = await buildPlan({
       childId,
       ownerId: ownerId || undefined,
       ageBand,
       objectivesLimit: cappedObjectivesLimit,
+    });
+
+    const harnessEvents: HarnessPipelineEventInput[] = [
+      {
+        domain: harnessRequest.domain,
+        type: HARNESS_EVENT_TYPES.PLAN_GENERATED,
+        userId: harnessRequest.userId,
+        payload: {
+          requestId: harnessRequest.requestId,
+          childId,
+          source: result.source,
+          objectivesCount: result.objectives.length,
+          activitiesCount: result.activities.length,
+          assignmentsApplied: result.assignmentsApplied,
+        },
+      },
+    ];
+
+    const { response: harnessResponse } = await runHarnessPipeline({
+      request: harnessRequest,
+      startedAt,
+      policyDecisions,
+      safetyInputResult: 'pass',
+      safetyOutputResult: 'pass',
+      status: 'success',
+      content: {
+        source: result.source,
+        objectivesCount: result.objectives.length,
+        activitiesCount: result.activities.length,
+      },
+      source: LEARN_PLAN_SOURCE,
+      model: LEARN_PLAN_MODEL,
+      contract: LEARN_PLAN_CONTRACT,
+      evaluation: {
+        method: 'deterministic',
+      },
+      events: harnessEvents,
+      eventWarnPrefix: '[api/learn/plan] harness event emission failed:',
     });
 
     return res.status(200).json({
@@ -92,6 +183,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       objectives: result.objectives,
       activities: result.activities,
       source: result.source,
+      assignmentsApplied: result.assignmentsApplied,
+      spacedReview: result.spacedReview,
+      harness: toApiHarnessMetadata(harnessResponse),
     });
   } catch (error) {
     console.error('[api/learn/plan] failed:', error);
@@ -108,7 +202,9 @@ async function buildPlan(input: {
   childName: string | null;
   objectives: PlannerObjective[];
   activities: PlanActivity[];
-  source: 'kids_pcg_next_objectives' | 'skill_progress_plus_catalog' | 'catalog_fallback';
+  source: LearnPlanSource;
+  assignmentsApplied: boolean;
+  spacedReview?: LearnPlanSpacedReview;
 }> {
   let summary: ChildSkillSummary | null = null;
 
@@ -118,20 +214,37 @@ async function buildPlan(input: {
     console.warn('[api/learn/plan] getChildSkillSummary fallback:', error);
   }
 
-  // Prefer kids-pcg's prerequisite-aware next-objectives (the authoritative adaptive
-  // sequence) when configured; otherwise compose from Postgres scores. Either way a
-  // spaced-review warm-up leads when the child has history (roadmap 9.1/9.2).
-  const nextObjectiveCodes = await fetchKidsPcgNextObjectives({
-    ownerId: input.ownerId || input.childId,
-    ageBand: input.ageBand,
+  // Compose the plan (roadmap 9.1/9.2): parent assignments lead, then a spaced-review
+  // warm-up, then focus objectives. Focus prefers kids-pcg's prerequisite-aware
+  // next-objectives (the authoritative adaptive sequence) when configured, otherwise
+  // Postgres scores. Both external reads are best-effort and run in parallel.
+  const [nextObjectiveCodes, assignmentCodes] = await Promise.all([
+    fetchKidsPcgNextObjectives({
+      ownerId: input.ownerId || input.childId,
+      ageBand: input.ageBand,
+      limit: input.objectivesLimit,
+    }),
+    fetchAssignmentSkillCodes(input.childId, input.objectivesLimit),
+  ]);
+  const usedNextObjectives = nextObjectiveCodes.length > 0;
+
+  // Phase 3: Re-surface unaddressed misconceptions as priority review objectives.
+  const misconceptionSkills = getSkillsNeedingReview(input.childId);
+  const misconceptionCodes = misconceptionSkills
+    .slice(0, 2) // Cap at 2 misconception reviews per plan
+    .map((m) => m.skillCode);
+
+  // Mark them as addressed so they don't re-surface every single plan
+  for (const skillCode of misconceptionCodes) {
+    markMisconceptionAddressed(input.childId, skillCode);
+  }
+
+  const objectives = composePlan({
+    summary,
+    assignmentSkillCodes: assignmentCodes,
+    nextObjectiveSkillCodes: [...misconceptionCodes, ...nextObjectiveCodes],
     limit: input.objectivesLimit,
   });
-  const usedNextObjectives = nextObjectiveCodes.length > 0;
-  const objectives = usedNextObjectives
-    ? composePlanWithNextObjectives(summary, nextObjectiveCodes, input.objectivesLimit)
-    : summary
-      ? composePlannedObjectives(summary, input.objectivesLimit)
-      : [];
 
   const activities: PlanActivity[] = [];
 
@@ -151,20 +264,28 @@ async function buildPlan(input: {
     activities.push({
       type: 'practice',
       kind: objective.kind,
+      isAssignment: objective.isAssignment,
       skillCode: objective.skillCode,
       contentItemId: item.id,
       title: objective.skillName,
       prompt: item.prompt,
       difficulty: item.difficulty,
+      analyticalTags: item.analyticalTags,
+      hintSet: item.hintSet,
+      contentType: item.type,
+      rubricCriteria: item.rubricCriteria,
     });
   }
 
   if (activities.length > 0) {
+    const spacedReview = summarizeSpacedReview(summary);
     return {
       childName: summary?.childName || null,
       objectives,
       activities,
       source: usedNextObjectives ? 'kids_pcg_next_objectives' : 'skill_progress_plus_catalog',
+      assignmentsApplied: objectives.some((objective) => objective.isAssignment === true),
+      spacedReview,
     };
   }
 
@@ -192,14 +313,80 @@ async function buildPlan(input: {
       title: item.skillCode,
       prompt: item.prompt,
       difficulty: item.difficulty,
+      analyticalTags: item.analyticalTags,
+      hintSet: item.hintSet,
+      contentType: item.type,
+      rubricCriteria: item.rubricCriteria,
     })),
     source: 'catalog_fallback',
+    assignmentsApplied: false,
   };
+}
+
+function summarizeSpacedReview(summary: ChildSkillSummary | null): LearnPlanSpacedReview | undefined {
+  if (!summary) return undefined;
+  try {
+    const schedule = buildReviewSchedule(summary);
+    if (schedule.length === 0) return undefined;
+    const overdueCount = schedule.filter((e) => e.isOverdue).length;
+    const next = schedule[0];
+    return {
+      eligibleCount: schedule.length,
+      overdueCount,
+      nextReview: {
+        skillCode: next.skillCode,
+        skillName: next.skillName,
+        daysUntilReview: next.daysUntilReview,
+        isOverdue: next.isOverdue,
+      },
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function readOwnerIdHeader(req: NextApiRequest): string {
   const header = req.headers['x-pcg-owner-id'];
   return (Array.isArray(header) ? header[0] : header) || '';
+}
+
+// Best-effort: parent-assigned skill codes lead the plan. The `learning_assignments`
+// table is a Phase 4 deliverable (roadmap §12.1: parent -> child, skill ref, status,
+// due date). Until it exists this is a guarded no-op (returns []), so today's behavior
+// is unchanged; it auto-activates once the table lands. The provisional column contract
+// below mirrors the roadmap design; if Phase 4 names columns differently the query
+// throws and we degrade to [] rather than breaking the plan.
+async function fetchAssignmentSkillCodes(childId: string, limit: number): Promise<string[]> {
+  try {
+    const exists = await dbPool.query("SELECT to_regclass('public.learning_assignments') AS reg");
+    if (!exists.rows?.[0]?.reg) {
+      return [];
+    }
+
+    // Order strictly by the documented columns (roadmap §12.1) so this activates as
+    // soon as the contracted table lands; due_date is the only documented ordering key.
+    const result = await dbPool.query(
+      `SELECT skill_code
+         FROM public.learning_assignments
+        WHERE child_id = $1
+          AND COALESCE(status, 'assigned') NOT IN ('completed', 'archived', 'cancelled')
+        ORDER BY due_date ASC NULLS LAST
+        LIMIT $2`,
+      [childId, Math.max(1, limit)],
+    );
+
+    const codes: string[] = [];
+    for (const row of result.rows ?? []) {
+      const code = `${(row as { skill_code?: unknown }).skill_code ?? ''}`.trim();
+      if (code) {
+        codes.push(code);
+      }
+    }
+    return codes;
+  } catch (error) {
+    console.warn('[api/learn/plan] assignments lookup skipped (table absent or schema mismatch):', error);
+    return [];
+  }
 }
 
 // Best-effort: returns prerequisite-aware skill codes from kids-pcg, or [] when the

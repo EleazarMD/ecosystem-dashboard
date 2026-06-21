@@ -5,7 +5,7 @@
  * 1. Asks clarifying questions to understand what the child wants
  * 2. Provides clickable options for easy selection
  * 3. Shows a preview before creating the page
- * 4. Integrates with Kids PIC system
+ * 4. Integrates with Kids PCG system
  */
 
 import React, { useState, useEffect, useRef } from 'react';

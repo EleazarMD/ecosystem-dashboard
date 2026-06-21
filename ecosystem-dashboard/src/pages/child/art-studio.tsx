@@ -71,7 +71,7 @@ import ChildDashboardLayout from '@/components/layout/ChildDashboardLayout';
 import { useChildTheme } from '@/components/child/ChildThemeProvider';
 import { BackgroundContextMenu, getBackgroundStyles, BackgroundMode } from '@/components/child/BackgroundContextMenu';
 import { useRightPanel } from '@/contexts/RightPanelContext';
-import { useKidsPIC } from '@/hooks/useKidsPIC';
+import { useKidsPCG } from '@/hooks/useKidsPCG';
 
 const PROMPT_SUGGESTIONS = [
   { emoji: '🐉', text: 'A friendly dragon' },
@@ -124,8 +124,8 @@ function ArtStudioPageContent() {
   const [imageToDelete, setImageToDelete] = useState<GeneratedImage | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
-  // PIC integration for tracking art activities
-  const { logActivity, updateProgress, addKnowledge } = useKidsPIC();
+  // PCG integration for tracking art activities
+  const { logActivity, updateProgress, addKnowledge } = useKidsPCG();
   
   // Mobile/tablet responsive values
   const isMobile = useBreakpointValue({ base: true, md: false });
@@ -517,7 +517,7 @@ function ArtStudioPageContent() {
         setImages(prev => [newImage, ...prev]);
         setCurrentImage(newImage);
         
-        // Log to PIC system
+        // Log to PCG system
         logActivity({
           activityType: 'art_created',
           activityCategory: 'art-studio',

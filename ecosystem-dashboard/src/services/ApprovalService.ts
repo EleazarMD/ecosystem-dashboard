@@ -370,12 +370,12 @@ export async function executeApprovedAction(approval: ApprovalRequest): Promise<
         result = await executeKnowledgeGraphAction(approval);
         break;
       
-      case 'pic_memory_injection':
-      case 'pic_identity_update':
-      case 'pic_preference_update':
-      case 'pic_goal_update':
-      case 'pic_relationship_update':
-        result = await executePicMemoryAction(approval);
+      case 'pcg_memory_injection':
+      case 'pcg_identity_update':
+      case 'pcg_preference_update':
+      case 'pcg_goal_update':
+      case 'pcg_relationship_update':
+        result = await executePCGMemoryAction(approval);
         break;
       
       case 'tesla_door_unlock':
@@ -581,20 +581,20 @@ async function executeGenericAction(approval: ApprovalRequest): Promise<any> {
 }
 
 /**
- * Execute PIC memory injection action
- * Routes approved memory to PIC via AI Gateway
+ * Execute PCG memory injection action
+ * Routes approved memory to PCG via AI Gateway
  */
-async function executePicMemoryAction(approval: ApprovalRequest): Promise<any> {
-  const payload = approval.payload as any; // PicMemoryPayload
+async function executePCGMemoryAction(approval: ApprovalRequest): Promise<any> {
+  const payload = approval.payload as any; // PCGMemoryPayload
   
   const aiGatewayUrl = process.env.AI_GATEWAY_URL || 'http://100.108.41.22:8777';
   const aiGatewayKey = process.env.AI_GATEWAY_KEY || 'hermes-core';
-  const picAdminKey = process.env.PIC_ADMIN_KEY || 'dev-admin-key-change-in-prod';
+  const pcgAdminKey = process.env.PCG_ADMIN_KEY || 'dev-admin-key-change-in-prod';
   
-  // Map action type to PIC endpoint
-  let endpoint = '/api/v1/pic/learn';
+  // Map action type to PCG endpoint
+  let endpoint = '/api/v1/pcg/learn';
   let method = 'POST';
-  let picPayload: any = {
+  let pcgPayload: any = {
     observation_type: 'behavior',
     key: payload.key,
     value: payload.value,
@@ -602,41 +602,41 @@ async function executePicMemoryAction(approval: ApprovalRequest): Promise<any> {
     source_action: `approved_${approval.action_type}`,
   };
   
-  // Handle different PIC action types
+  // Handle PCG action types
   switch (approval.action_type) {
-    case 'pic_identity_update':
-      endpoint = '/api/v1/pic/identity';
+    case 'pcg_identity_update':
+      endpoint = '/api/v1/pcg/identity';
       method = 'PATCH';
-      picPayload = { [payload.key]: payload.value };
+      pcgPayload = { [payload.key]: payload.value };
       break;
-    case 'pic_preference_update':
-      endpoint = '/api/v1/pic/preferences';
+    case 'pcg_preference_update':
+      endpoint = '/api/v1/pcg/preferences';
       method = 'POST';
-      picPayload = {
+      pcgPayload = {
         key: payload.key,
         value: payload.value,
         category: payload.category,
       };
       break;
-    case 'pic_goal_update':
-      endpoint = '/api/v1/pic/goals';
+    case 'pcg_goal_update':
+      endpoint = '/api/v1/pcg/goals';
       method = 'POST';
-      picPayload = {
+      pcgPayload = {
         title: payload.key,
         description: payload.value,
         status: 'active',
       };
       break;
-    case 'pic_relationship_update':
-      endpoint = '/api/v1/pic/relationships';
+    case 'pcg_relationship_update':
+      endpoint = '/api/v1/pcg/relationships';
       method = 'POST';
-      picPayload = {
+      pcgPayload = {
         person_name: payload.key,
         relationship_type: payload.category || 'contact',
         notes: payload.value,
       };
       break;
-    // pic_memory_injection uses default /learn endpoint
+    // pcg_memory_injection uses default /learn endpoint
   }
   
   const response = await fetch(`${aiGatewayUrl}${endpoint}`, {
@@ -644,16 +644,16 @@ async function executePicMemoryAction(approval: ApprovalRequest): Promise<any> {
     headers: {
       'Content-Type': 'application/json',
       'X-API-Key': aiGatewayKey,
-      'X-PIC-Admin-Key': picAdminKey,
+      'X-PCG-Admin-Key': pcgAdminKey,
       'X-Approval-Id': approval.id,
       'X-User-Id': approval.user_id,
     },
-    body: JSON.stringify(picPayload),
+    body: JSON.stringify(pcgPayload),
   });
   
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`PIC API error: ${response.status} - ${errorText}`);
+    throw new Error(`PCG API error: ${response.status} - ${errorText}`);
   }
   
   return response.json();
@@ -824,6 +824,7 @@ async function sendPushNotification(approval: ApprovalRequest): Promise<void> {
         threadId: `approval-${approval.id}`,
         priority: approval.priority === 'critical' ? 'high' : 'normal',
         data: {
+          type: 'approval_request',
           route: 'approvals',
           resourceId: approval.id,
           url: `/approvals/${approval.id}`,

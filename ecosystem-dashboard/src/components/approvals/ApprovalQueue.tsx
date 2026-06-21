@@ -56,6 +56,12 @@ const MotionBox = motion(Box);
 // Category definitions for type-based tabs
 type ApprovalCategory = 'all' | 'email' | 'calendar' | 'knowledge' | 'personal' | 'children' | 'openclaw' | 'home' | 'other';
 
+const PERSONAL_MEMORY_ACTION_TYPES = ['pcg_observation'];
+
+const isPcgSelectionId = (id: string): boolean => id.startsWith('pcg-');
+
+const normalizePcgSelectionId = (id: string): string => id.replace(/^pcg-/, '');
+
 const CATEGORY_CONFIG: Record<ApprovalCategory, { 
   label: string; 
   icon: typeof FiMail; 
@@ -80,7 +86,7 @@ const CATEGORY_CONFIG: Record<ApprovalCategory, {
   personal: {
     label: 'Personal',
     icon: FiUser,
-    actionTypes: ['pic_observation']
+    actionTypes: PERSONAL_MEMORY_ACTION_TYPES
   },
   children: {
     label: 'Children',
@@ -121,8 +127,8 @@ const CATEGORY_CONFIG: Record<ApprovalCategory, {
   },
 };
 
-// PIC observation interface
-interface PICObservation {
+// PCG observation interface
+interface PCGObservation {
   id: string;
   observation_type: string;
   category: string | null;
@@ -136,7 +142,7 @@ interface PICObservation {
   created_at: string;
 }
 
-const PIC_API = '/api/pic';
+const PCG_API = '/api/pcg';
 
 // Helper to format observation values into human-readable text
 const formatObservationValue = (key: string, value: any): string => {
@@ -191,101 +197,98 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
   const [detailedApprovals, setDetailedApprovals] = useState<Record<string, ApprovalRequest>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   
-  // PIC observations state
-  const [picObservations, setPicObservations] = useState<PICObservation[]>([]);
-  const [picLoading, setPicLoading] = useState(true);
-  const [editingPicId, setEditingPicId] = useState<string | null>(null);
+  // PCG observations state
+  const [pcgObservations, setPcgObservations] = useState<PCGObservation[]>([]);
+  const [editingPcgId, setEditingPcgId] = useState<string | null>(null);
   const [editedKey, setEditedKey] = useState('');
   const [editedValue, setEditedValue] = useState('');
   const [editedExplanation, setEditedExplanation] = useState('');
-  const [processingPicIds, setProcessingPicIds] = useState<Set<string>>(new Set());
+  const [processingPcgIds, setProcessingPcgIds] = useState<Set<string>>(new Set());
   
-  // Fetch PIC observations
-  const fetchPicObservations = useCallback(async () => {
+  // Fetch PCG observations
+  const fetchPcgObservations = useCallback(async () => {
     try {
-      const response = await fetch(`${PIC_API}/learn/observations?processed=false&limit=100`);
+      const response = await fetch(`${PCG_API}/learn/observations?processed=false&limit=100`);
       if (response.ok) {
         const data = await response.json();
-        setPicObservations(data.observations || []);
+        setPcgObservations(data.observations || []);
       }
     } catch (err) {
-      console.error('Failed to fetch PIC observations:', err);
-    } finally {
-      setPicLoading(false);
+      console.error('Failed to fetch PCG observations:', err);
     }
   }, []);
   
   useEffect(() => {
-    fetchPicObservations();
-  }, [fetchPicObservations]);
+    fetchPcgObservations();
+  }, [fetchPcgObservations]);
   
-  // PIC handlers
-  const handleEditPic = (obs: PICObservation) => {
-    setEditingPicId(obs.id);
+  // PCG handlers
+  const handleEditPcg = (obs: PCGObservation) => {
+    setEditingPcgId(obs.id);
     setEditedKey(obs.key);
     setEditedValue(typeof obs.value === 'object' ? JSON.stringify(obs.value) : String(obs.value));
     setEditedExplanation(obs.explanation || '');
   };
   
-  const handleCancelEditPic = () => {
-    setEditingPicId(null);
+  const handleCancelEditPcg = () => {
+    setEditingPcgId(null);
     setEditedKey('');
     setEditedValue('');
     setEditedExplanation('');
   };
   
-  const handleSavePic = async (obsId: string) => {
-    setProcessingPicIds(prev => new Set(prev).add(obsId));
+  const handleSavePcg = async (obsId: string) => {
+    setProcessingPcgIds(prev => new Set(prev).add(obsId));
     try {
-      const response = await fetch(`${PIC_API}/learn/observations/${obsId}`, {
+      const response = await fetch(`${PCG_API}/learn/observations/${obsId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: editedKey, value: editedValue, explanation: editedExplanation }),
       });
       if (!response.ok) throw new Error('Failed to update');
       toast({ title: 'Updated', status: 'success', duration: 2000 });
-      await fetchPicObservations();
-      handleCancelEditPic();
+      await fetchPcgObservations();
+      handleCancelEditPcg();
     } catch (err) {
       toast({ title: 'Update failed', status: 'error', duration: 3000 });
     } finally {
-      setProcessingPicIds(prev => { const n = new Set(prev); n.delete(obsId); return n; });
+      setProcessingPcgIds(prev => { const n = new Set(prev); n.delete(obsId); return n; });
     }
   };
   
-  const handleApprovePic = async (obsId: string) => {
-    setProcessingPicIds(prev => new Set(prev).add(obsId));
+  const handleApprovePcg = async (obsId: string) => {
+    setProcessingPcgIds(prev => new Set(prev).add(obsId));
     try {
-      const response = await fetch(`${PIC_API}/learn/observations/${obsId}/process`, {
+      const response = await fetch(`${PCG_API}/learn/observations/${obsId}/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ approved: true }),
       });
       if (!response.ok) throw new Error('Failed to approve');
       toast({ title: 'Approved', status: 'success', duration: 2000 });
-      await fetchPicObservations();
+      await fetchPcgObservations();
     } catch (err) {
       toast({ title: 'Approval failed', status: 'error', duration: 3000 });
     } finally {
-      setProcessingPicIds(prev => { const n = new Set(prev); n.delete(obsId); return n; });
+      setProcessingPcgIds(prev => { const n = new Set(prev); n.delete(obsId); return n; });
     }
   };
   
-  const handleRejectPic = async (obsId: string) => {
-    setProcessingPicIds(prev => new Set(prev).add(obsId));
+  const handleRejectPcg = async (obsId: string) => {
+    setProcessingPcgIds(prev => new Set(prev).add(obsId));
     try {
-      const response = await fetch(`${PIC_API}/learn/observations/${obsId}/process`, {
+      const response = await fetch(`${PCG_API}/learn/observations/${obsId}/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ approved: false }),
       });
       if (!response.ok) throw new Error('Failed to reject');
       toast({ title: 'Rejected', status: 'info', duration: 2000 });
-      await fetchPicObservations();
+      await fetchPcgObservations();
     } catch (err) {
       toast({ title: 'Rejection failed', status: 'error', duration: 3000 });
     } finally {
-      setProcessingPicIds(prev => { const n = new Set(prev); n.delete(obsId); return n; });
+      setProcessingPcgIds(prev => { const n = new Set(prev); n.delete(obsId); return n; });
     }
   };
   
@@ -298,6 +301,8 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
       knowledge: 0, 
       personal: 0, 
       children: 0, 
+      openclaw: 0,
+      home: 0,
       other: 0 
     };
     
@@ -317,16 +322,16 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
       }
     });
     
-    // Count PIC observations
-    counts.personal = picObservations.length;
-    counts.all += picObservations.length;
+    // Count PCG observations
+    counts.personal = pcgObservations.length;
+    counts.all += pcgObservations.length;
     
     // TODO: Integrate child approvals count here when child approval data is available
     // counts.children = childApprovals.length;
     // counts.all += childApprovals.length;
     
     return counts;
-  }, [pendingApprovals, picObservations]);
+  }, [pendingApprovals, pcgObservations]);
   
   // Filter approvals by category and priority
   const filteredApprovals = useMemo(() => {
@@ -350,7 +355,7 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      await Promise.all([fetchPendingApprovals(), fetchPicObservations()]);
+      await Promise.all([fetchPendingApprovals(), fetchPcgObservations()]);
       toast({
         title: 'Refreshed',
         status: 'success',
@@ -367,7 +372,7 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
     } finally {
       setIsRefreshing(false);
     }
-  }, [fetchPendingApprovals, fetchPicObservations, toast]);
+  }, [fetchPendingApprovals, fetchPcgObservations, toast]);
   
   // Load detail when expanding
   const handleViewDetails = useCallback(async (id: string) => {
@@ -443,9 +448,11 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
     
     const ids = Array.from(selectedIds);
     
-    // Separate PIC observations from regular approvals
-    const picIds = ids.filter(id => id.startsWith('pic-')).map(id => id.replace('pic-', ''));
-    const regularIds = ids.filter(id => !id.startsWith('pic-'));
+    // Separate PCG observations from regular approvals
+    const pcgIds = ids
+      .filter(isPcgSelectionId)
+      .map(normalizePcgSelectionId);
+    const regularIds = ids.filter(id => !isPcgSelectionId(id));
     
     let allSuccess = true;
     
@@ -455,10 +462,10 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
       if (!success) allSuccess = false;
     }
     
-    // Handle PIC observations individually
-    for (const picId of picIds) {
+    // Handle PCG observations individually
+    for (const pcgId of pcgIds) {
       try {
-        const response = await fetch(`${PIC_API}/learn/observations/${picId}/process`, {
+        const response = await fetch(`${PCG_API}/learn/observations/${pcgId}/process`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ approved: true }),
@@ -476,9 +483,9 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
         duration: 3000,
         isClosable: true,
       });
-      // Refresh PIC observations if any were approved
-      if (picIds.length > 0) {
-        await fetchPicObservations();
+      // Refresh PCG observations if any were approved
+      if (pcgIds.length > 0) {
+        await fetchPcgObservations();
       }
       setSelectedIds(new Set());
       setIsSelectionMode(false);
@@ -490,7 +497,7 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
         isClosable: true,
       });
     }
-  }, [selectedIds, batchApprove, toast, fetchPicObservations]);
+  }, [selectedIds, batchApprove, toast, fetchPcgObservations]);
   
   // Batch reject
   const handleBatchReject = useCallback(async () => {
@@ -498,9 +505,11 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
     
     const ids = Array.from(selectedIds);
     
-    // Separate PIC observations from regular approvals
-    const picIds = ids.filter(id => id.startsWith('pic-')).map(id => id.replace('pic-', ''));
-    const regularIds = ids.filter(id => !id.startsWith('pic-'));
+    // Separate PCG observations from regular approvals
+    const pcgIds = ids
+      .filter(isPcgSelectionId)
+      .map(normalizePcgSelectionId);
+    const regularIds = ids.filter(id => !isPcgSelectionId(id));
     
     let allSuccess = true;
     
@@ -510,10 +519,10 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
       if (!success) allSuccess = false;
     }
     
-    // Handle PIC observations individually
-    for (const picId of picIds) {
+    // Handle PCG observations individually
+    for (const pcgId of pcgIds) {
       try {
-        const response = await fetch(`${PIC_API}/learn/observations/${picId}/process`, {
+        const response = await fetch(`${PCG_API}/learn/observations/${pcgId}/process`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ approved: false }),
@@ -531,9 +540,9 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
         duration: 3000,
         isClosable: true,
       });
-      // Refresh PIC observations if any were rejected
-      if (picIds.length > 0) {
-        await fetchPicObservations();
+      // Refresh PCG observations if any were rejected
+      if (pcgIds.length > 0) {
+        await fetchPcgObservations();
       }
       setSelectedIds(new Set());
       setIsSelectionMode(false);
@@ -545,7 +554,7 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
         isClosable: true,
       });
     }
-  }, [selectedIds, batchReject, toast, fetchPicObservations]);
+  }, [selectedIds, batchReject, toast, fetchPcgObservations]);
   
   // Toggle selection
   const toggleSelection = (id: string) => {
@@ -680,7 +689,7 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
           </Button>
           
           <Text color={textSecondary} fontSize="10px" ml="auto">
-            {filteredApprovals.length + (activeCategory === 'personal' || activeCategory === 'all' ? picObservations.length : 0)} items
+            {filteredApprovals.length + (activeCategory === 'personal' || activeCategory === 'all' ? pcgObservations.length : 0)} items
           </Text>
         </HStack>
       </Box>
@@ -764,7 +773,7 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
               </Button>
             </VStack>
           </Center>
-        ) : filteredApprovals.length === 0 && (activeCategory === 'personal' ? picObservations.length === 0 : activeCategory !== 'all' || picObservations.length === 0) ? (
+        ) : filteredApprovals.length === 0 && (activeCategory === 'personal' ? pcgObservations.length === 0 : activeCategory !== 'all' || pcgObservations.length === 0) ? (
           <Center h="200px">
             <VStack spacing={2}>
               <Icon as={FiInbox} boxSize={8} color={textSecondary} opacity={0.5} />
@@ -813,13 +822,13 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
                 </MotionBox>
               ))}
               
-              {/* PIC observations (shown when personal or all filter is active) */}
-              {(activeCategory === 'all' || activeCategory === 'personal') && picObservations.map((obs, index) => {
-                const isEditing = editingPicId === obs.id;
-                const isProcessing = processingPicIds.has(obs.id);
+              {/* PCG observations (shown when personal or all filter is active) */}
+              {(activeCategory === 'all' || activeCategory === 'personal') && pcgObservations.map((obs, index) => {
+                const isEditing = editingPcgId === obs.id;
+                const isProcessing = processingPcgIds.has(obs.id);
                 return (
                   <MotionBox
-                    key={`pic-${obs.id}`}
+                    key={`pcg-${obs.id}`}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, x: -20 }}
@@ -831,8 +840,8 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
                           <Checkbox
                             size="sm"
                             colorScheme="blue"
-                            isChecked={selectedIds.has(`pic-${obs.id}`)}
-                            onChange={() => toggleSelection(`pic-${obs.id}`)}
+                            isChecked={selectedIds.has(`pcg-${obs.id}`)}
+                            onChange={() => toggleSelection(`pcg-${obs.id}`)}
                           />
                         </Box>
                       )}
@@ -867,7 +876,7 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
                                   size="xs"
                                   colorScheme="blue"
                                   variant="ghost"
-                                  onClick={() => handleSavePic(obs.id)}
+                                  onClick={() => handleSavePcg(obs.id)}
                                   isLoading={isProcessing}
                                 />
                               </Tooltip>
@@ -877,7 +886,7 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
                                   icon={<FiX size={14} />}
                                   size="xs"
                                   variant="ghost"
-                                  onClick={handleCancelEditPic}
+                                  onClick={handleCancelEditPcg}
                                 />
                               </Tooltip>
                             </>
@@ -889,7 +898,7 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
                                   icon={<FiEdit2 size={14} />}
                                   size="xs"
                                   variant="ghost"
-                                  onClick={() => handleEditPic(obs)}
+                                  onClick={() => handleEditPcg(obs)}
                                 />
                               </Tooltip>
                               <Tooltip label="Approve">
@@ -899,7 +908,7 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
                                   size="xs"
                                   colorScheme="green"
                                   variant="ghost"
-                                  onClick={() => handleApprovePic(obs.id)}
+                                  onClick={() => handleApprovePcg(obs.id)}
                                   isLoading={isProcessing}
                                 />
                               </Tooltip>
@@ -910,7 +919,7 @@ export function ApprovalQueue({}: ApprovalQueueProps) {
                                   size="xs"
                                   colorScheme="red"
                                   variant="ghost"
-                                  onClick={() => handleRejectPic(obs.id)}
+                                  onClick={() => handleRejectPcg(obs.id)}
                                   isLoading={isProcessing}
                                 />
                               </Tooltip>

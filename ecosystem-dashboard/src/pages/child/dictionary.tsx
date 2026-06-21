@@ -84,7 +84,7 @@ import ChildDashboardLayout from '@/components/layout/ChildDashboardLayout';
 import { useChildTheme } from '@/components/child/ChildThemeProvider';
 import { useRightPanel } from '@/contexts/RightPanelContext';
 import { BackgroundContextMenu, getBackgroundStyles, BackgroundMode } from '@/components/child/BackgroundContextMenu';
-import { useKidsPIC } from '@/hooks/useKidsPIC';
+import { useKidsPCG } from '@/hooks/useKidsPCG';
 
 interface DictionaryEntry {
   word: string;
@@ -151,8 +151,8 @@ function DictionaryPageContent() {
   const toast = useToast();
   const { setContext, setCustomData } = useRightPanel();
   
-  // PIC integration for tracking vocabulary learning
-  const { logActivity, updateProgress, addKnowledge } = useKidsPIC();
+  // PCG integration for tracking vocabulary learning
+  const { logActivity, updateProgress, addKnowledge } = useKidsPCG();
   
   // Debug theme loading
   useEffect(() => {
@@ -288,7 +288,7 @@ function DictionaryPageContent() {
         // Refresh stats after lookup
         fetchStats();
         
-        // Log to PIC system
+        // Log to PCG system
         if (data.entry) {
           logActivity({
             activityType: 'word_lookup',

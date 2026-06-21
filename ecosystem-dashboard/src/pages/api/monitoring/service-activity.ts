@@ -39,8 +39,8 @@ interface ServiceActivityResponse {
 const SERVICE_NAMES: Record<string, string> = {
   'hermes-core': 'Hermes Core',
   'hermes_core': 'Hermes Core',
-  'pic': 'PIC Agent',
-  'pic-agent': 'PIC Agent',
+  'pcg': 'PCG Agent',
+  'pcg-agent': 'PCG Agent',
   'openclaw': 'OpenClaw',
   'openclaw-agent': 'OpenClaw Agent',
   'research-agent': 'Research Agent',

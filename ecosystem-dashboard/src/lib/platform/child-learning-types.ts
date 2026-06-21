@@ -1,12 +1,12 @@
 /**
  * Child Learning System Types
  * 
- * Types for Personal Interest Catalog (PIC), Knowledge Base,
+ * Types for Personal Context Graph (PCG), Knowledge Base,
  * and GooseMind recipe personalization for children.
  */
 
 // ============================================================================
-// Personal Interest Catalog (PIC)
+// Personal Context Graph (PCG)
 // ============================================================================
 
 export interface PersonalInterest {

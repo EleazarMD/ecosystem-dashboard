@@ -5,7 +5,7 @@
  * 1. Asks clarifying questions to understand what the child wants
  * 2. Provides clickable options for easy selection
  * 3. Generates better titles based on context
- * 4. Integrates with Kids PIC system for personalization
+ * 4. Integrates with Kids PCG system for personalization
  * 5. Connects to Planner, Journal, and Chat for cross-activity awareness
  */
 
@@ -13,7 +13,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../../auth/[...nextauth]';
 import { Pool } from 'pg';
-import { getKidsPICService } from '@/lib/kids-pic/KidsPICService';
+import { getKidsPCGService } from '@/domains/learning/entities/child-pcg';
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -190,8 +190,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const { action, message, selectedOption, state, currentPage } = req.body;
 
   try {
-    const picService = getKidsPICService(pool);
-    const childProfile = await picService.getOrCreateProfile(session.user.id);
+    const pcgService = getKidsPCGService(pool);
+    const childProfile = await pcgService.getOrCreateProfile(session.user.id);
 
     switch (action) {
       case 'start':
@@ -1171,8 +1171,8 @@ Generate a well-designed JSON page structure following the guidelines above.${re
 
   // Log activity
   try {
-    const picService = getKidsPICService(pool);
-    await picService.logActivity({
+    const pcgService = getKidsPCGService(pool);
+    await pcgService.logActivity({
       childId: childProfile.id,
       activityType: 'page_redesigned',
       activityCategory: 'workspace',
@@ -1294,10 +1294,10 @@ async function handleGenerate(
 ): Promise<void> {
   const preview = generatePagePreview(state);
   
-  // Log activity to PIC
+  // Log activity to PCG
   try {
-    const picService = getKidsPICService(pool);
-    await picService.logActivity({
+    const pcgService = getKidsPCGService(pool);
+    await pcgService.logActivity({
       childId: childProfile.id,
       activityType: 'page_created',
       activityCategory: 'workspace',
@@ -1308,7 +1308,7 @@ async function handleGenerate(
     });
 
     // Update progress
-    await picService.updateProgress(
+    await pcgService.updateProgress(
       childProfile.id,
       'workspace',
       'pages_created',
@@ -1317,9 +1317,9 @@ async function handleGenerate(
     );
 
     // Check for achievements
-    await picService.checkAndAwardAchievements(childProfile.id);
+    await pcgService.checkAndAwardAchievements(childProfile.id);
   } catch (error) {
-    console.error('[PageBuilderAgent] Failed to log to PIC:', error);
+    console.error('[PageBuilderAgent] Failed to log to PCG:', error);
   }
 
   res.status(200).json({

@@ -129,8 +129,8 @@ function isLocalProvider(provider: string, model: string): boolean {
 const CLIENT_NAMES: Record<string, string> = {
   'hermes-core': 'Hermes Core',
   'hermes_core': 'Hermes Core',
-  'pic': 'PIC (Personal Intelligence Core)',
-  'pic-agent': 'PIC Agent',
+  'pcg': 'PCG (Personal Context Graph)',
+  'pcg-agent': 'PCG Agent',
   'openclaw': 'OpenClaw',
   'openclaw-gateway': 'OpenClaw Gateway',
   'clinical-evidence': 'Clinical Evidence',
@@ -216,7 +216,7 @@ async function fetchGPUProcessTraffic(): Promise<Partial<InferenceTrafficRespons
     
     // Build models from clients
     const modelSet = new Set(clients.flatMap(c => c.models));
-    const models: ModelTraffic[] = [...modelSet].map(model => ({
+    const models: ModelTraffic[] = Array.from(modelSet).map(model => ({
       model,
       provider: 'local',
       requests: clients.filter(c => c.models.includes(model)).reduce((s, c) => s + c.requests, 0),
@@ -382,13 +382,13 @@ async function fetchAIGatewayTraffic(): Promise<Partial<InferenceTrafficResponse
             requests: localRequests,
             tokensIn: localTokensIn,
             tokensOut: localTokensOut,
-            providers: [...new Set(localProviders)],
+            providers: Array.from(new Set(localProviders)),
           },
           cloud: {
             requests: cloudRequests,
             tokensIn: cloudTokensIn,
             tokensOut: cloudTokensOut,
-            providers: [...new Set(cloudProviders)],
+            providers: Array.from(new Set(cloudProviders)),
           },
         },
         clients: clients.filter(c => c.requests > 0),

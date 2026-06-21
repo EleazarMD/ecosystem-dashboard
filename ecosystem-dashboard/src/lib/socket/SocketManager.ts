@@ -37,9 +37,10 @@ export class SocketManager {
       this.url = url;
     } else if (typeof window !== 'undefined') {
       // Use the current origin to support access from any IP/hostname
+      // Next.js will proxy /socket.io to the Pi Workspace service
       this.url = window.location.origin;
     } else {
-      this.url = 'http://localhost:8404';
+      this.url = 'http://localhost:8762';
     }
   }
 

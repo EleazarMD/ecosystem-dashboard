@@ -1,7 +1,7 @@
 /**
  * Child Learning Service
  * 
- * Service layer for managing child's Personal Interest Catalog (PIC),
+ * Service layer for managing child's Personal Context Graph (PCG),
  * Knowledge Base, and GooseMind recipe personalization.
  */
 
@@ -31,7 +31,7 @@ const pool = new Pool({
 });
 
 // ============================================================================
-// Personal Interest Catalog (PIC)
+// Personal Context Graph (PCG)
 // ============================================================================
 
 /**
@@ -906,11 +906,11 @@ Use this information to personalize your responses and make connections to their
 }
 
 // ============================================================================
-// Interest Detection (for automatic PIC updates)
+// Interest Detection (for automatic PCG updates)
 // ============================================================================
 
 /**
- * Analyze message for interests and update PIC
+ * Analyze message for interests and update PCG
  */
 export async function analyzeAndUpdateInterests(
   childUserId: string,

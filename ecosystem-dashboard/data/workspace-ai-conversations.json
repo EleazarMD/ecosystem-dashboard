@@ -1,0 +1,19 @@
+[
+  {
+    "id": "0dd97c1c-b7ed-4a93-84ad-5ed9e2ca77f6",
+    "title": "New Conversation",
+    "created_at": "2026-05-10T05:29:54.625Z",
+    "updated_at": "2026-05-10T05:29:54.625Z",
+    "messages": [],
+    "config": {
+      "model": "xrt-llama-3.3-70b",
+      "mode": "direct",
+      "agency_level": "autonomous",
+      "web_search_enabled": true,
+      "mcp_servers_enabled": [
+        "workspace",
+        "custom"
+      ]
+    }
+  }
+]

@@ -55,7 +55,7 @@ The platform is **not** a worksheet generator. It is a tutor that:
    (Source: `trackable_activity_types`, `shouldTrackActivityForSkills`.)
 3. **Privacy-first parent insight.** Parents see *what* is happening and aggregate
    signals — **not** raw chat transcripts or journal contents.
-   (Source: `src/components/family/PICInsightsDashboard.tsx` header.)
+   (Source: `src/components/family/PCGInsightsDashboard.tsx` header.)
 4. **Safety gates everything.** Every tutor turn passes content filtering + the AI
    child-safety monitor before it reaches the child.
 5. **No new secrets in code.** All service creds flow through Infisical
@@ -88,7 +88,7 @@ Supporting child UI: `ChildThemeProvider`, `ReadAloudButton` (TTS),
 ### 2.2 Parent-facing — `src/pages/family/[childId]/learning.tsx`
 
 Three tabs already wired:
-- `PICInsightsDashboard` — privacy-first progress + wellness.
+- `PCGInsightsDashboard` — privacy-first progress + wellness.
 - `SkillProgressDashboard` — skills + optional TEKS progress.
 - `AISafetyDashboard` — AI safety incidents.
 
@@ -111,7 +111,7 @@ Three tabs already wired:
 ### 2.4 Learner Model backend (kids-pcg, FastAPI :8771, Neo4j, multi-tenant)
 
 `services/kids-pcg/app/`:
-- **PIC**: identity (`age_band` early|middle|tween, `grade`, `reading_level`,
+- **PCG**: identity (`age_band` early|middle|tween, `grade`, `reading_level`,
   `persona`, `interests`), preferences, goals, observations.
 - **Learner Model** (`learner_routes.py`, `graph_store.py`):
   - Global `:Skill` graph with `:REQUIRES` prerequisite edges (shared reference).
@@ -121,11 +121,11 @@ Three tabs already wired:
   - **Planner**: `GET /next-objectives` returns skills not yet mastered whose
     prerequisites ARE mastered (the heart of adaptive sequencing).
 - Owner-scoped, key-auth (`X-PCG-Key`, `X-PCG-Owner-Id`), reached from the
-  dashboard via the `/api/pic/[...path]` proxy.
+  dashboard via the `/api/pcg/[...path]` proxy.
 
 ### 2.5 AI personalization + safety
 
-- `src/lib/kids-pic/PICCharacterContext.ts` — injects child PIC (goals, interests,
+- `src/lib/kids-pic/PCGCharacterContext.ts` — injects child PCG (goals, interests,
   achievements, relationship) into AI characters for personalized, motivating chat.
 - `src/lib/kids-pic/AIChildSafetyMonitor.ts` — scores AI responses for
   sycophancy, manipulation, bias, and age-appropriateness; raises incidents.
@@ -197,7 +197,7 @@ No subject content is hardcoded in components.
 
 ### D3 — Tutor is an orchestrator over the AI Gateway
 
-The tutor is a server-side orchestration layer that composes: child PIC context +
+The tutor is a server-side orchestration layer that composes: child PCG context +
 Learner Model state + selected content + pedagogy policy → prompts to the existing
 **AI Gateway**, with **safety gating on input and output**. It is a new capability,
 built beside (not inside) `ChildChatUI`.
@@ -213,7 +213,7 @@ safety monitor. New "critical thinking" content must pass the **same** age-appro
 
 ### 5.1 Age bands (preserve existing terms)
 
-`early`, `middle`, `tween` (from PIC `age_band` / profile `ageGroup`), with optional
+`early`, `middle`, `tween` (from PCG `age_band` / profile `ageGroup`), with optional
 `grade_level`. All content and tutor behavior is tagged by age band and grade range.
 
 ### 5.2 Subject domains
@@ -271,7 +271,7 @@ the pilot modules** (Phase 2). Others follow the same template.
 - **Content types:** leveled passages (reuse `books`/`StoryBooklet`), comprehension
   question sets (literal → inferential → evaluative), vocabulary-in-context.
 - **Assessment:** `accuracy` for closed questions; `rubric`/`ai_analysis` for
-  open responses; reading level adapts via `reading_level` in PIC.
+  open responses; reading level adapts via `reading_level` in PCG.
 - **Critical thinking:** infer beyond the text, compare viewpoints, support claims
   with textual evidence, distinguish fact vs opinion.
 
@@ -321,7 +321,7 @@ Promote this from a hidden domain to a **first-class, cross-subject layer**:
 
 ### 7.2 Tutor inputs (context assembly, server-side)
 
-- Child PIC + relationship/persona (`PICCharacterContext`).
+- Child PCG + relationship/persona (`PCGCharacterContext`).
 - Learner Model: current skill, mastery, known misconceptions (kids-pcg).
 - Selected content item(s) for the target skill.
 - Pedagogy policy for subject + age band.
@@ -429,7 +429,7 @@ Respects time limits and allowed hours. Surfaced on the **Learn** hub and `plann
 - **Assignments (new):** parent assigns a skill/module/content set to a child with
   an optional due date; assignment becomes `assigned`-mode (graded) and appears in
   the child's plan + `planner.tsx`. Resolves the dangling `assignmentId`.
-- **Insights (extend `PICInsightsDashboard` / `SkillProgressDashboard`):** mastery
+- **Insights (extend `PCGInsightsDashboard` / `SkillProgressDashboard`):** mastery
   by subject, milestones, "celebrate / support" guidance, spaced-review status.
 - **Curriculum opt-in (exists):** keep TEKS/CCSS overlays optional and off by default.
 - **Controls (exists):** ensure new learning services are represented in
@@ -460,7 +460,7 @@ Respects time limits and allowed hours. Surfaced on the **Learn** hub and `plann
   writes mastery evidence.
 - `GET /api/learn/content?skill=…&ageBand=…` — fetch approved items for a skill.
 - `GET/POST /api/family/assignments` — parent assignment CRUD.
-- Reuse existing `/api/pic/[...path]` proxy for all kids-pcg Learner Model calls.
+- Reuse existing `/api/pcg/[...path]` proxy for all kids-pcg Learner Model calls.
 
 ---
 
@@ -482,19 +482,57 @@ Each phase ends with working, demoable, safety-verified functionality.
 - Acceptance: an approved math item can be attempted; mastery + proficiency update;
   parent dashboard reflects it; all content passed safety screen.
 
-### Phase 2 — Pilot tutor + adaptive loop (Math + Reading)
+### Phase 2 — Pilot tutor + adaptive loop (Math + Reading) ✅
 - Build the tutor orchestrator (Section 7) with safety gating on every turn.
 - Build the **Learn** hub + "Today's Plan" (9.2) + session loop (9.1).
 - Critical-thinking prompts embedded in both pilot subjects.
 - Acceptance: a child completes an end-to-end session in math AND reading; hints
   scaffold (no answer-leaking); reflection captured; mastery advances; safety
   incidents (if any) appear in `AISafetyDashboard`; time limits respected.
+- **Status: complete.** Session loop implements warm-up → instruction → guided
+  practice → independent practice → reflection → celebrate + preview. Age-band
+  session timer (O5) enforces time limits. Critical-thinking tags surfaced in
+  instruction step. Safety incidents render in `AISafetyDashboard`. All open
+  decisions O1–O7 resolved. 13 suites, 118 tests passing.
 
-### Phase 3 — Writing + Critical Thinking (rubric/AI assessment)
+### Phase 3 — Writing + Critical Thinking (rubric/AI assessment) ✅
 - Rubric-based writing feedback in `workspace.tsx`; standalone reasoning activities.
 - Misconception capture + targeted follow-up.
 - Acceptance: a writing piece receives growth-oriented rubric feedback with
   next steps; reasoning quality tracked; misconceptions re-surface in later plans.
+
+**Completed:**
+- **Writing rubric service** (`src/lib/kids-pic/writing-rubric.ts`): Age-band-aware
+  rubric with 3/4/5 dimensions (early/middle/tween). Deterministic scoring based on
+  text statistics (word count, sentence structure, capitalization, vocabulary ratio,
+  transition words, paragraph count). Growth-oriented feedback per dimension with
+  strengths and next-step recommendations.
+- **Writing content items**: 2 writing prompts (narrative describe, opinion with
+  reasons) and 2 reasoning activities (inference with evidence, pattern detection)
+  added to `phase1-starter-content.ts`.
+- **Content type extensions**: `LearnContentItem` now supports `subject: 'writing' |
+  'analytical'`, `type: 'writing' | 'reasoning'`, optional `answerKey` (absent for
+  rubric-evaluated items), `rubricCriteria`, and `expectedReasoning` fields.
+- **Rubric evaluation in grading**: `LearningPhase1Service.gradeAttempt` detects
+  items without `answerKey` and routes to `evaluateWriting()` instead of
+  deterministic scoring. Returns `rubricResult` with dimension scores, percentage,
+  strengths, and recommendations.
+- **Attempt API integration**: `/api/learn/attempt` includes `rubricResult` in
+  response body and sets harness evaluation method to `'rubric'` for writing items.
+- **Misconception tracker** (`src/lib/kids-pic/misconception-tracker.ts`): Captures
+  incorrect attempt patterns keyed by child + skill. Classifies misconception type
+  (calculation_error, wrong_operation, misread_question, incomplete_answer,
+  conceptual_gap). Tracks resurface count and addressed status.
+- **Misconception surfacing in planner**: `/api/learn/plan` queries
+  `getSkillsNeedingReview()` and injects unaddressed misconception skills as
+  priority focus objectives (capped at 2 per plan). Marks them addressed after
+  inclusion so they don't repeat every plan.
+- **Learn hub UI**: Writing/reasoning activities get larger textarea (6 rows),
+  subject-specific instruction prompts, and a rich rubric feedback panel with
+  per-dimension score bars, strengths, and growth recommendations. Button labels
+  adapt ("Submit writing" / "Submit answer" / "Check answer").
+- **Tests**: 14 suites, 136 tests passing (writing-rubric: 8 tests,
+  misconception-tracker: 14 tests, all pre-existing suites still green).
 
 ### Phase 4 — Assignments + parent depth + curriculum overlays
 - Parent assignment system (11) end-to-end; extend insights; verify TEKS opt-in.
@@ -534,18 +572,18 @@ Each phase ends with working, demoable, safety-verified functionality.
 ## 15. Cross-References (where to look in the repo)
 
 - Skills/curriculum/assessment: `src/lib/kids-pic/SkillProgressService.ts`
-- PIC profile/knowledge/progress: `src/lib/kids-pic/KidsPICService.ts`,
-  `src/hooks/useKidsPIC.ts`, `src/pages/api/child/pic.ts`
-- Tutor personalization base: `src/lib/kids-pic/PICCharacterContext.ts`,
+- PCG profile/knowledge/progress: `src/lib/kids-pic/KidsPCGService.ts`,
+  `src/hooks/useKidsPCG.ts`, `src/pages/api/child/pcg.ts`
+- Tutor personalization base: `src/lib/kids-pic/PCGCharacterContext.ts`,
   `src/components/child/ChildChatUI.tsx`
 - Safety: `src/lib/kids-pic/AIChildSafetyMonitor.ts`,
   `src/lib/platform/content-filter-service.ts`, `src/lib/platform/child-account-types.ts`
 - Parent surfaces: `src/pages/family/[childId]/learning.tsx`,
-  `src/components/family/PICInsightsDashboard.tsx`,
+  `src/components/family/PCGInsightsDashboard.tsx`,
   `src/components/family/SkillProgressDashboard.tsx`
 - Learner Model backend: `services/kids-pcg/app/learner_routes.py`,
   `services/kids-pcg/app/graph_store.py`, `services/kids-pcg/app/models.py`
-- PCG proxy: `src/pages/api/pic/[...path].ts`
+- PCG proxy: `src/pages/api/pcg/[...path].ts`
 
 ---
 
@@ -557,6 +595,140 @@ Each phase ends with working, demoable, safety-verified functionality.
   ages + kids-pcg `owner_id`s (seed spec C1/C2).
 - **O3. [RESOLVED -> L3]** Pilot content = AI-generated-then-reviewed only.
 - **O4. [RESOLVED -> L4]** Owner approves content before graded use.
-- **O5.** Default session length + daily learning target per age band.
-- **O6.** Are external/3rd-party tutoring APIs allowed, or local AI Gateway only?
-- **O7.** Curriculum priority if/when enabled (TEKS first, given existing data?).
+- **O5. [RESOLVED]** Default session length + daily learning target per age band.
+  Codified in `learning-config.ts`:
+  | Band | Ages | Session | Daily Target | Daily Limit | Break | Max Activities |
+  |------|------|---------|-------------|------------|-------|---------------|
+  | `early` | 5–7 | 15 min | 30 min | 45 min | 10 min | 3 |
+  | `middle` | 8–10 | 20 min | 45 min | 60 min | 5 min | 4 |
+  | `tween` | 11–12 | 25 min | 60 min | 90 min | 5 min | 5 |
+  Research basis: AAP guidelines (quality + balance for school-age), pediatric
+  practice benchmarks (≤2h/day recreational for 5–17), educational research on
+  attention spans. Parents can override via parental controls.
+- **O6. [RESOLVED]** Local AI Gateway only for the pilot. No external/3rd-party
+  tutoring APIs. The Agent Runtime adapter pattern allows adding external
+  adapters post-pilot without pipeline changes. See `learning-config.ts`.
+- **O7. [RESOLVED]** TEKS is the priority framework when curriculum alignment
+  is enabled. Curriculum remains opt-in and off by default (Principle 1).
+  CCSS and UK_NC available as alternatives. See `learning-config.ts`.
+
+---
+
+## 17. Harness Alignment (FSD Agentic Harness)
+
+> Canonical harness spec: `docs/FSD_AGENTIC_HARNESS.md`.
+> Migration matrix: `docs/FSD_MIGRATION_MATRIX.md`.
+
+The Kid's Learning Platform is the **canonical reference cognitive architecture**
+for the entire AIHomelab Dashboard. It is **agent-first** (agents are the primary
+actors) and **harness-intelligent-driven** (the harness closes the adaptive
+loop). Because the child-safe tutor loop is the hardest case — full agent roster,
+full cognitive loop, persistent memory, strictest safety rails — every other
+dashboard domain is a *simpler instance* of this same pattern.
+
+### 17.0 Agent roster (learning domain)
+
+The learning platform instantiates every agent role in the harness roster
+(harness spec Section 1.2). These already exist in code; the harness names them
+as agents and standardizes their collaboration:
+
+| Agent role | Goal | Implementation |
+|-----------|------|----------------|
+| **Tutor Agent** | Scaffold the learner to the next step (Socratic, no answer-reveal) | `LearningTutorOrchestrator.ts` |
+| **Planner Agent** | Choose today's plan: warm-up + focus objectives | `learning-planner.ts` |
+| **Evaluator Agent** | Grade attempts, judge mastery | `LearningPhase1Service.ts` + `SkillProgressService.ts` |
+| **Safety Agent** | Bound the Tutor Agent: filter, detect manipulation/distress | `AIChildSafetyMonitor.ts` + `SemanticSafetyAnalyzer.ts` |
+| **Memory Agent** | Read/write learner model + personalization context | `KidsPCGService.ts` + `PCGCharacterContext.ts` |
+| **Orchestrator Agent** | Coordinate the above across a session | `OrchestrationEngine.ts` (harness-level) |
+
+The cognitive loop these agents run (perceive → reason → plan → act → reflect)
+is exactly what `src/pages/api/learn/tutor/turn.ts` executes today.
+
+### 17.1 What changes under the harness
+
+The learning platform's existing architecture already implements most harness
+contracts. The harness formalizes and standardizes them:
+
+| Current component | Harness role | Status |
+|-------------------|-------------|--------|
+| `learning-access.ts` | **Policy Gate** — auth, parental controls, time limits | Implemented |
+| `content-filter-service.ts` + `AIChildSafetyMonitor.ts` | **Safety Lane** — input + output filtering | Implemented |
+| `LearningTutorOrchestrator.ts` | **Agent Runtime adapter** — AI Gateway + fallback | Implemented (first adapter) |
+| `LearningPhase1Service.ts` | **Evaluation Lane** — deterministic + content catalog | Implemented |
+| `SkillProgressService.ts` | **Evaluation Lane** — proficiency + analytics layer | Implemented |
+| `LearningSessionService.ts` | **Session Loop** — session lifecycle + persistence | Implemented |
+| `learning-planner.ts` | **Process** — adaptive plan generation | Implemented |
+| `KidsPCGService.ts` | **Entity** — child PCG profile + knowledge | Implemented |
+| `PCGCharacterContext.ts` | **Entity** — agent personalization context | Implemented |
+| `PCGSafetyService.ts` | **Entity** — privacy-first parent insights | Implemented |
+| kids-pcg (Neo4j) | **Skill Graph** — authoritative learner model | Implemented |
+| `/api/pcg/[...path].ts` | **Entity proxy** — kids-pcg access from dashboard | Implemented |
+
+### 17.2 What's new under the harness
+
+The following are **additive** — they formalize existing behavior into typed
+contracts without changing runtime behavior:
+
+- **Typed `HarnessAgentRequest` / `HarnessAgentResponse`** — standard request/
+  response envelope for all agent executions (see harness spec Section 4.1).
+- **Event emission** — learning domain emits typed events
+  (`attempt_submitted`, `mastery_updated`, `plan_generated`,
+  `misconception_detected`) instead of ad-hoc logging.
+- **Audit envelope** — every tutor turn produces a structured audit record
+  (agent id, model, contract, latency, safety results).
+- **FSD layer reorganization** — `src/lib/kids-pic/` files are reorganized into
+  `entities/`, `features/`, `processes/` subdirectories (Phase B migration).
+
+### 17.3 Learning domain FSD target structure
+
+```
+src/domains/learning/
+  entities/
+    child-pcg.ts          (from KidsPCGService.ts)
+    skill-graph.ts        (from SkillProgressService.ts + kids-pcg proxy)
+    content-catalog.ts    (from LearningPhase1Service.ts content types)
+    session.ts            (from LearningSessionService.ts types)
+  features/
+    tutor-turn.ts         (from LearningTutorOrchestrator.ts)
+    attempt-grading.ts    (from LearningPhase1Service.ts grading)
+    plan-generation.ts    (from learning-planner.ts)
+    access-control.ts     (from learning-access.ts)
+  processes/
+    session-loop.ts       (from LearningSessionService.ts lifecycle)
+    spaced-review.ts      (new — spaced-review scheduler) ✅
+    mastery-sync.ts       (new — kids-pcg ↔ Postgres sync) ✅
+  widgets/
+    (from src/pages/child/learn.tsx + components)
+  shared/
+    (domain-local types, constants, helpers)
+```
+
+### 17.4 Harness readiness for the learning domain
+
+The learning domain passes the Harness-Ready checklist (harness spec Section 7)
+when:
+
+- [x] Agent-defined (full roster instantiated; see 17.0)
+- [x] Bounded autonomy (Tutor Agent cannot bypass Policy Gate / Safety Lane)
+- [x] Memory-backed (reads/writes PCG via `KidsPCGService`)
+- [x] Policy Gate present (`learning-access.ts`)
+- [x] Safety Lane present (content filter + AIChildSafetyMonitor)
+- [x] Evaluation Lane present (deterministic + rubric + ai_analysis)
+- [x] Fallback path present (deterministic tutor message)
+- [x] No hardcoded secrets (Infisical)
+- [x] Adaptive loop wired (planner + mastery + spaced-review scheduler)
+- [x] Typed harness contracts (Phase A deliverable)
+- [x] Event emission via typed `HarnessEvent` (Phase A deliverable)
+- [x] Audit envelope on every tutor turn — `HarnessAuditEnvelope` emitted via
+      `runHarnessPipeline` on `attempt.ts`, `tutor/turn.ts`, and `plan.ts` (Phase A)
+- [x] FSD layer reorganization (Phase B deliverable)
+- [x] Unit tests for policy gate, safety lane, evaluation lane (Phase B)
+
+### 17.5 Phase alignment
+
+| Roadmap phase | Harness phase | What happens |
+|--------------|--------------|-------------|
+| Phase 0 (foundations) | Phase A (contracts) | Define shared harness types; no runtime changes |
+| Phase 1 (content + assessment) | Phase A → B transition | Wrap existing services in harness contracts; begin FSD reorganization |
+| Phase 2 (tutor + adaptive loop) | Phase B (reference impl) | Learning domain fully harness-compliant; template for other domains |
+| Phase 3+ (writing, science, etc.) | Phase C (domain migration) | Other dashboard domains follow the learning template |

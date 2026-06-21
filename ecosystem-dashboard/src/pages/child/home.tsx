@@ -45,7 +45,7 @@ import { authOptions } from '../api/auth/[...nextauth]';
 import ChildDashboardLayout from '@/components/layout/ChildDashboardLayout';
 import { BackgroundContextMenu, getBackgroundStyles, BackgroundMode } from '@/components/child/BackgroundContextMenu';
 import { useRightPanel } from '@/contexts/RightPanelContext';
-import { useKidsPIC } from '@/hooks/useKidsPIC';
+import { useKidsPCG } from '@/hooks/useKidsPCG';
 
 interface ChildHomeData {
   name: string;
@@ -242,14 +242,11 @@ export default function ChildHomePage() {
   const { setContext, setIsOpen, isOpen: isRightPanelOpen } = useRightPanel();
   const { isOpen: isDrawerOpen, onOpen: onDrawerOpen, onClose: onDrawerClose } = useDisclosure();
   
-  // PIC integration for personalized home experience
+  // PCG integration for personalized home experience
   const { 
-    profile: picProfile, 
-    progress: picProgress, 
-    achievements: picAchievements,
     fetchProgress,
     fetchAchievements,
-  } = useKidsPIC();
+  } = useKidsPCG();
   
   // Mobile/tablet responsive values
   const isMobile = useBreakpointValue({ base: true, md: false });
@@ -273,8 +270,8 @@ export default function ChildHomePage() {
     milestonesEarned: 0,
   });
   
-  // PIC-powered stats
-  const [picStats, setPicStats] = useState<{
+  // PCG-powered stats
+  const [pcgStats, setPcgStats] = useState<{
     totalArtworks: number;
     wordsLearned: number;
     pagesCreated: number;
@@ -323,14 +320,14 @@ export default function ChildHomePage() {
     // Defer API call until after render
     const timer = setTimeout(() => {
       fetchHomeData();
-      loadPICStats();
+      loadPCGStats();
     }, 100);
     
     return () => clearTimeout(timer);
   }, []);
   
-  // Load PIC stats for personalized dashboard
-  const loadPICStats = async () => {
+  // Load PCG stats for personalized dashboard
+  const loadPCGStats = async () => {
     try {
       const progress = await fetchProgress();
       const achievements = await fetchAchievements();
@@ -347,9 +344,9 @@ export default function ChildHomePage() {
           currentStreak: Math.max(...progress.map((p: any) => p.streakCount || 0), 0),
           recentAchievements: achievements?.slice(0, 3) || [],
         };
-        setPicStats(stats);
+        setPcgStats(stats);
         
-        // Update learning stats with PIC data
+        // Update learning stats with PCG data
         setLearningStats(prev => ({
           ...prev,
           todayActivities: stats.totalArtworks + stats.wordsLearned + stats.pagesCreated,
@@ -357,7 +354,7 @@ export default function ChildHomePage() {
         }));
       }
     } catch (error) {
-      console.error('[Home] Failed to load PIC stats:', error);
+      console.error('[Home] Failed to load PCG stats:', error);
     }
   };
 
@@ -721,64 +718,64 @@ export default function ChildHomePage() {
                   </Tooltip>
                 </SimpleGrid>
                 
-                {/* PIC-Powered Learning Progress */}
-                {(picStats.totalArtworks > 0 || picStats.wordsLearned > 0 || picStats.pagesCreated > 0) && (
+                {/* PCG-Powered Learning Progress */}
+                {(pcgStats.totalArtworks > 0 || pcgStats.wordsLearned > 0 || pcgStats.pagesCreated > 0) && (
                   <>
                     <Divider my={3} />
                     <Text fontWeight="semibold" fontSize="sm" color={textColor} mb={2}>
                       {isMinecraftTheme ? '⚔️ Your Adventure Stats' : isPusheenTheme ? '🌸 Your Learning Journey' : '📊 Your Progress'}
                     </Text>
                     <SimpleGrid columns={{ base: 3, md: 6 }} spacing={2}>
-                      {picStats.totalArtworks > 0 && (
+                      {pcgStats.totalArtworks > 0 && (
                         <Tooltip label="Artworks created">
                           <VStack spacing={0} p={2} bg={isPusheenTheme ? 'rgba(254, 215, 226, 0.6)' : isMinecraftTheme ? 'rgba(255, 165, 0, 0.3)' : 'pink.50'} borderRadius={isMinecraftTheme ? '4px' : 'md'}>
                             <Text fontSize="md">🎨</Text>
-                            <Text fontWeight="bold" fontSize="md" color="pink.600">{picStats.totalArtworks}</Text>
+                            <Text fontWeight="bold" fontSize="md" color="pink.600">{pcgStats.totalArtworks}</Text>
                             <Text fontSize="2xs" color="gray.500">Art</Text>
                           </VStack>
                         </Tooltip>
                       )}
-                      {picStats.wordsLearned > 0 && (
+                      {pcgStats.wordsLearned > 0 && (
                         <Tooltip label="Words learned">
                           <VStack spacing={0} p={2} bg={isPusheenTheme ? 'rgba(191, 219, 254, 0.6)' : isMinecraftTheme ? 'rgba(0, 191, 255, 0.3)' : 'blue.50'} borderRadius={isMinecraftTheme ? '4px' : 'md'}>
                             <Text fontSize="md">📚</Text>
-                            <Text fontWeight="bold" fontSize="md" color="blue.600">{picStats.wordsLearned}</Text>
+                            <Text fontWeight="bold" fontSize="md" color="blue.600">{pcgStats.wordsLearned}</Text>
                             <Text fontSize="2xs" color="gray.500">Words</Text>
                           </VStack>
                         </Tooltip>
                       )}
-                      {picStats.pagesCreated > 0 && (
+                      {pcgStats.pagesCreated > 0 && (
                         <Tooltip label="Pages written">
                           <VStack spacing={0} p={2} bg={isPusheenTheme ? 'rgba(187, 247, 208, 0.6)' : isMinecraftTheme ? 'rgba(50, 205, 50, 0.3)' : 'green.50'} borderRadius={isMinecraftTheme ? '4px' : 'md'}>
                             <Text fontSize="md">✏️</Text>
-                            <Text fontWeight="bold" fontSize="md" color="green.600">{picStats.pagesCreated}</Text>
+                            <Text fontWeight="bold" fontSize="md" color="green.600">{pcgStats.pagesCreated}</Text>
                             <Text fontSize="2xs" color="gray.500">Pages</Text>
                           </VStack>
                         </Tooltip>
                       )}
-                      {picStats.booksRead > 0 && (
+                      {pcgStats.booksRead > 0 && (
                         <Tooltip label="Books read">
                           <VStack spacing={0} p={2} bg={isPusheenTheme ? 'rgba(233, 213, 255, 0.6)' : isMinecraftTheme ? 'rgba(138, 43, 226, 0.3)' : 'purple.50'} borderRadius={isMinecraftTheme ? '4px' : 'md'}>
                             <Text fontSize="md">📖</Text>
-                            <Text fontWeight="bold" fontSize="md" color="purple.600">{picStats.booksRead}</Text>
+                            <Text fontWeight="bold" fontSize="md" color="purple.600">{pcgStats.booksRead}</Text>
                             <Text fontSize="2xs" color="gray.500">Books</Text>
                           </VStack>
                         </Tooltip>
                       )}
-                      {picStats.journalEntries > 0 && (
+                      {pcgStats.journalEntries > 0 && (
                         <Tooltip label="Journal entries">
                           <VStack spacing={0} p={2} bg={isPusheenTheme ? 'rgba(254, 240, 138, 0.6)' : isMinecraftTheme ? 'rgba(255, 215, 0, 0.3)' : 'yellow.50'} borderRadius={isMinecraftTheme ? '4px' : 'md'}>
                             <Text fontSize="md">📝</Text>
-                            <Text fontWeight="bold" fontSize="md" color="yellow.600">{picStats.journalEntries}</Text>
+                            <Text fontWeight="bold" fontSize="md" color="yellow.600">{pcgStats.journalEntries}</Text>
                             <Text fontSize="2xs" color="gray.500">Journal</Text>
                           </VStack>
                         </Tooltip>
                       )}
-                      {picStats.tasksCompleted > 0 && (
+                      {pcgStats.tasksCompleted > 0 && (
                         <Tooltip label="Tasks completed">
                           <VStack spacing={0} p={2} bg={isPusheenTheme ? 'rgba(167, 243, 208, 0.6)' : isMinecraftTheme ? 'rgba(0, 128, 0, 0.3)' : 'teal.50'} borderRadius={isMinecraftTheme ? '4px' : 'md'}>
                             <Text fontSize="md">✅</Text>
-                            <Text fontWeight="bold" fontSize="md" color="teal.600">{picStats.tasksCompleted}</Text>
+                            <Text fontWeight="bold" fontSize="md" color="teal.600">{pcgStats.tasksCompleted}</Text>
                             <Text fontSize="2xs" color="gray.500">Tasks</Text>
                           </VStack>
                         </Tooltip>
@@ -788,14 +785,14 @@ export default function ChildHomePage() {
                 )}
                 
                 {/* Recent Achievements */}
-                {picStats.recentAchievements.length > 0 && (
+                {pcgStats.recentAchievements.length > 0 && (
                   <>
                     <Divider my={3} />
                     <Text fontWeight="semibold" fontSize="sm" color={textColor} mb={2}>
                       {isMinecraftTheme ? '🏆 Recent Achievements' : isPusheenTheme ? '⭐ Your Badges' : '🎖️ Recent Achievements'}
                     </Text>
                     <HStack spacing={2} flexWrap="wrap">
-                      {picStats.recentAchievements.map((achievement: any, idx: number) => (
+                      {pcgStats.recentAchievements.map((achievement: any, idx: number) => (
                         <Tooltip key={idx} label={achievement.description || achievement.name}>
                           <Badge 
                             colorScheme={achievement.category === 'art' ? 'pink' : achievement.category === 'vocabulary' ? 'blue' : 'purple'}

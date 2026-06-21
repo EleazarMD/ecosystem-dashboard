@@ -8,7 +8,7 @@
  *   Hot  (0-30 days)  → Full messages retained
  *   Warm (31-90 days) → LLM summary generated, low-importance messages removed
  *   Cold (91-180 days) → Only preserved (high-importance) messages + summary
- *   Archived (180+ days) → Facts extracted to PIC, raw content purged
+ *   Archived (180+ days) → Facts extracted to PCG, raw content purged
  */
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { Pool } from 'pg';
@@ -19,7 +19,7 @@ const pool = new Pool({
 
 const API_KEY = process.env.DASHBOARD_API_KEY || 'ai-gateway-api-key-2024';
 const AI_GATEWAY_URL = process.env.AI_GATEWAY_URL || 'http://localhost:8777';
-const PIC_URL = process.env.PIC_URL || 'http://localhost:8404';
+const PCG_URL = process.env.PCG_URL || 'http://localhost:8404';
 
 const HOT_DAYS = 30;
 const WARM_DAYS = 90;
@@ -89,7 +89,7 @@ async function extractTopics(summary: string): Promise<string[]> {
     .map(([word]) => word);
 }
 
-async function extractFactsToPIC(
+async function extractFactsToPCG(
   conversationId: string,
   userId: string,
   summary: string,
@@ -97,10 +97,10 @@ async function extractFactsToPIC(
   if (!summary) return;
 
   try {
-    await fetch(`${PIC_URL}/api/pic/learn`, {
+    await fetch(`${PCG_URL}/api/pcg/learn`, {
       method: 'POST',
       headers: {
-        'X-PIC-Admin-Key': process.env.PIC_ADMIN_KEY || '',
+        'X-PCG-Admin-Key': process.env.PCG_ADMIN_KEY || '',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -114,7 +114,7 @@ async function extractFactsToPIC(
       }),
     });
   } catch (error) {
-    console.warn('[Compaction] PIC extraction error:', error);
+    console.warn('[Compaction] PCG extraction error:', error);
   }
 }
 
@@ -253,9 +253,9 @@ async function runCompaction(): Promise<CompactionStats> {
 
     for (const conv of coldConvs.rows) {
       try {
-        // Extract remaining facts to PIC before purge
+        // Extract remaining facts to PCG before purge
         if (conv.summary) {
-          await extractFactsToPIC(conv.id, conv.user_id, conv.summary);
+          await extractFactsToPCG(conv.id, conv.user_id, conv.summary);
           stats.facts_extracted++;
         }
 

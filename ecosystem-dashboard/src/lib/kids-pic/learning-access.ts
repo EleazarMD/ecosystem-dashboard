@@ -5,7 +5,7 @@
  * respect the SAME parental controls that gate chat: allowed hours and the daily
  * usage limit. Those controls + the `child_daily_usage` ledger are keyed by the
  * child's USER id (`users.id` / `parental_controls_config.child_user_id`), NOT the
- * PIC profile id that the learning APIs accept in their request bodies.
+ * PCG profile id that the learning APIs accept in their request bodies.
  *
  * This helper therefore operates on the authenticated child user id (session id)
  * and is intentionally best-effort: if the controls schema is unavailable it fails
@@ -13,6 +13,7 @@
  * the existing tutor/chat fallbacks.
  */
 import type { Pool } from 'pg';
+import { getDefaultDailyLimitMinutes } from './learning-config';
 
 export interface LearningAccessState {
   /** True only for a child account with active parental controls. */
@@ -25,7 +26,8 @@ export interface LearningAccessState {
   remainingMinutes: number;
 }
 
-const DEFAULT_DAILY_LIMIT_MINUTES = 120;
+/** Fallback when age band is unknown (matches the prior flat default). */
+const FALLBACK_DAILY_LIMIT_MINUTES = 120;
 
 function uncontrolled(): LearningAccessState {
   return {
@@ -53,13 +55,15 @@ export async function getLearningAccessState(pool: Pool, userId: string): Promis
          COALESCE(pc.is_active, false) AS controls_active,
          COALESCE(pc.daily_usage_limit_minutes, $2) AS daily_limit,
          COALESCE(is_within_allowed_hours(u.id), true) AS within_hours,
-         COALESCE(du.total_minutes, 0) AS current_minutes
+         COALESCE(du.total_minutes, 0) AS current_minutes,
+         cp.age_group AS age_group
        FROM users u
        LEFT JOIN parental_controls_config pc ON pc.child_user_id = u.id
        LEFT JOIN child_daily_usage du
          ON du.child_user_id = u.id AND du.usage_date = CURRENT_DATE
+       LEFT JOIN child_profiles cp ON cp.user_id = u.id
        WHERE u.id = $1`,
-      [userId, DEFAULT_DAILY_LIMIT_MINUTES],
+      [userId, FALLBACK_DAILY_LIMIT_MINUTES],
     );
 
     const row = result.rows[0] as
@@ -69,6 +73,7 @@ export async function getLearningAccessState(pool: Pool, userId: string): Promis
           daily_limit: string | number | null;
           within_hours: boolean | null;
           current_minutes: string | number | null;
+          age_group: string | null;
         }
       | undefined;
 
@@ -76,7 +81,11 @@ export async function getLearningAccessState(pool: Pool, userId: string): Promis
       return uncontrolled();
     }
 
-    const dailyLimitMinutes = Number.parseInt(`${row.daily_limit ?? DEFAULT_DAILY_LIMIT_MINUTES}`, 10) || DEFAULT_DAILY_LIMIT_MINUTES;
+    // Use age-band-aware default when the parental controls config doesn't
+    // specify a custom limit (O5 resolution).
+    const ageBandDefault = getDefaultDailyLimitMinutes(row.age_group || undefined);
+    const fallbackLimit = row.age_group ? ageBandDefault : FALLBACK_DAILY_LIMIT_MINUTES;
+    const dailyLimitMinutes = Number.parseInt(`${row.daily_limit ?? fallbackLimit}`, 10) || fallbackLimit;
     const currentUsageMinutes = Number.parseInt(`${row.current_minutes ?? 0}`, 10) || 0;
     const remainingMinutes = Math.max(0, dailyLimitMinutes - currentUsageMinutes);
     const controlled = row.account_type === 'child' && row.controls_active === true;

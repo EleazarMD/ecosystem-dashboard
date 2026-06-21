@@ -139,7 +139,7 @@ const formatMemory = (mb: number): string => {
 
 const getClientColor = (name: string): string => {
   if (name.includes('Hermes')) return 'purple';
-  if (name.includes('PIC')) return 'blue';
+  if (name.includes('PCG')) return 'blue';
   if (name.includes('OpenClaw')) return 'green';
   if (name.includes('Clinical')) return 'red';
   if (name.includes('Child')) return 'pink';
@@ -299,7 +299,6 @@ export const MonitoringDashboardV2: React.FC<MonitoringDashboardV2Props> = ({
                     cursor="pointer"
                     onClick={() => setSelectedGpu(isSelected ? null : gpu.id)}
                     _hover={{ transform: 'translateY(-1px)', shadow: 'md' }}
-                    transition="all 0.15s"
                   >
                     <Grid templateColumns="auto 1fr auto" gap={4} alignItems="center">
                       {/* GPU ID + Utilization */}
