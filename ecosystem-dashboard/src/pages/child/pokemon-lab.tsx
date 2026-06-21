@@ -9,11 +9,23 @@ import React from 'react';
 import { GetServerSideProps } from 'next';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../api/auth/[...nextauth]';
+import { Box } from '@chakra-ui/react';
 import ChildDashboardLayout from '@/components/layout/ChildDashboardLayout';
 import { PokemonLab } from '@/components/child/PokemonLab';
 
 function PokemonLabPageContent() {
-  return <PokemonLab />;
+  return (
+    <Box
+      minH="100vh"
+      bg="gray.900"
+      p={{ base: 4, md: 6 }}
+      color="white"
+      borderRadius="xl"
+      boxShadow="inner"
+    >
+      <PokemonLab />
+    </Box>
+  );
 }
 
 export default function PokemonLabPage() {

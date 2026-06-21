@@ -575,17 +575,28 @@ function WhatIsKGLesson({ onComplete }: { onComplete: () => void }) {
           </Box>
           {/* Visual: simple node-edge diagram */}
           <Box
-            bg="rgba(0,0,0,0.3)"
+            bg="rgba(255,255,255,0.1)"
             borderRadius="lg"
             p={6}
             position="relative"
             h="200px"
+            border="1px solid"
+            borderColor="whiteAlpha.300"
+            overflow="hidden"
           >
+            <svg
+              width="100%"
+              height="100%"
+              style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
+            >
+              <line x1="20%" y1="50%" x2="70%" y2="30%" stroke="#a78bfa" strokeWidth="2" strokeDasharray="4 2" />
+              <line x1="20%" y1="50%" x2="70%" y2="70%" stroke="#a78bfa" strokeWidth="2" strokeDasharray="4 2" />
+              <text x="45%" y="38%" fill="#d6bcfa" fontSize="12" fontWeight="bold" textAnchor="middle">HAS_TYPE</text>
+              <text x="45%" y="62%" fill="#d6bcfa" fontSize="12" fontWeight="bold" textAnchor="middle">CAN_LEARN</text>
+            </svg>
             <NodeDot label="Pikachu" x="20%" y="50%" color="#fbbf24" />
             <NodeDot label="Electric" x="70%" y="30%" color="#facc15" />
             <NodeDot label="Thunder" x="70%" y="70%" color="#3b82f6" />
-            <EdgeLine from="20%,50%" to="70%,30%" label="HAS_TYPE" />
-            <EdgeLine from="20%,50%" to="70%,70%" label="CAN_LEARN" />
           </Box>
         </VStack>
       ),
@@ -2183,6 +2194,7 @@ function GraphVizLesson({
   const [pokemon, setPokemon] = useState<PokemonDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [demoMode, setDemoMode] = useState(false);
 
   const fetchPokemon = useCallback(async () => {
     setLoading(true);
@@ -2192,12 +2204,15 @@ function GraphVizLesson({
       if (!data) {
         setError('Pokemon not found. Try another name!');
         setPokemon(null);
+        setDemoMode(false);
       } else {
         setPokemon(data);
+        setDemoMode(false);
       }
-    } catch {
-      setError('Could not reach the Pokedex service.');
+    } catch (err) {
+      setError(`Could not reach the Pokedex service. Showing a demo graph instead.`);
       setPokemon(null);
+      setDemoMode(true);
     } finally {
       setLoading(false);
     }
@@ -2223,16 +2238,16 @@ function GraphVizLesson({
             The graph uses physics — like magnets — to arrange itself naturally!
           </Text>
           <Box
-            bg="rgba(167,139,250,0.1)"
+            bg="rgba(167,139,250,0.15)"
             borderRadius="lg"
             p={4}
             border="1px solid"
-            borderColor="rgba(167,139,250,0.3)"
+            borderColor="rgba(167,139,250,0.4)"
           >
-            <Text fontSize="sm" color="gray.300">
+            <Text fontSize="sm" color="gray.100">
               🖱️ In the next step, you'll see a live graph! You can:
             </Text>
-            <VStack spacing={1} align="start" mt={2} fontSize="sm" color="gray.300">
+            <VStack spacing={1} align="start" mt={2} fontSize="sm" color="gray.200">
               <Text>• <strong>Drag</strong> nodes to move them around</Text>
               <Text>• <strong>Scroll</strong> to zoom in and out</Text>
               <Text>• <strong>Hover</strong> a node to highlight it</Text>
@@ -2260,8 +2275,9 @@ function GraphVizLesson({
                 value={pokemonName}
                 onChange={(e) => setPokemonName(e.target.value.toLowerCase())}
                 onKeyDown={(e) => e.key === 'Enter' && fetchPokemon()}
-                bg="rgba(255,255,255,0.05)"
-                borderColor="whiteAlpha.200"
+                bg="rgba(255,255,255,0.1)"
+                borderColor="whiteAlpha.300"
+                color="white"
               />
             </InputGroup>
             <Button colorScheme="purple" onClick={fetchPokemon} isLoading={loading}>
@@ -2269,17 +2285,23 @@ function GraphVizLesson({
             </Button>
           </HStack>
 
-          {error && <Text color="red.400" fontSize="sm">{error}</Text>}
+          {error && (
+            <Box bg="rgba(255,255,255,0.1)" borderRadius="md" p={3} border="1px solid" borderColor="whiteAlpha.300">
+              <Text color="orange.200" fontSize="sm">
+                ⚠️ {error}
+              </Text>
+            </Box>
+          )}
 
-          {pokemon && !loading && (
+          {(pokemon || demoMode) && !loading && (
             <Box w="full">
               <HStack spacing={2} mb={3}>
-                <Text fontSize="lg">{getTypeEmoji(pokemon.types[0] || '')}</Text>
+                <Text fontSize="lg">{pokemon ? getTypeEmoji(pokemon.types[0] || '') : '⚡'}</Text>
                 <Text fontWeight="bold" fontSize="md" textTransform="capitalize">
-                  {pokemon.name}'s Graph
+                  {pokemon ? `${pokemon.name}'s Graph` : 'Pikachu Demo Graph'}
                 </Text>
               </HStack>
-              <PokemonGraphViz pokemon={pokemon} height={450} />
+              <PokemonGraphViz pokemon={pokemon || undefined} demo={demoMode} height={450} />
             </Box>
           )}
         </VStack>
@@ -3373,23 +3395,9 @@ function NodeDot({
         <Circle size="40px" bg={`${color}40`} border="2px solid" borderColor={color}>
           <Text fontSize="xs" fontWeight="bold" color={color}>●</Text>
         </Circle>
-        <Text fontSize="xs" color="gray.300" fontWeight="semibold">{label}</Text>
+        <Text fontSize="xs" color="white" fontWeight="semibold" textShadow="0 1px 2px rgba(0,0,0,0.5)">{label}</Text>
       </VStack>
     </Box>
   );
 }
 
-function EdgeLine({ from, to, label }: { from: string; to: string; label: string }) {
-  return (
-    <Box
-      position="absolute"
-      left="50%"
-      top="50%"
-      transform="translate(-50%, -50%)"
-    >
-      <Text fontSize="2xs" color="purple.300" fontWeight="semibold" opacity={0.6}>
-        ─── {label} ───
-      </Text>
-    </Box>
-  );
-}

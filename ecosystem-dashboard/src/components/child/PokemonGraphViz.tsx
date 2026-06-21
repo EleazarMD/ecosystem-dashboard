@@ -62,9 +62,116 @@ interface GraphData {
 }
 
 interface PokemonGraphVizProps {
-  pokemon: PokemonDetail;
+  pokemon?: PokemonDetail;
   height?: number;
+  demo?: boolean;
 }
+
+// ─── Demo graph data (works offline) ─────────────────────────────────────
+
+const DEMO_POKEMON: PokemonDetail = {
+  id: 25,
+  name: 'pikachu',
+  pokedex_number: 25,
+  height: 4,
+  weight: 60,
+  base_experience: 112,
+  sprite_front: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png',
+  sprite_back: '',
+  sprite_shiny: '',
+  official_artwork: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png',
+  cries: '',
+  types: ['electric'],
+  abilities: [
+    { id: 9, name: 'static', is_hidden: false },
+    { id: 31, name: 'lightning-rod', is_hidden: true },
+  ],
+  stats: [
+    { stat: 'hp', base_value: 35 },
+    { stat: 'attack', base_value: 55 },
+    { stat: 'defense', base_value: 40 },
+    { stat: 'special-attack', base_value: 50 },
+    { stat: 'special-defense', base_value: 50 },
+    { stat: 'speed', base_value: 90 },
+  ],
+  species: {
+    id: 25,
+    name: 'pikachu',
+    genus: 'Mouse Pokemon',
+    is_legendary: false,
+    is_mythical: false,
+    is_baby: false,
+    capture_rate: 190,
+    color: 'yellow',
+    shape: 'quadruped',
+    habitat: 'forest',
+    description: 'Pikachu that can generate powerful electricity have cheek sacs that are extra soft and super stretchy.',
+    growth_rate: 'medium',
+  },
+};
+
+const DEMO_EVOLUTION: EvolutionNode[] = [
+  {
+    species_id: 172,
+    species_name: 'pichu',
+    pokemon_id: 172,
+    pokemon_name: 'pichu',
+    sprite_front: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/172.png',
+    artwork: '',
+    evolve_trigger: 'level-up',
+    evolve_conditions: 'high friendship',
+    evolve_min_level: null,
+    evolve_item: null,
+    evolves_to_id: 25,
+    evolves_to_name: 'pikachu',
+  },
+  {
+    species_id: 25,
+    species_name: 'pikachu',
+    pokemon_id: 25,
+    pokemon_name: 'pikachu',
+    sprite_front: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png',
+    artwork: '',
+    evolve_trigger: 'use-item',
+    evolve_conditions: 'thunder stone',
+    evolve_min_level: null,
+    evolve_item: 'thunder-stone',
+    evolves_to_id: 26,
+    evolves_to_name: 'raichu',
+  },
+  {
+    species_id: 26,
+    species_name: 'raichu',
+    pokemon_id: 26,
+    pokemon_name: 'raichu',
+    sprite_front: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/26.png',
+    artwork: '',
+    evolve_trigger: '',
+    evolve_conditions: '',
+    evolve_min_level: null,
+    evolve_item: null,
+    evolves_to_id: null,
+    evolves_to_name: null,
+  },
+];
+
+const DEMO_MOVES: PokemonMove[] = [
+  { id: 1, name: 'thunder-shock', type: 'electric', power: 40, pp: 30, accuracy: 100, damage_class: 'special', effect: 'An electric shock attack.', level: 1, learn_method: 'level-up' },
+  { id: 2, name: 'quick-attack', type: 'normal', power: 40, pp: 30, accuracy: 100, damage_class: 'physical', effect: 'A fast attack.', level: 1, learn_method: 'level-up' },
+  { id: 3, name: 'thunderbolt', type: 'electric', power: 90, pp: 15, accuracy: 100, damage_class: 'special', effect: 'A strong electric blast.', level: 26, learn_method: 'level-up' },
+  { id: 4, name: 'iron-tail', type: 'steel', power: 100, pp: 15, accuracy: 75, damage_class: 'physical', effect: 'Slams the foe with a hard tail.', level: null, learn_method: 'machine' },
+  { id: 5, name: 'electro-ball', type: 'electric', power: null, pp: 10, accuracy: 100, damage_class: 'special', effect: 'The faster the user, the stronger the attack.', level: 18, learn_method: 'level-up' },
+  { id: 6, name: 'thunder', type: 'electric', power: 110, pp: 10, accuracy: 70, damage_class: 'special', effect: 'A wicked thunderbolt.', level: 50, learn_method: 'level-up' },
+  { id: 7, name: 'agility', type: 'psychic', power: null, pp: 30, accuracy: null, damage_class: 'status', effect: 'Sharply raises Speed.', level: 24, learn_method: 'level-up' },
+  { id: 8, name: 'spark', type: 'electric', power: 65, pp: 20, accuracy: 100, damage_class: 'physical', effect: 'An electric charge attack.', level: 12, learn_method: 'level-up' },
+  { id: 9, name: 'double-team', type: 'normal', power: null, pp: 15, accuracy: null, damage_class: 'status', effect: 'Creates illusory copies.', level: null, learn_method: 'machine' },
+  { id: 10, name: 'slam', type: 'normal', power: 80, pp: 20, accuracy: 75, damage_class: 'physical', effect: 'Slams the foe with a long tail.', level: 37, learn_method: 'level-up' },
+  { id: 11, name: 'wild-charge', type: 'electric', power: 90, pp: 15, accuracy: 100, damage_class: 'physical', effect: 'An electrical tackle.', level: null, learn_method: 'machine' },
+  { id: 12, name: 'play-nice', type: 'normal', power: null, pp: 20, accuracy: null, damage_class: 'status', effect: 'Lowers the target\'s Attack.', level: 1, learn_method: 'level-up' },
+  { id: 13, name: 'wish', type: 'normal', power: null, pp: 10, accuracy: null, damage_class: 'status', effect: 'Heals the user later.', level: null, learn_method: 'egg' },
+  { id: 14, name: 'volt-tackle', type: 'electric', power: 120, pp: 15, accuracy: 100, damage_class: 'physical', effect: 'A powerful tackle.', level: null, learn_method: 'egg' },
+  { id: 15, name: 'fake-out', type: 'normal', power: 40, pp: 10, accuracy: 100, damage_class: 'physical', effect: 'Hits first and flinches.', level: null, learn_method: 'egg' },
+];
 
 // ─── Node styling ─────────────────────────────────────────────────────────
 
@@ -87,13 +194,15 @@ const EDGE_COLORS: Record<string, string> = {
 
 // ─── Component ────────────────────────────────────────────────────────────
 
-export function PokemonGraphViz({ pokemon, height = 450 }: PokemonGraphVizProps) {
+export function PokemonGraphViz({ pokemon: pokemonProp, height = 450, demo = false }: PokemonGraphVizProps) {
+  const pokemon = pokemonProp || (demo ? DEMO_POKEMON : null);
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [loading, setLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
   const [moves, setMoves] = useState<PokemonMove[]>([]);
   const [evolution, setEvolution] = useState<EvolutionNode[]>([]);
+  const [isDemo, setIsDemo] = useState(demo);
   const fgRef = useRef<any>(null);
   const { isOpen: showHelp, onToggle: toggleHelp } = useDisclosure({ defaultIsOpen: true });
 
@@ -101,6 +210,24 @@ export function PokemonGraphViz({ pokemon, height = 450 }: PokemonGraphVizProps)
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+
+    if (!pokemon) {
+      setGraphData({ nodes: [], links: [] });
+      setMoves([]);
+      setEvolution([]);
+      setIsDemo(true);
+      setLoading(false);
+      return;
+    }
+
+    if (demo) {
+      setMoves(DEMO_MOVES);
+      setEvolution(DEMO_EVOLUTION);
+      setGraphData(buildGraphData(DEMO_POKEMON, DEMO_MOVES, DEMO_EVOLUTION));
+      setIsDemo(true);
+      setLoading(false);
+      return;
+    }
 
     Promise.all([
       pokedexClient.pokemonMoves(pokemon.id).catch(() => [] as PokemonMove[]),
@@ -112,11 +239,12 @@ export function PokemonGraphViz({ pokemon, height = 450 }: PokemonGraphVizProps)
       setMoves(movesData);
       setEvolution(evoData);
       setGraphData(buildGraphData(pokemon, movesData, evoData));
+      setIsDemo(false);
       setLoading(false);
     });
 
     return () => { cancelled = true; };
-  }, [pokemon]);
+  }, [pokemon, demo]);
 
   // Center on the Pokemon node after data loads
   useEffect(() => {
@@ -244,6 +372,22 @@ export function PokemonGraphViz({ pokemon, height = 450 }: PokemonGraphVizProps)
 
   return (
     <VStack spacing={3} align="stretch" w="full">
+      {isDemo && (
+        <Box bg="orange.900" borderRadius="md" p={3} border="1px solid" borderColor="orange.600">
+          <HStack spacing={2}>
+            <Text fontSize="lg">📡</Text>
+            <Box>
+              <Text fontSize="sm" fontWeight="semibold" color="orange.100">
+                Offline demo mode
+              </Text>
+              <Text fontSize="xs" color="orange.200">
+                The Pokedex graph service is not connected. Showing a demo graph so you can still explore!
+              </Text>
+            </Box>
+          </HStack>
+        </Box>
+      )}
+
       {/* Help / Legend bar */}
       <HStack justify="space-between" flexWrap="wrap" spacing={2}>
         <HStack spacing={2} flexWrap="wrap">
