@@ -134,6 +134,15 @@ const getChildServices = (theme?: ChildHomeData['theme']) => {
       color: '#9f7aea',
       description: 'Plan homework',
     },
+    {
+      id: 'pokemon-lab',
+      label: 'Pokemon Lab',
+      icon: '🔬',
+      isImage: false,
+      path: '/child/pokemon-lab',
+      color: '#f093fb',
+      description: 'Learn graphs',
+    },
   ];
 };
 

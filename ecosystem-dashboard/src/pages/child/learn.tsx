@@ -140,6 +140,7 @@ const SUBJECT_INSTRUCTION_PROMPTS: Record<string, string> = {
   reading: 'Read the passage carefully. What is it asking you to find? Look for the key detail that answers the question.',
   writing: 'Take a moment to plan your writing. What is your main idea? What details will you include? Remember to use capital letters and end marks.',
   analytical: 'Think step by step. What evidence do you have? What conclusion does it support? Can you explain why?',
+  science: 'Observe carefully. What do you notice? What do you already know about this? Use evidence to explain your answer.',
 };
 
 function analyticalTagLabel(tag: string): string {

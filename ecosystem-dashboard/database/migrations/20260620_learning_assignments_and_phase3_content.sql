@@ -69,7 +69,7 @@ ALTER TABLE learning_content_items
     DROP CONSTRAINT IF EXISTS learning_content_items_subject_check;
 ALTER TABLE learning_content_items
     ADD CONSTRAINT learning_content_items_subject_check
-    CHECK (subject IN ('math', 'reading', 'writing', 'analytical'));
+    CHECK (subject IN ('math', 'reading', 'writing', 'analytical', 'science'));
 
 ALTER TABLE learning_content_items
     DROP CONSTRAINT IF EXISTS learning_content_items_content_type_check;

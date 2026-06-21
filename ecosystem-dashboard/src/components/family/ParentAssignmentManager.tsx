@@ -79,6 +79,12 @@ const SKILL_OPTIONS = [
   { code: 'writing.opinion', label: 'Writing — Opinion' },
   { code: 'analytical.infer_evidence', label: 'Thinking — Inference with Evidence' },
   { code: 'analytical.patterns', label: 'Thinking — Pattern Detection' },
+  { code: 'science.classification.living', label: 'Science — Living vs Non-Living' },
+  { code: 'science.earth.weather', label: 'Science — Weather' },
+  { code: 'science.physical.matter', label: 'Science — States of Matter' },
+  { code: 'science.life.plant_parts', label: 'Science — Plant Parts' },
+  { code: 'science.physical.forces', label: 'Science — Forces & Motion' },
+  { code: 'science.life.ecosystems', label: 'Science — Ecosystems' },
 ];
 
 const STATUS_COLORS: Record<string, string> = {

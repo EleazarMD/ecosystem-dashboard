@@ -569,11 +569,31 @@ Each phase ends with working, demoable, safety-verified functionality.
 - **Tests**: 15 suites, 145 tests passing (9 new tests for assignment service,
   all pre-existing suites still green).
 
-### Phase 5 — Science & World, polish, spaced repetition at scale
+### Phase 5 — Science & World, polish, spaced repetition at scale (Science ✅)
 - Add `science` (and later `world`) using the module template.
 - Mature spaced-review scheduling; performance + content-library growth.
 - Acceptance: science sessions run with safe, age-appropriate inquiry content;
   spaced review measurably re-tests old skills.
+
+**Science subject — Completed:**
+- **Subject type**: Added `'science'` to the `LearnContentItem.subject` union and
+  `Phase0Subject` type. Updated DB schema CHECK constraints in both
+  `learning-schema.sql` and the Phase 4 migration.
+- **Starter content** (6 items): Living vs non-living (early), weather observations
+  (early), states of matter (middle), plant parts (middle), forces & motion (tween),
+  ecosystems reasoning (tween). Covers all three age bands with deterministic and
+  reasoning assessment types.
+- **Phase 0 seed data**: Added science domain (🔬, purple), 7 science skills with
+  prerequisites (classification → plant parts → ecosystems), and science readiness/
+  stretch skills for both Luca and Sofia.
+- **Learn hub UI**: Science instruction prompt added ("Observe carefully. What do
+  you notice?"). `SUBJECT_LABELS` already included science. Science activities flow
+  through the plan API automatically via skill code matching.
+- **Parent assignments**: 6 science skill options added to `ParentAssignmentManager`
+  skill picker.
+- **Tests**: 12 new tests for science content items and seed data. All 110 learning
+  platform tests pass across 10 suites.
+- **Remaining**: Spaced repetition maturation, `world` subject, content library growth.
 
 ---
 

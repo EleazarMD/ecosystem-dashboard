@@ -1,4 +1,4 @@
-export type Phase0Subject = 'math' | 'reading' | 'analytical';
+export type Phase0Subject = 'math' | 'reading' | 'analytical' | 'science';
 
 export interface Phase0DomainSeed {
   code: Phase0Subject;
@@ -33,10 +33,12 @@ export interface Phase0ChildSeed {
   readinessSkillsBySubject: {
     math: string[];
     reading: string[];
+    science?: string[];
   };
   stretchSkillsBySubject: {
     math: string[];
     reading: string[];
+    science?: string[];
   };
 }
 
@@ -64,6 +66,14 @@ export const PHASE0_DOMAINS: Phase0DomainSeed[] = [
     icon: '🧠',
     color: '#D69E2E',
     sortOrder: 3,
+  },
+  {
+    code: 'science',
+    name: 'Science',
+    description: 'Life, earth, and physical science through inquiry and observation.',
+    icon: '🔬',
+    color: '#805AD5',
+    sortOrder: 4,
   },
 ];
 
@@ -598,6 +608,66 @@ export const PHASE0_SKILLS: Phase0SkillSeed[] = [
     prerequisites: [],
     description: 'Describe strategies used and reflect on what to improve next.',
   },
+  {
+    skillId: 'science.classification.living',
+    name: 'Living vs non-living classification',
+    subject: 'science',
+    minGrade: 'K',
+    maxGrade: '1',
+    assessmentType: 'accuracy',
+    prerequisites: [],
+    description: 'Classify objects as living or non-living based on key traits.',
+  },
+  {
+    skillId: 'science.earth.weather',
+    name: 'Weather observations',
+    subject: 'science',
+    minGrade: 'K',
+    maxGrade: '1',
+    assessmentType: 'accuracy',
+    prerequisites: [],
+    description: 'Observe and describe weather conditions using sensory evidence.',
+  },
+  {
+    skillId: 'science.physical.matter',
+    name: 'States of matter',
+    subject: 'science',
+    minGrade: '2',
+    maxGrade: '3',
+    assessmentType: 'accuracy',
+    prerequisites: [],
+    description: 'Identify solids, liquids, and gases and describe changes of state.',
+  },
+  {
+    skillId: 'science.life.plant_parts',
+    name: 'Plant parts and functions',
+    subject: 'science',
+    minGrade: '2',
+    maxGrade: '3',
+    assessmentType: 'accuracy',
+    prerequisites: ['science.classification.living'],
+    description: 'Identify plant parts (roots, stem, leaves, flowers) and their functions.',
+  },
+  {
+    skillId: 'science.physical.forces',
+    name: 'Forces and motion',
+    subject: 'science',
+    minGrade: '4',
+    maxGrade: '5',
+    assessmentType: 'accuracy',
+    prerequisites: [],
+    description: 'Describe forces (push, pull, friction, gravity) and their effects on motion.',
+  },
+  {
+    skillId: 'science.life.ecosystems',
+    name: 'Ecosystems and food chains',
+    subject: 'science',
+    minGrade: '4',
+    maxGrade: '5',
+    assessmentType: 'ai_analysis',
+    prerequisites: ['science.life.plant_parts'],
+    description: 'Analyze how organisms interact in ecosystems and predict effects of changes.',
+  },
 ];
 
 export const PHASE0_CHILDREN: Phase0ChildSeed[] = [
@@ -635,10 +705,17 @@ export const PHASE0_CHILDREN: Phase0ChildSeed[] = [
         'reading.comp.main_idea',
         'reading.lit.story_elements',
       ],
+      science: [
+        'science.classification.living',
+        'science.earth.weather',
+        'science.physical.matter',
+        'science.life.plant_parts',
+      ],
     },
     stretchSkillsBySubject: {
       math: ['math.number.place_value_1000', 'math.addsub.within_1000', 'math.fractions.concept'],
       reading: ['reading.phonics.multisyllable', 'reading.comp.inference'],
+      science: ['science.physical.forces', 'science.life.ecosystems'],
     },
   },
   {
@@ -677,10 +754,17 @@ export const PHASE0_CHILDREN: Phase0ChildSeed[] = [
         'reading.comp.theme',
         'reading.lit.figurative',
       ],
+      science: [
+        'science.physical.matter',
+        'science.life.plant_parts',
+        'science.physical.forces',
+        'science.life.ecosystems',
+      ],
     },
     stretchSkillsBySubject: {
       math: [],
       reading: [],
+      science: [],
     },
   },
 ];

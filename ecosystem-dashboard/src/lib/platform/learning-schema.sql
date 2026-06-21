@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS learning_content_items (
     id TEXT PRIMARY KEY,
     version INTEGER NOT NULL DEFAULT 1,
 
-    subject TEXT NOT NULL CHECK (subject IN ('math', 'reading')),
+    subject TEXT NOT NULL CHECK (subject IN ('math', 'reading', 'writing', 'analytical', 'science')),
     skill_code TEXT NOT NULL,
     analytical_tags JSONB NOT NULL DEFAULT '[]'::jsonb,
 

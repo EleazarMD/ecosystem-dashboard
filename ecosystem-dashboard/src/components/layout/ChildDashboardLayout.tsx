@@ -167,6 +167,7 @@ function ChildDashboardLayoutInner({ children, pageType = 'home' }: ChildDashboa
   const childNavItems: ChildNavItem[] = [
     { label: 'Home', path: '/child/home', icon: HomeIcon, imageIcon: serviceIcons?.home },
     { label: 'Learn', path: '/child/learn', icon: AcademicCapIcon },
+    { label: 'Pokemon Lab', path: '/child/pokemon-lab', icon: AcademicCapIcon },
     { label: 'Chat', path: '/child/chat', icon: ChatBubbleLeftRightIcon, imageIcon: serviceIcons?.chat },
     { label: 'Art Studio', path: '/child/art-studio', icon: PaintBrushIcon, imageIcon: serviceIcons?.art },
     { label: 'Workspace', path: '/child/workspace', icon: PencilSquareIcon, imageIcon: serviceIcons?.writing },
