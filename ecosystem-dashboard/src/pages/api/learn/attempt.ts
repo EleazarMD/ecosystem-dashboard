@@ -7,6 +7,7 @@ import { getLearningPhase1Service } from '@/domains/learning/features/attempt-gr
 import { SkillProgressService } from '@/domains/learning/entities/skill-graph';
 import { getLearningAccessState, recordLearningUsage } from '@/domains/learning/features/access-control';
 import { captureMisconception } from '@/domains/learning/features/misconception-tracker';
+import { getAssignmentService } from '@/domains/learning/features/assignment-service';
 import dbPool from '@/lib/db/client';
 import { HARNESS_EVENT_TYPES } from '@/lib/harness/events/types';
 import { emitHarnessEventSafe, runHarnessPipeline, toApiHarnessMetadata } from '@/lib/harness/runtime/pipeline';
@@ -143,6 +144,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
+    // Auto-complete parent assignments for this skill on correct answer (Phase 4).
+    let assignmentCompleted = false;
+    if (gradeResult.correct) {
+      try {
+        const completedCount = await getAssignmentService(dbPool).completeOnCorrectAnswer(
+          childId,
+          gradeResult.contentItem.skillCode,
+        );
+        assignmentCompleted = completedCount > 0;
+      } catch (error) {
+        console.warn('[api/learn/attempt] assignment auto-complete skipped:', error);
+      }
+    }
+
     const notEligible: MasteryWriteStatus = {
       status: 'skipped',
       detail: 'attempt not eligible for mastery writes',
@@ -254,6 +269,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       hintLevel,
       hintsAvailable,
       rubricResult: gradeResult.rubricResult,
+      assignmentCompleted,
       mastery: {
         eligible: gradeResult.masteryEligible,
         postgres: postgresResult,

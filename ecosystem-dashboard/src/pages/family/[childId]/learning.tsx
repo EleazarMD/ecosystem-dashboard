@@ -31,7 +31,7 @@ import {
   CardBody,
   Progress,
 } from '@chakra-ui/react';
-import { FiArrowLeft, FiTrendingUp, FiShield, FiTarget, FiHeart, FiCompass } from 'react-icons/fi';
+import { FiArrowLeft, FiTrendingUp, FiShield, FiTarget, FiHeart, FiCompass, FiEdit3 } from 'react-icons/fi';
 import { useRouter } from 'next/router';
 import NextLink from 'next/link';
 import { GetServerSideProps } from 'next';
@@ -41,6 +41,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import PCGInsightsDashboard from '@/components/family/PCGInsightsDashboard';
 import AISafetyDashboard from '@/components/family/AISafetyDashboard';
 import SkillProgressDashboard from '@/components/family/SkillProgressDashboard';
+import ParentAssignmentManager from '@/components/family/ParentAssignmentManager';
 import { useSemanticToken } from '@/hooks/useSemanticToken';
 import { query } from '@/lib/db';
 import { buildFamilyLearningSnapshot } from '@/domains/learning/shared/family-presenter';
@@ -128,6 +129,12 @@ export default function ChildLearningPage({ child, childProfileId, attemptSummar
                 </Tab>
                 <Tab minH={{ base: '44px', md: '48px' }} px={{ base: 3, md: 4 }} flex={{ base: '1 1 auto', md: '1 1 0' }}>
                   <HStack spacing={2} justify="center">
+                    <Icon as={FiEdit3} />
+                    <Text fontSize="sm">Assignments</Text>
+                  </HStack>
+                </Tab>
+                <Tab minH={{ base: '44px', md: '48px' }} px={{ base: 3, md: 4 }} flex={{ base: '1 1 auto', md: '1 1 0' }}>
+                  <HStack spacing={2} justify="center">
                     <Icon as={FiShield} />
                     <Text fontSize="sm">AI Safety</Text>
                   </HStack>
@@ -142,8 +149,14 @@ export default function ChildLearningPage({ child, childProfileId, attemptSummar
                   />
                 </TabPanel>
                 <TabPanel px={0} pt={{ base: 4, md: 5 }}>
-                  <SkillProgressDashboard 
-                    childId={childProfileId} 
+                  <SkillProgressDashboard
+                    childId={childProfileId}
+                    childName={child.name}
+                  />
+                </TabPanel>
+                <TabPanel px={0} pt={{ base: 4, md: 5 }}>
+                  <ParentAssignmentManager
+                    childId={child.id}
                     childName={child.name}
                   />
                 </TabPanel>

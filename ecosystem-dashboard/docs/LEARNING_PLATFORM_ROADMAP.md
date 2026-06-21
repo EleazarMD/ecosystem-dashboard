@@ -534,10 +534,40 @@ Each phase ends with working, demoable, safety-verified functionality.
 - **Tests**: 14 suites, 136 tests passing (writing-rubric: 8 tests,
   misconception-tracker: 14 tests, all pre-existing suites still green).
 
-### Phase 4 — Assignments + parent depth + curriculum overlays
+### Phase 4 — Assignments + parent depth + curriculum overlays ✅
 - Parent assignment system (11) end-to-end; extend insights; verify TEKS opt-in.
 - Acceptance: parent assigns practice; it appears in the child's plan and is graded
   as `assigned`; optional TEKS view shows alignment without changing defaults.
+
+**Completed:**
+- **DB migration** (`database/migrations/20260620_learning_assignments_and_phase3_content.sql`):
+  Creates `learning_assignments` table (id, child_id, parent_user_id, skill_code, title,
+  notes, status, due_date, timestamps) with indexes and updated_at trigger. Also extends
+  `learning_content_items` to support writing/analytical subjects, writing/reasoning content
+  types, nullable answer_key for rubric items, and rubric_criteria/expected_reasoning columns.
+- **Assignment service** (`src/lib/kids-pic/assignment-service.ts`): Full CRUD with
+  `AssignmentService` class — create, list (filtered by status/parent), update, cancel,
+  and auto-complete on correct answer. Falls back to in-memory store when DB table absent.
+  `getActiveSkillCodes()` provides the planner with priority assignment skill codes.
+- **Assignments API** (`src/pages/api/learn/assignments.ts`): `POST` create, `GET` list,
+  `PATCH` update. Verifies parent-child relationship via `users.parent_user_id` before
+  any operation. Only the assignment's owning parent can modify it.
+- **Attempt API integration**: `/api/learn/attempt` now calls
+  `completeOnCorrectAnswer()` after grading — auto-completes any active assignment
+  matching the skill when the child answers correctly. Returns `assignmentCompleted`
+  boolean in the response body.
+- **Parent assignment UI** (`src/components/family/ParentAssignmentManager.tsx`): Full
+  management interface with skill picker (12 skills across math/reading/writing/analytical),
+  optional title/notes/due date, active/completed/cancelled sections, cancel button, and
+  create-assignment modal. Integrated as "Assignments" tab in family learning insights page.
+- **Child-side celebration**: Learn hub shows "Parent assignment complete! 🎉" banner
+  in the understanding step when `assignmentCompleted` is true.
+- **TEKS opt-in API** (`src/pages/api/family/skill-progress.ts`): `GET ?action=summary`
+  returns child skill summary with optional curriculum alignment; `GET ?action=teks`
+  returns TEKS standards progress for a given grade. Parent-child verified. Powers the
+  existing `SkillProgressDashboard` component's Curriculum tab.
+- **Tests**: 15 suites, 145 tests passing (9 new tests for assignment service,
+  all pre-existing suites still green).
 
 ### Phase 5 — Science & World, polish, spaced repetition at scale
 - Add `science` (and later `world`) using the module template.

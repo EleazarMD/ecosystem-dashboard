@@ -95,6 +95,7 @@ interface AttemptResponse {
   hintsAvailable?: number;
   coachMessage?: string;
   rubricResult?: RubricResult;
+  assignmentCompleted?: boolean;
 }
 
 interface TutorTurnResponse {
@@ -1252,7 +1253,14 @@ function ChildLearnContent() {
                 <VStack align="stretch" spacing={4}>
                   <Alert status="success" borderRadius="lg" alignItems="start">
                     <AlertIcon />
-                    <Text fontWeight="bold">{result?.feedback || 'Correct! Nice thinking.'}</Text>
+                    <Box>
+                      <Text fontWeight="bold">{result?.feedback || 'Correct! Nice thinking.'}</Text>
+                      {result?.assignmentCompleted && (
+                        <Text mt={1} color="green.700" fontWeight="semibold">
+                          Parent assignment complete! Great job! 🎉
+                        </Text>
+                      )}
+                    </Box>
                   </Alert>
 
                   <Box>
