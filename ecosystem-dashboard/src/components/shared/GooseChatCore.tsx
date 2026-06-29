@@ -2,7 +2,7 @@
  * GooseChatCore - Unified Chat Component for all Goose UIs
  * 
  * A modular chat component that adapts based on enabled features.
- * Used by: GooseMind, PageAgent, WorkspaceAI, AgenticControl
+ * Used by: Companion AI, PageAgent, WorkspaceAI, AgenticControl
  * 
  * Features are controlled via useGooseFeatures hook and presets.
  */
@@ -44,7 +44,7 @@ export interface GooseChatCoreProps extends UseGooseFeaturesOptions {
   compact?: boolean;
   maxHeight?: string;
   
-  // Voice callbacks (for GooseMind voice panel)
+  // Voice callbacks (for companion voice panel)
   onVoiceTranscript?: (text: string) => void;
   onVoiceResponse?: (text: string) => void;
 }

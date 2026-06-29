@@ -64,7 +64,19 @@ const ToolExecutionCard: React.FC<ToolExecutionCardProps> = ({ tool, index }) =>
       'workspace_update_page': { name: 'Updated Page', icon: '✏️' },
       'workspace_create_database': { name: 'Created Database', icon: '📊' },
       'workspace_create_block': { name: 'Added Content', icon: '📝' },
+      'workspace_add_block': { name: 'Added Content', icon: '🧱' },
+      'workspace_update_block': { name: 'Edited Content', icon: '✏️' },
+      'workspace_delete_block': { name: 'Removed Content', icon: '🗑️' },
+      'workspace_get_pages': { name: 'Found Pages', icon: '📋' },
       'workspace_search_pages': { name: 'Searched Pages', icon: '🔎' },
+      'workspace_search': { name: 'Searched Workspace', icon: '🔍' },
+
+      // Pokédex
+      'pokedex_search': { name: 'Searched Pokédex', icon: '🔍' },
+      'pokedex_detail': { name: 'Pokémon Details', icon: '📕' },
+      'pokedex_type_effectiveness': { name: 'Type Matchup', icon: '⚔️' },
+      'pokedex_evolution': { name: 'Evolution Chain', icon: '🔄' },
+      'pokedex_nl_query': { name: 'Pokédex Q&A', icon: '🔮' },
 
       // Web Search
       'tavily_search': { name: 'Web Search', icon: '🌐' },

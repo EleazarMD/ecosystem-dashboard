@@ -2,7 +2,7 @@
  * OpenClaw Agent Panel
  * 
  * Embeddable OpenClaw agent chat for integration with Agentic Workflows
- * or as an agent option in GooseMind.
+ * or as an agent option in Companion AI.
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';

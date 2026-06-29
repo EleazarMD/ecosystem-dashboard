@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-const GOOSEMIND_URL = process.env.GOOSEMIND_URL || 'http://100.108.41.22:8031';
+const COMPANION_API_URL = process.env.COMPANION_API_URL || 'http://100.108.41.22:8031';
 
 export default async function handler(
   req: NextApiRequest,
@@ -13,7 +13,7 @@ export default async function handler(
   try {
     const userId = req.query.user_id || 'default';
     const response = await fetch(
-      `${GOOSEMIND_URL}/api/cache/heatmap?user_id=${userId}`,
+      `${COMPANION_API_URL}/api/cache/heatmap?user_id=${userId}`,
       {
         method: 'GET',
         headers: {
@@ -23,7 +23,7 @@ export default async function handler(
     );
 
     if (!response.ok) {
-      throw new Error(`GooseMind API error: ${response.status}`);
+      throw new Error(`Companion AI API error: ${response.status}`);
     }
 
     const data = await response.json();

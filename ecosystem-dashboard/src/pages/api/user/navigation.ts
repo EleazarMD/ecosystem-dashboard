@@ -19,8 +19,8 @@ const pool = new Pool({
 // Service ID to navigation path mapping
 const SERVICE_TO_PATH: Record<string, string> = {
   'workspace': '/workspace',
-  'goosemind-chat': '/openclaw',
-  'goosemind-voice': '/openclaw',
+  'companion-chat': '/openclaw',
+  'companion-voice': '/openclaw',
   'personal-ai': '/openclaw',
   'image-studio': '/image-studio',
   'calendar': '/calendar',
@@ -33,7 +33,7 @@ const SERVICE_TO_PATH: Record<string, string> = {
 // Child-friendly service definitions - matches child dashboard API
 const CHILD_SERVICES = [
   { id: 'personal-ai', label: 'AI Chat', path: '/openclaw', emoji: '🤖', description: 'Chat with your AI friend', color: 'purple' },
-  { id: 'goosemind-voice', label: 'Voice Chat', path: '/openclaw?mode=voice', emoji: '🎙️', description: 'Talk to OpenClaw', color: 'blue' },
+  { id: 'companion-voice', label: 'Voice Chat', path: '/openclaw?mode=voice', emoji: '🎙️', description: 'Talk to OpenClaw', color: 'blue' },
   { id: 'image-studio', label: 'Art Studio', path: '/image-studio', emoji: '🎨', description: 'Create amazing pictures', color: 'pink' },
   { id: 'workspace', label: 'My Workspace', path: '/workspace', emoji: '📝', description: 'Write and create', color: 'green' },
   { id: 'calendar', label: 'Calendar', path: '/calendar', emoji: '📅', description: 'See your schedule', color: 'orange' },

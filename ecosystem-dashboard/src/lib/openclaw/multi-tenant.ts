@@ -158,7 +158,7 @@ Body: { "observation": "User prefers morning meetings", "confidence": 0.8 }
 Use the homelab skills to access these services:
 - **homelab-context**: Personal context, identity, preferences, goals (port 8765) - PRIMARY MEMORY
 - **homelab-email**: Email via Hermes Core (port 8030)
-- **homelab-agents**: GooseMind agents for specialized tasks (port 9001)
+- **homelab-agents**: Companion AI agents for specialized tasks (port 9001)
 - **homelab-tts**: Voice synthesis via Qwen TTS (port 4200)
 - **homelab-stt**: Speech-to-text via Whisper (port 8032)
 
@@ -205,7 +205,7 @@ This agent has access to the AI Homelab infrastructure:
 
 - **Email**: Use homelab-email skill for email operations
 - **Context**: Use homelab-context skill for personal memory
-- **Agents**: Use homelab-agents skill to delegate to GooseMind
+- **Agents**: Use homelab-agents skill to delegate to Companion AI
 - **Voice**: Use homelab-tts and homelab-stt for voice
 
 ## User Context Headers

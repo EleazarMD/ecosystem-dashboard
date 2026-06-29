@@ -5,7 +5,7 @@
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-const GOOSEMIND_URL = process.env.GOOSEMIND_URL || 'http://100.108.41.22:8030';
+const COMPANION_API_URL = process.env.COMPANION_API_URL || 'http://100.108.41.22:8030';
 
 export default async function handler(
   req: NextApiRequest,
@@ -26,10 +26,10 @@ export default async function handler(
   try {
     const { category, limit = 5 } = req.body || {};
 
-    console.log('📥 Importing stories from Story Intelligence', { category, limit, goosemindUrl: GOOSEMIND_URL });
+    console.log('📥 Importing stories from Story Intelligence', { category, limit, companionApiUrl: COMPANION_API_URL });
 
-    // Fetch stories from GooseMind
-    let storiesUrl = `${GOOSEMIND_URL}/api/stories/discover?`;
+    // Fetch stories from Companion AI
+    let storiesUrl = `${COMPANION_API_URL}/api/stories/discover?`;
     if (category) {
       storiesUrl += `category=${category}&`;
     }
@@ -43,12 +43,12 @@ export default async function handler(
         signal: AbortSignal.timeout(30000) // 30 second timeout
       });
     } catch (fetchError: any) {
-      console.error('Network error fetching from GooseMind:', fetchError);
+      console.error('Network error fetching from Companion AI:', fetchError);
       
       // Check if it's a timeout
       if (fetchError.name === 'TimeoutError' || fetchError.name === 'AbortError') {
         return res.status(504).json({
-          error: 'GooseMind service timeout',
+          error: 'Companion AI service timeout',
           message: 'The Story Intelligence service took too long to respond. Please try again.',
           details: 'Connection timeout after 30 seconds'
         });
@@ -56,18 +56,18 @@ export default async function handler(
       
       // Network connectivity issue
       return res.status(503).json({
-        error: 'GooseMind service unavailable',
+        error: 'Companion AI service unavailable',
         message: 'Cannot connect to Story Intelligence service. Please check if the service is running.',
         details: fetchError.message,
-        goosemindUrl: GOOSEMIND_URL
+        companionApiUrl: COMPANION_API_URL
       });
     }
 
     if (!storiesResponse.ok) {
       const errorText = await storiesResponse.text();
-      console.error('GooseMind API error:', storiesResponse.status, errorText);
+      console.error('Companion AI API error:', storiesResponse.status, errorText);
       return res.status(storiesResponse.status).json({
-        error: `GooseMind API returned ${storiesResponse.status}`,
+        error: `Companion AI API returned ${storiesResponse.status}`,
         message: `Failed to fetch stories from Story Intelligence`,
         details: errorText
       });
@@ -77,9 +77,9 @@ export default async function handler(
     try {
       storiesData = await storiesResponse.json();
     } catch (parseError) {
-      console.error('Failed to parse GooseMind response:', parseError);
+      console.error('Failed to parse Companion AI response:', parseError);
       return res.status(502).json({
-        error: 'Invalid response from GooseMind',
+        error: 'Invalid response from Companion AI',
         message: 'Story Intelligence service returned invalid data',
         details: parseError instanceof Error ? parseError.message : 'JSON parse error'
       });
@@ -87,7 +87,7 @@ export default async function handler(
 
     const stories = storiesData.stories || [];
 
-    console.log(`Got ${stories.length} stories from GooseMind`);
+    console.log(`Got ${stories.length} stories from Companion AI`);
 
     if (stories.length === 0) {
       return res.status(200).json({

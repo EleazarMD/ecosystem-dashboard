@@ -90,7 +90,7 @@ interface ParentalControls {
 
 const AVAILABLE_SERVICES = [
   { id: 'workspace', name: 'Workspace' },
-  { id: 'goosemind-chat', name: 'AI Chat' },
+  { id: 'companion-chat', name: 'AI Chat' },
   { id: 'read-aloud', name: 'Read Aloud (TTS)', description: 'Text-to-speech for books and content' },
   { id: 'books', name: 'Books Library', description: 'Access to digital books' },
   { id: 'research-lab', name: 'Research Lab' },

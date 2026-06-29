@@ -230,7 +230,7 @@ CREATE TABLE IF NOT EXISTS child_daily_usage (
     blocked_attempts INT DEFAULT 0,
     
     -- Service Usage (JSONB for flexibility)
-    service_usage JSONB DEFAULT '{}'::jsonb,  -- {"workspace": 30, "goosemind": 45}
+    service_usage JSONB DEFAULT '{}'::jsonb,  -- {"workspace": 30, "companion-chat": 45}
     
     -- Timestamps
     first_activity_at TIMESTAMP WITH TIME ZONE,

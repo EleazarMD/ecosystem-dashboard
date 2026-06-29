@@ -2,7 +2,7 @@
  * Child Learning System Types
  * 
  * Types for Personal Context Graph (PCG), Knowledge Base,
- * and GooseMind recipe personalization for children.
+ * and recipe personalization for children.
  */
 
 // ============================================================================
@@ -323,7 +323,7 @@ export interface AddKnowledgeRequest {
   difficultyLevel?: DifficultyLevel;
 }
 
-export interface ChildGooseMindConfig {
+export interface ChildTutorConfig {
   recipe: ChildRecipe | null;
   personalizationContext: ChildPersonalizationContext;
   systemPrompt: string;

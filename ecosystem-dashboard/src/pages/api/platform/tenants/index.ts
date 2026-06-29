@@ -193,7 +193,7 @@ async function createTenant(
         JSON.stringify(limits),
         JSON.stringify({
           enabledServices: limits.allowedFeatures.includes('*') ? ['*'] : [],
-          enabledAgents: limits.allowedFeatures.includes('*') ? ['*'] : ['goose-mind'],
+          enabledAgents: limits.allowedFeatures.includes('*') ? ['*'] : ['companion-ai'],
           enabledLLMs: limits.allowedLLMs,
           enabledFeatures: limits.allowedFeatures,
           customSettings: {},

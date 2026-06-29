@@ -2,7 +2,7 @@
  * Child Learning Service
  * 
  * Service layer for managing child's Personal Context Graph (PCG),
- * Knowledge Base, and GooseMind recipe personalization.
+ * Knowledge Base, and recipe personalization.
  */
 
 import { Pool } from 'pg';
@@ -15,7 +15,7 @@ import {
   ConversationMemory,
   ChildAchievement,
   ChildPersonalizationContext,
-  ChildGooseMindConfig,
+  ChildTutorConfig,
   InterestCategory,
   MemoryType,
   KnowledgeSource,
@@ -702,7 +702,7 @@ function mapChildAchievementRow(row: any): ChildAchievement {
 // ============================================================================
 
 /**
- * Build full personalization context for GooseMind
+ * Build full personalization context for child tutor
  */
 export async function buildPersonalizationContext(
   childUserId: string
@@ -733,17 +733,17 @@ export async function buildPersonalizationContext(
 }
 
 /**
- * Build complete GooseMind configuration for a child
+ * Build complete tutor configuration for a child
  * 
  * @param childUserId - The child's user ID
  * @param parentalControls - Parental control settings
  * @param selectedRecipeId - Optional: specific recipe ID to load (for on-demand character switching)
  */
-export async function buildChildGooseMindConfig(
+export async function buildChildTutorConfig(
   childUserId: string,
   parentalControls: ParentalControlsConfig,
   selectedRecipeId?: string
-): Promise<ChildGooseMindConfig> {
+): Promise<ChildTutorConfig> {
   // Get child's preferred theme to select appropriate recipe
   let childTheme: string | null = null;
   try {

@@ -1,6 +1,6 @@
 /**
  * Mobile App Authentication Helper
- * Validates X-API-Key header for mobile app access (GooseMind iOS)
+ * Validates X-API-Key header for mobile app access (Companion iOS)
  * Uses the same API key as AI Gateway for consistency
  */
 

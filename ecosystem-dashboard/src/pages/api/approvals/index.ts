@@ -5,7 +5,7 @@
  * 
  * Authentication:
  * - NextAuth session (web dashboard)
- * - X-API-Key header (mobile apps like GooseMind iOS)
+ * - X-API-Key header (mobile apps like Companion iOS)
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';

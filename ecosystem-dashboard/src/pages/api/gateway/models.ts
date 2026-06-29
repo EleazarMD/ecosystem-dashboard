@@ -6,13 +6,45 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import axios from 'axios';
 
+const AI_GATEWAY_URL = process.env.AI_GATEWAY_URL || 'http://localhost:8777';
+const AI_GATEWAY_API_KEY = process.env.AI_GATEWAY_API_KEY || 'ai-gateway-api-key-2024';
+
+// Known models per provider (discovered from AI Gateway /api/v1/info + chat completion metadata)
+const KNOWN_MODELS: Record<string, Array<{ id: string; name: string; description: string; contextLength?: number }>> = {
+  'minimax-default': [
+    { id: 'minimax-m3', name: 'MiniMax M3', description: 'Latest MiniMax · 230B MoE · Agentic specialist', contextLength: 1048576 },
+    { id: 'minimax-m2.7', name: 'MiniMax M2.7', description: 'MiniMax M2.7 · Previous generation', contextLength: 1048576 },
+    { id: 'minimax-m2.5', name: 'MiniMax M2.5', description: 'MiniMax M2.5 · 230B MoE · 10B active', contextLength: 1048576 },
+  ],
+  'anthropic-default': [
+    { id: 'claude-fable-5', name: 'Claude Fable 5', description: 'Mythos-class frontier model, 1M context, 128k output', contextLength: 1000000 },
+    { id: 'claude-opus-4-7', name: 'Claude Opus 4.7', description: 'Most capable Opus with extended thinking', contextLength: 200000 },
+    { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', description: 'Latest Sonnet, 1M context, extended thinking', contextLength: 1000000 },
+    { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', description: 'Fast, efficient', contextLength: 200000 },
+  ],
+  'google-default': [
+    { id: 'gemini-2-5-pro', name: 'Gemini 2.5 Pro', description: '1M context · Deep reasoning', contextLength: 1048576 },
+    { id: 'gemini-2-5-flash', name: 'Gemini 2.5 Flash', description: '1M context · Best value', contextLength: 1048576 },
+    { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash Preview', description: '1M context · Fast PhD reasoning', contextLength: 1048576 },
+  ],
+  'perplexity-default': [
+    { id: 'sonar-deep-research', name: 'Sonar Deep Research', description: 'Deep research with web search', contextLength: 128000 },
+    { id: 'sonar-reasoning-pro', name: 'Sonar Reasoning Pro', description: 'Reasoning with real-time data', contextLength: 128000 },
+    { id: 'sonar-pro', name: 'Sonar Pro', description: 'Web-augmented search', contextLength: 128000 },
+  ],
+  'alibaba-qwen-default': [
+    { id: 'qwen3.7-max', name: 'Qwen3.7 Max', description: 'Alibaba Qwen 3.7 Max', contextLength: 131072 },
+    { id: 'qwen3.6-plus', name: 'Qwen3.6 Plus', description: 'Alibaba Qwen 3.6 Plus', contextLength: 131072 },
+  ],
+  'zhipu-default': [
+    { id: 'glm-5.1', name: 'GLM 5.1', description: 'Zhipu GLM 5.1', contextLength: 128000 },
+    { id: 'glm-5', name: 'GLM 5', description: 'Zhipu GLM 5', contextLength: 128000 },
+  ],
+};
+
 // Simple middleware for API authentication
 const validateToken = async (token: string | undefined): Promise<boolean> => {
   if (!token) return false;
-  
-  // In a production environment, you would validate the token
-  // against your authentication service
-  // For now, we'll accept any non-empty token
   return token.length > 0;
 };
 
@@ -23,70 +55,72 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
   try {
     const models: any[] = [];
-    
-    // Fetch local vLLM models from OpenAI-compatible endpoint
+    let gatewayHealthy = false;
+    let providersFound: string[] = [];
+
+    // Check AI Gateway health and info
     try {
-      const vllmResponse = await axios.get('http://localhost:8010/v1/models', {
+      const healthResponse = await axios.get(`${AI_GATEWAY_URL}/health`, {
         timeout: 5000,
-        headers: { 'Accept': 'application/json' }
+        headers: { 'Accept': 'application/json' },
       });
-      
-      if (vllmResponse.data?.data) {
-        for (const model of vllmResponse.data.data) {
-          models.push({
-            id: model.id,
-            name: model.id === 'qwen3-32b' ? 'Qwen3 32B' : 
-                  model.id === 'ministral-14b' ? 'Ministral 14B' : model.id,
-            provider: 'vllm',
-            status: 'active',
-            type: 'text',
-            description: `Local - ${model.root || model.id}`,
-            capabilities: ['text-generation', 'chat'],
-            parameters: { maxTokens: model.max_model_len || 4096 },
-            isActive: true,
-            isLoading: false,
-            hasError: false,
-            metadata: {
-              version: '1.0.0',
-              contextLength: model.max_model_len || 4096,
-              size: model.root || 'unknown'
-            }
+      gatewayHealthy = healthResponse.data?.status === 'healthy';
+
+      if (gatewayHealthy) {
+        // Fetch provider info
+        try {
+          const infoResponse = await axios.get(`${AI_GATEWAY_URL}/api/v1/info`, {
+            timeout: 5000,
+            headers: {
+              'Accept': 'application/json',
+              'Authorization': `Bearer ${AI_GATEWAY_API_KEY}`,
+            },
           });
+          providersFound = infoResponse.data?.providers || [];
+        } catch (infoErr) {
+          console.warn('[Models API] Info endpoint failed:', infoErr);
         }
       }
-    } catch (vllmErr) {
-      console.warn('[Models API] vLLM fetch failed:', vllmErr);
+    } catch (healthErr) {
+      console.warn('[Models API] AI Gateway health check failed:', healthErr);
     }
-    
-    // Add Anthropic models from AI Gateway config
-    const anthropicModels = [
-      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', description: 'Fast, efficient', isDefault: true },
-      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', description: 'Latest Sonnet, 1M context, extended thinking' },
-      { id: 'claude-opus-4-7', name: 'Claude Opus 4.7', description: 'Most capable Opus with extended thinking' },
-      { id: 'claude-fable-5', name: 'Claude Fable 5', description: 'Mythos-class frontier model, 1M context, 128k output' },
-    ];
-    
-    for (const model of anthropicModels) {
-      models.push({
-        id: model.id,
-        name: model.name,
-        provider: 'anthropic',
-        status: 'active',
-        type: 'text',
-        description: model.description,
-        capabilities: ['text-generation', 'chat', 'analysis'],
-        parameters: { maxTokens: 4096 },
-        isActive: true,
-        isLoading: false,
-        hasError: false,
-        metadata: {
-          version: '3.5.0',
-          contextLength: 200000,
-          size: '100B+ parameters'
-        }
-      });
+
+    // Build model list from known models, filtered by discovered providers if available
+    const providerKeys = providersFound.length > 0
+      ? Object.keys(KNOWN_MODELS).filter(k =>
+          providersFound.some(p => k.includes(p.replace('-default', '')) || p.includes(k.replace('-default', '')))
+        )
+      : Object.keys(KNOWN_MODELS);
+
+    // If gateway is healthy but we couldn't match providers, include all known models
+    const activeProviderKeys = providerKeys.length > 0 ? providerKeys : Object.keys(KNOWN_MODELS);
+
+    for (const providerKey of activeProviderKeys) {
+      const providerModels = KNOWN_MODELS[providerKey];
+      const providerName = providerKey.replace('-default', '');
+
+      for (const model of providerModels) {
+        models.push({
+          id: model.id,
+          name: model.name,
+          provider: providerName,
+          status: gatewayHealthy ? 'active' : 'unknown',
+          type: 'text',
+          description: model.description,
+          capabilities: ['text-generation', 'chat', 'analysis'],
+          parameters: { maxTokens: 4096 },
+          isActive: gatewayHealthy,
+          isLoading: false,
+          hasError: false,
+          metadata: {
+            version: '1.0.0',
+            contextLength: model.contextLength || 4096,
+            size: 'unknown',
+          },
+        });
+      }
     }
-    
+
     const modelsData = models;
     
     // Format the response for the dashboard
@@ -139,106 +173,59 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       models: formattedModels,
       summary,
       lastUpdated: new Date().toISOString(),
-      sources: ['vLLM: http://localhost:8010', 'AI Gateway Config']
+      sources: [`AI Gateway: ${AI_GATEWAY_URL}`],
+      gatewayHealthy,
     });
   } catch (error) {
     console.error('Error fetching AI Gateway models:', error);
     
-    // Return a graceful error response with mock data
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const isConnectionError = errorMessage.includes('ECONNREFUSED') || errorMessage.includes('timeout');
     
-    // Provide mock models data for development
-    const mockModels = [
-      {
-        id: 'gpt-4',
-        name: 'GPT-4',
-        provider: 'openai',
-        status: 'active',
-        type: 'text',
-        description: 'Advanced language model for complex reasoning tasks',
-        capabilities: ['text-generation', 'code-generation', 'analysis'],
-        parameters: { maxTokens: 4096, temperature: 0.7 },
-        lastUsed: new Date(Date.now() - 300000).toISOString(), // 5 minutes ago
-        requestCount: 142,
-        averageResponseTime: 1250,
-        isActive: true,
-        isLoading: false,
-        hasError: false,
-        metadata: {
-          version: '1.0.0',
-          created: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-          updated: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-          size: '175B parameters',
-          contextLength: 8192
-        }
-      },
-      {
-        id: 'claude-3',
-        name: 'Claude 3',
-        provider: 'anthropic',
-        status: 'active',
-        type: 'text',
-        description: 'Constitutional AI model with strong reasoning capabilities',
-        capabilities: ['text-generation', 'analysis', 'safety'],
-        parameters: { maxTokens: 4096, temperature: 0.5 },
-        lastUsed: new Date(Date.now() - 600000).toISOString(), // 10 minutes ago
-        requestCount: 89,
-        averageResponseTime: 980,
-        isActive: true,
-        isLoading: false,
-        hasError: false,
-        metadata: {
-          version: '3.0.0',
-          created: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
-          updated: new Date(Date.now() - 7200000).toISOString(), // 2 hours ago
-          size: '100B+ parameters',
-          contextLength: 100000
-        }
-      },
-      {
-        id: 'llama-2-70b',
-        name: 'Llama 2 70B',
-        provider: 'meta',
-        status: 'loading',
-        type: 'text',
-        description: 'Open-source large language model',
-        capabilities: ['text-generation', 'code-generation'],
-        parameters: { maxTokens: 2048, temperature: 0.8 },
-        lastUsed: null,
-        requestCount: 0,
-        averageResponseTime: 0,
-        isActive: false,
-        isLoading: true,
-        hasError: false,
-        metadata: {
-          version: '2.0.0',
-          created: new Date().toISOString(),
-          updated: new Date().toISOString(),
-          size: '70B parameters',
-          contextLength: 4096
-        }
+    // Return known models as fallback (not mock data — these are real models on the gateway)
+    const fallbackModels: any[] = [];
+    for (const [providerKey, providerModels] of Object.entries(KNOWN_MODELS)) {
+      const providerName = providerKey.replace('-default', '');
+      for (const model of providerModels) {
+        fallbackModels.push({
+          id: model.id,
+          name: model.name,
+          provider: providerName,
+          status: 'unknown',
+          type: 'text',
+          description: model.description,
+          capabilities: ['text-generation', 'chat', 'analysis'],
+          parameters: { maxTokens: 4096 },
+          isActive: false,
+          isLoading: false,
+          hasError: false,
+          metadata: {
+            version: '1.0.0',
+            contextLength: model.contextLength || 4096,
+            size: 'unknown',
+          },
+        });
       }
-    ];
+    }
 
-    const mockSummary = {
-      total: mockModels.length,
-      active: mockModels.filter(m => m.isActive).length,
-      loading: mockModels.filter(m => m.isLoading).length,
-      error: mockModels.filter(m => m.hasError).length,
-      providers: Array.from(new Set(mockModels.map(m => m.provider))),
-      types: Array.from(new Set(mockModels.map(m => m.type)))
+    const fallbackSummary = {
+      total: fallbackModels.length,
+      active: 0,
+      loading: 0,
+      error: 0,
+      providers: Array.from(new Set(fallbackModels.map(m => m.provider))),
+      types: Array.from(new Set(fallbackModels.map(m => m.type))),
     };
     
     return res.status(isConnectionError ? 503 : 500).json({
-      models: mockModels,
-      summary: mockSummary,
+      models: fallbackModels,
+      summary: fallbackSummary,
       lastUpdated: new Date().toISOString(),
-      endpoint: `${process.env.AI_GATEWAY_URL || 'http://localhost:7777'}/v1/models`,
-      error: 'Failed to fetch AI Gateway models',
+      endpoint: `${AI_GATEWAY_URL}/api/v1/info`,
+      error: 'AI Gateway unreachable — showing known models',
       message: errorMessage,
-      usingMockData: true,
-      connectionError: isConnectionError
+      usingFallbackData: true,
+      connectionError: isConnectionError,
     });
   }
 }

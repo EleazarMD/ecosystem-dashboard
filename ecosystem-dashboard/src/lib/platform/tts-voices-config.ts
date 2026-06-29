@@ -1,7 +1,7 @@
 /**
  * TTS Voice Configuration for Kids Portal
  * 
- * Maps TTS voices to specific GooseMind characters for each theme.
+ * Maps TTS voices to specific companion characters for each theme.
  * Uses Chatterbox TTS with zero-shot voice cloning (5-20 seconds of audio).
  * 
  * Character mappings:
@@ -24,7 +24,7 @@ export interface TTSVoice {
   exaggeration: number;  // 0.0-1.0, higher = more expressive
   cfgWeight: number;     // 0.0-1.0, voice cloning strength
   temperature: number;   // 0.5-1.0, variation
-  // Character mapping for GooseMind integration
+  // Character mapping for companion integration
   characterId?: string;  // Maps to child-learning-types.ts character ID
   recipeId?: string;     // Maps to recipe ID if available
 }
@@ -408,7 +408,7 @@ export function getDefaultVoiceForTheme(theme: string | null): TTSVoice {
 }
 
 /**
- * Get voice by GooseMind character ID
+ * Get voice by companion character ID
  * Maps character from child-learning-types.ts to TTS voice
  */
 export function getVoiceByCharacterId(characterId: string): TTSVoice | undefined {
@@ -417,7 +417,7 @@ export function getVoiceByCharacterId(characterId: string): TTSVoice | undefined
 
 /**
  * Get the recommended voice for a character in a specific context
- * Used by GooseMind to select appropriate TTS voice for responses
+ * Used by companion chat to select appropriate TTS voice for responses
  */
 export function getVoiceForCharacter(
   characterId: string,
@@ -439,7 +439,7 @@ export function getVoiceForCharacter(
 }
 
 /**
- * Character to Voice mapping for GooseMind integration
+ * Character to Voice mapping for companion integration
  * Maps each theme character to their TTS voice configuration
  */
 export const CHARACTER_VOICE_MAP: Record<string, string> = {
@@ -469,6 +469,56 @@ export const CHARACTER_VOICE_MAP: Record<string, string> = {
   quest: 'gaming-quest',
   announcer: 'gaming-announcer',
 };
+
+/**
+ * Qwen TTS voice ID mapping
+ * Maps child theme voice IDs to Qwen3-TTS library voice IDs
+ * (matching the voice library available on the RTX workstation)
+ */
+export const QWEN_TTS_VOICE_MAP: Record<string, string> = {
+  'default': 'american_female_warm',
+  'storyteller': 'american_male_narrator',
+  'teacher': 'american_female_confident',
+  'minecraft-steve': 'american_male_anchor',
+  'minecraft-alex': 'american_female_confident',
+  'minecraft-creeper': 'american_male_narrator',
+  'minecraft-enderman': 'british_female_refined',
+  'minecraft-villager': 'british_female_warm',
+  'minecraft-redstone': 'american_male_executive',
+  'pusheen-main': 'american_female_warm',
+  'pusheen-stormy': 'british_female_anchor',
+  'pusheen-pip': 'american_female_confident',
+  'pusheen-sloth': 'british_female_warm',
+  'pusheen-bo': 'american_female_sophisticated',
+  'pusheen-cheek': 'american_female_warm',
+  'space-astronaut': 'american_male_anchor',
+  'space-robot': 'british_female_refined',
+  'space-narrator': 'american_male_narrator',
+  'gaming-hero': 'american_male_anchor',
+  'gaming-quest': 'american_female_confident',
+  'gaming-announcer': 'american_male_executive',
+};
+
+/**
+ * Get Qwen TTS voice ID for a child voice ID
+ * Falls back to a warm female voice if no mapping exists
+ */
+export function getQwenTTSVoiceId(voiceId: string): string {
+  return QWEN_TTS_VOICE_MAP[voiceId] || 'american_female_warm';
+}
+
+/**
+ * Get Qwen TTS synthesis parameters for a voice
+ */
+export function getQwenTTSParams(voice: TTSVoice): {
+  temperature: number;
+  top_p: number;
+} {
+  return {
+    temperature: voice.temperature,
+    top_p: 0.85,
+  };
+}
 
 /**
  * Get Chatterbox TTS parameters for a voice

@@ -444,3 +444,63 @@ export function getDefaultFeatureAccess(userId: string, tier: SubscriptionTier =
     extraChildSlots: 0,
   };
 }
+
+/**
+ * Get features for a subscription tier (without add-ons or admin overrides).
+ * Used by mobile-login to resolve features from the user's tier.
+ */
+export function getTierFeatures(tier: string): FeatureFlag[] {
+  const tierConfig = SUBSCRIPTION_TIERS[tier as SubscriptionTier];
+  if (!tierConfig) return [];
+  return tierConfig.features;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TIER GRANT AUTHORITY (privilege-escalation guardrails)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Tiers that require platform-admin authority to grant.
+ * The `admin` tier unlocks admin-panel, user-management, and platform-config,
+ * so it must never be self-assigned by an untrusted client (iOS, signup, etc.).
+ */
+export const PRIVILEGED_TIERS: SubscriptionTier[] = ['admin'];
+
+/** True if `tier` is a known subscription tier. */
+export function isValidTier(tier: string): tier is SubscriptionTier {
+  return tier in SUBSCRIPTION_TIERS;
+}
+
+/** True if granting `tier` requires platform-admin authority. */
+export function isPrivilegedTier(tier: string): boolean {
+  return PRIVILEGED_TIERS.includes(tier as SubscriptionTier);
+}
+
+/**
+ * Resolve the subscription tier a caller is allowed to grant.
+ *
+ * - Unknown tiers fall back to `free` (allowed).
+ * - Privileged tiers (e.g. `admin`) require platform-admin authority; a
+ *   non-admin caller is rejected (`allowed: false`) rather than silently
+ *   downgraded, so the API boundary can return 403.
+ */
+export function resolveGrantableTier(
+  requested: string | undefined,
+  callerIsPlatformAdmin: boolean,
+): { tier: SubscriptionTier; allowed: boolean; reason?: string } {
+  const requestedTier = (requested || 'free') as SubscriptionTier;
+
+  if (!isValidTier(requestedTier)) {
+    return { tier: 'free', allowed: true, reason: `Unknown tier "${requested}" defaulted to free` };
+  }
+
+  if (isPrivilegedTier(requestedTier) && !callerIsPlatformAdmin) {
+    return {
+      tier: 'free',
+      allowed: false,
+      reason: `Tier "${requestedTier}" requires platform-admin authority`,
+    };
+  }
+
+  return { tier: requestedTier, allowed: true };
+}

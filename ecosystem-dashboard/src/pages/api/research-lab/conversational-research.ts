@@ -7,6 +7,8 @@
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '../auth/[...nextauth]';
 import { createResearchSession, initializeResearchDatabase, getResearchSession } from '@/lib/db/research-storage';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -15,35 +17,6 @@ const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
 const AI_GATEWAY_URL = process.env.NEXT_PUBLIC_AI_GATEWAY_AI_CLIENT_URL || 'http://localhost:8777';
 const AI_GATEWAY_API_KEY = process.env.AI_GATEWAY_API_KEY || process.env.NEXT_PUBLIC_AI_GATEWAY_API_KEY || 'ai-gateway-api-key-2024';
 const HERMES_CORE_URL = process.env.HERMES_CORE_URL || 'http://localhost:8780';
-const AI_INFERENCING_URL = process.env.AI_INFERENCING_URL || 'http://localhost:9000';
-
-// Get Perplexity API key - env var first (fast), then AI Inferencing service
-async function getPerplexityKey(): Promise<string | null> {
-  // Check environment variable first (instant, no network call)
-  const envKey = process.env.PERPLEXITY_API_KEY;
-  if (envKey) {
-    console.log('[Conversational Research] Using Perplexity key from environment');
-    return envKey;
-  }
-
-  // Fallback: try AI Inferencing service with 2s timeout
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
-    const response = await fetch(`${AI_INFERENCING_URL}/api/v1/keys/research-agent/perplexity`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    if (response.ok) {
-      const data = await response.json();
-      if (data.apiKey) return data.apiKey;
-    }
-  } catch (error) {
-    console.warn('[Conversational Research] AI Inferencing key fetch failed/timed out:', error);
-  }
-
-  return null;
-}
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -72,6 +45,10 @@ export default async function handler(
   }
 
   try {
+    // Resolve user ID from session for per-user API key routing via AI Gateway
+    const session = await getServerSession(req, res, authOptions);
+    const userId = (session?.user as any)?.id || null;
+
     const {
       message,
       sessionId,
@@ -115,22 +92,23 @@ export default async function handler(
     } else if (model.toLowerCase().includes('o1') || model.toLowerCase().includes('gpt')) {
       ({ response, estimatedCost } = await callOpenAI(messages, model));
     } else if (webSearch) {
-      // Web search explicitly enabled — use Perplexity if available, otherwise Brave + Qwen
-      console.log(`[Conversational Research] Fetching Perplexity key... (+${Date.now() - startTime}ms)`);
-      const perplexityKey = await getPerplexityKey();
-      console.log(`[Conversational Research] Key fetch done (+${Date.now() - startTime}ms), key found: ${!!perplexityKey}`);
-      if (perplexityKey) {
-        console.log(`[Conversational Research] Calling Perplexity API... (+${Date.now() - startTime}ms)`);
-        const result = await callPerplexity(messages, model, perplexityKey);
+      // Web search explicitly enabled — route through AI Gateway with X-User-Id
+      // for per-user Perplexity key resolution. Fall back to Brave + Qwen if no key.
+      console.log(`[Conversational Research] Routing Perplexity via AI Gateway (user: ${userId})... (+${Date.now() - startTime}ms)`);
+      try {
+        const result = await callPerplexityViaGateway(messages, model, userId);
         response = result.response;
         estimatedCost = result.estimatedCost;
         sources = result.sources || [];
         console.log(`[Conversational Research] Perplexity response received (+${Date.now() - startTime}ms), sources: ${sources.length}`);
-      } else if (BRAVE_API_KEY) {
-        console.log('[Conversational Research] Using Brave Search fallback (no Perplexity key)');
-        ({ response, estimatedCost } = await callBraveSearch(message));
-      } else {
-        throw new Error('Web search requires either PERPLEXITY_API_KEY or BRAVE_API_KEY');
+      } catch (pplxErr: any) {
+        console.warn('[Conversational Research] AI Gateway Perplexity route failed:', pplxErr.message);
+        if (BRAVE_API_KEY) {
+          console.log('[Conversational Research] Using Brave Search fallback');
+          ({ response, estimatedCost } = await callBraveSearch(message));
+        } else {
+          throw pplxErr;
+        }
       }
     } else {
       // No web search — use local Qwen3 via AI Gateway (free, no API key needed)
@@ -317,33 +295,41 @@ async function callOpenAI(messages: Message[], model: string): Promise<{ respons
   return { response: content, estimatedCost };
 }
 
-async function callPerplexity(messages: Message[], model: string, apiKey: string): Promise<{ response: string; estimatedCost: number }> {
-  // Use the selected Sonar model, fallback to sonar-pro for non-sonar models
+async function callPerplexityViaGateway(
+  messages: Message[],
+  model: string,
+  userId: string | null,
+): Promise<{ response: string; estimatedCost: number; sources: Array<{ title: string; url: string; snippet?: string }> }> {
+  // Route through AI Gateway — the gateway resolves per-user Perplexity API keys
+  // via X-User-Id header. No direct Perplexity calls from the dashboard.
   const apiModel = model.startsWith('sonar') ? model : 'sonar-pro';
+  console.log(`[Conversational Research] Perplexity via Gateway: model=${apiModel}, user=${userId}`);
 
-  console.log(`[Conversational Research] Perplexity model: ${apiModel} (requested: ${model})`);
-
-  // Build request body
   const requestBody: any = {
     model: apiModel,
     messages,
+    stream: false,
   };
 
-  // sonar-pro and sonar support web_search_options
   if (apiModel === 'sonar-pro' || apiModel === 'sonar') {
     requestBody.web_search_options = { search_context_size: 'high' };
   }
 
-  // 60s timeout for Perplexity API
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60000);
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${AI_GATEWAY_API_KEY}`,
+    'X-Service-Id': 'ecosystem-dashboard',
+  };
+  if (userId) {
+    headers['X-User-Id'] = userId;
+  }
 
-  const response = await fetch('https://api.perplexity.ai/chat/completions', {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
+
+  const response = await fetch(`${AI_GATEWAY_URL}/v1/chat/completions`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
+    headers,
     body: JSON.stringify(requestBody),
     signal: controller.signal,
   });
@@ -351,18 +337,17 @@ async function callPerplexity(messages: Message[], model: string, apiKey: string
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Perplexity API error: ${response.status} - ${error}`);
+    throw new Error(`AI Gateway Perplexity error: ${response.status} - ${error}`);
   }
 
   const data = await response.json();
   let content = data.choices[0].message.content;
 
-  // Process Perplexity search_results
+  // Process search_results from Perplexity (forwarded by gateway)
   const searchResults = data.search_results;
   const sources: Array<{ title: string; url: string; snippet?: string }> = [];
 
   if (searchResults && Array.isArray(searchResults) && searchResults.length > 0) {
-    // Build URL map and sources array
     const urlMap: Record<number, string> = {};
     searchResults.forEach((source: any, index: number) => {
       urlMap[index + 1] = source.url;
@@ -372,8 +357,6 @@ async function callPerplexity(messages: Message[], model: string, apiKey: string
         snippet: source.snippet,
       });
     });
-
-    // Replace inline [N] references with clickable markdown links [[N]](url)
     content = content.replace(/\[(\d+)\](?!\()/g, (match: string, num: string) => {
       const idx = parseInt(num, 10);
       if (urlMap[idx]) {
@@ -383,7 +366,6 @@ async function callPerplexity(messages: Message[], model: string, apiKey: string
     });
   }
 
-  // Estimate cost (Sonar Pro: $3/$15 per million tokens)
   const inputTokens = data.usage?.prompt_tokens || 1000;
   const outputTokens = data.usage?.completion_tokens || 1000;
   const estimatedCost = (inputTokens * 3 + outputTokens * 15) / 1_000_000;

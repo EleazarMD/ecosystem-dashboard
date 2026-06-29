@@ -1,7 +1,7 @@
 /**
  * Tenant Agent Context
  * 
- * Provides tenant-aware context for GooseMind and other agents.
+ * Provides tenant-aware context for AI agents and other services.
  * Routes agent requests to tenant-specific data stores:
  * - Knowledge Base (ChromaDB)
  * - Knowledge Graph (Neo4j)
@@ -342,10 +342,10 @@ export class TenantKnowledgeHub {
 }
 
 // ============================================================
-// GooseMind Integration
+// Companion Integration
 // ============================================================
 
-export interface GooseMindTenantConfig {
+export interface CompanionTenantConfig {
   tenantId: string;
   tenantSlug: string;
   
@@ -364,12 +364,12 @@ export interface GooseMindTenantConfig {
 }
 
 /**
- * Create GooseMind configuration for a tenant
+ * Create companion configuration for a tenant
  */
-export async function createGooseMindTenantConfig(
+export async function createCompanionTenantConfig(
   tenantId: string,
   userId?: string
-): Promise<GooseMindTenantConfig> {
+): Promise<CompanionTenantConfig> {
   const builder = new TenantAgentContextBuilder(tenantId);
   if (userId) {
     builder.withUser(userId);

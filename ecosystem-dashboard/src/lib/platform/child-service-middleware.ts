@@ -311,7 +311,7 @@ export function getChildPromptSuggestions(serviceId: string): string[] {
       "Help me write a story ✍️",
       "What's a cool science experiment I can try? 🔬",
     ],
-    'goosemind-voice': [
+    'companion-voice': [
       "Tell me a joke! 😄",
       "Let's play a word game 🎮",
       "Help me practice spelling 📝",

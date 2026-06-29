@@ -113,7 +113,7 @@ Focus on what a child would find interesting and educational.`;
         'Authorization': `Bearer ${process.env.AI_GATEWAY_API_KEY || 'ai-gateway-api-key-2024'}`,
       },
       body: JSON.stringify({
-        model: process.env.CHILD_AI_MODEL || 'qwen3-8b',
+        model: process.env.CHILD_AI_MODEL || 'minimax-m3',
         messages: [
           { role: 'system', content: 'You are a children\'s book analyst. Respond only with valid JSON.' },
           { role: 'user', content: prompt },

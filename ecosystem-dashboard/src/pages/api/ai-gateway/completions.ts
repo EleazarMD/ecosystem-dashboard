@@ -1,5 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 
+const AI_GATEWAY_URL = process.env.AI_GATEWAY_URL || 'http://localhost:8777';
+const AI_GATEWAY_API_KEY = process.env.AI_GATEWAY_API_KEY || 'ai-gateway-api-key-2024';
+
 /**
  * AI Gateway Chat Completions API Endpoint
  * Proxies chat completion requests to the AI Gateway service
@@ -15,51 +18,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     console.log('🤖 AI Gateway Completions API:', { model, messageCount: messages?.length });
 
-    // Forward request directly to Ollama (AI Gateway not running)
-    const response = await fetch('http://localhost:11434/api/chat', {
+    // Forward request to AI Gateway (OpenAI-compatible format)
+    const response = await fetch(`${AI_GATEWAY_URL}/api/v1/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Source': 'dashboard-completions-proxy'
+        'Authorization': `Bearer ${AI_GATEWAY_API_KEY}`,
+        'X-Source': 'dashboard-completions-proxy',
       },
       body: JSON.stringify({
-        model: model || 'llama3.2:3b',
+        model: model || 'minimax-m3',
         messages: messages || [{ role: 'user', content: 'Hello' }],
-        stream: false
+        max_tokens: max_tokens || 500,
+        temperature: temperature ?? 0.7,
+        stream: false,
       }),
-      signal: AbortSignal.timeout(30000)
+      signal: AbortSignal.timeout(60000),
     });
 
     if (!response.ok) {
-      throw new Error(`AI Gateway responded with ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`AI Gateway responded with ${response.status}: ${errorText}`);
     }
 
     const result = await response.json();
     
     console.log('✅ AI Gateway completions response received');
 
-    // Transform Ollama response to OpenAI API format
-    const transformedResponse = {
-      id: `chatcmpl-${Date.now()}`,
-      object: 'chat.completion',
-      created: Math.floor(Date.now() / 1000),
-      model: result.model || model,
-      choices: [{
-        index: 0,
-        message: {
-          role: 'assistant',
-          content: result.message?.content || 'No response received'
-        },
-        finish_reason: result.done ? 'stop' : 'length'
-      }],
-      usage: {
-        prompt_tokens: result.prompt_eval_count || 0,
-        completion_tokens: result.eval_count || 0,
-        total_tokens: (result.prompt_eval_count || 0) + (result.eval_count || 0)
-      }
-    };
-
-    res.json(transformedResponse);
+    // AI Gateway already returns OpenAI-compatible format — pass through
+    res.json(result);
 
   } catch (error) {
     console.error('❌ AI Gateway completions error:', error);

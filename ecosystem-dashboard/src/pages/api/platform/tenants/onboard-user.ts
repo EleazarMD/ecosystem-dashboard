@@ -151,7 +151,7 @@ export default async function handler(
           JSON.stringify(limits),
           JSON.stringify({
             enabledServices: getEnabledServices(tier, identity.accountType),
-            enabledAgents: ['workspace-ai', 'page-agent', 'goose-mind'],
+            enabledAgents: ['workspace-ai', 'page-agent', 'companion-ai'],
             enabledLLMs: localLLMs.models.map(m => m.id),
             enabledFeatures: limits.allowedFeatures,
             localFirst: cloudProviders.localFirst,

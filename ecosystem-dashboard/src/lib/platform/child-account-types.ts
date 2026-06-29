@@ -126,7 +126,7 @@ export interface ParentalControlsConfig {
 
 // Default parental controls for new child accounts
 export const DEFAULT_PARENTAL_CONTROLS: Omit<ParentalControlsConfig, 'id' | 'childUserId' | 'parentUserId' | 'createdAt' | 'updatedAt'> = {
-  allowedServices: ['workspace', 'goosemind-chat'],
+  allowedServices: ['workspace', 'companion-chat'],
   blockedServices: ['email-client', 'image-studio', 'research-lab'],
   
   contentFilterLevel: 'strict',
@@ -349,7 +349,7 @@ export interface ChildActivityQuery {
 
 export const CHILD_ALLOWED_SERVICES = [
   'workspace',           // Workspace AI for homework/notes
-  'goosemind-chat',      // Chat with content filtering
+  'companion-chat',      // Chat with content filtering
   'calendar',            // View family calendar
   'read-aloud',          // Text-to-speech for books and content
   'books',               // Digital books library

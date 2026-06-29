@@ -163,7 +163,7 @@ export default function AnomaliesPage() {
           description: 'Unusual prompt patterns detected - potential prompt injection attempts',
           detectedAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
           status: 'resolved',
-          affectedResources: ['goose-mind', 'chat-completions'],
+          affectedResources: ['companion-ai', 'chat-completions'],
           confidence: 0.75,
         },
         {

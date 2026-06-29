@@ -34,7 +34,7 @@ VALUES ('development', '{
     "telemetryEnabled": true,
     "maxConcurrentAgents": 5,
     "defaultLLM": "ministral-14b",
-    "defaultAgent": "goose-mind"
+    "defaultAgent": "companion-ai"
   }
 }'::jsonb, 'system')
 ON CONFLICT (environment) DO NOTHING;

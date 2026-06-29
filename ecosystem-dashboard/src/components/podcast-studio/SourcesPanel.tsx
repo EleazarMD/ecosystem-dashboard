@@ -154,7 +154,7 @@ export default function SourcesPanel({
         if (response.status === 503) {
           toast({ 
             title: "Service Unavailable", 
-            description: "Story Intelligence service is not running. Please start the GooseMind service.", 
+            description: "Story Intelligence service is not running. Please start the Companion AI service.", 
             status: "warning", 
             duration: 7000,
             isClosable: true

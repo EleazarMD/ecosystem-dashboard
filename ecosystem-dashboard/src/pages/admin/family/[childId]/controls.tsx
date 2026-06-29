@@ -97,7 +97,7 @@ interface ParentalControls {
 
 const AVAILABLE_SERVICES = [
   { id: 'workspace', name: 'Workspace AI', description: 'Notes and homework help' },
-  { id: 'goosemind-chat', name: 'GooseMind Chat', description: 'AI conversations' },
+  { id: 'companion-chat', name: 'Companion Chat', description: 'AI conversations' },
   { id: 'calendar', name: 'Calendar', description: 'View family calendar' },
   { id: 'email-client', name: 'Email Client', description: 'Email access' },
   { id: 'image-studio', name: 'Image Studio', description: 'Image generation' },

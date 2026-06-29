@@ -12,7 +12,7 @@ import {
 import { FiUser, FiCpu, FiMic, FiPhone } from 'react-icons/fi';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { GlassPanel } from '@/components/ui/GlassPanel';
-import { PersonaManager } from '@/components/goose-mind/PersonaManager';
+import { PersonaManager } from '@/components/companion/PersonaManager';
 import { useSemanticToken } from '@/hooks/useSemanticToken';
 import { PipecatVoicePanel } from '@/components/voice/PipecatVoicePanel';
 

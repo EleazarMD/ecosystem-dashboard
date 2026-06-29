@@ -342,14 +342,14 @@ function ChildDetailPage() {
           {/* Main Content Tabs */}
           <Tabs colorScheme="blue">
             <TabList>
-              <Tab><HStack><FiStar /><Text>GooseMind</Text></HStack></Tab>
+              <Tab><HStack><FiStar /><Text>Companion AI</Text></HStack></Tab>
               <Tab><HStack><FiShield /><Text>Controls</Text></HStack></Tab>
               <Tab><HStack><FiActivity /><Text>Activity</Text></HStack></Tab>
               <Tab><HStack><FiCalendar /><Text>Schedule</Text></HStack></Tab>
             </TabList>
 
             <TabPanels>
-              {/* GooseMind Learning Tab */}
+              {/* Companion AI Learning Tab */}
               <TabPanel px={0}>
                 <ChildLearningDashboard
                   childId={childId as string}

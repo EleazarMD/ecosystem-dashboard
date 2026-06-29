@@ -4,7 +4,7 @@
  * 
  * Authentication:
  * - NextAuth session (web dashboard)
- * - X-API-Key header (mobile apps like GooseMind iOS)
+ * - X-API-Key header (mobile apps like Companion iOS)
  * 
  * JIT Security:
  * - Verifies user owns the approval

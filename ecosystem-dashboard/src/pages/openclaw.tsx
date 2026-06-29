@@ -1,5 +1,5 @@
 /**
- * GooseMind - Personal AI Assistant
+ * Companion AI - Personal AI Assistant
  * Clean, functional chat interface with voice support
  */
 
@@ -76,7 +76,7 @@ const StatusDot = ({ status }: { status: 'online' | 'thinking' | 'offline' }) =>
   />
 );
 
-export default function GooseMindPage() {
+export default function CompanionAIPage() {
   const toast = useToast();
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -134,7 +134,7 @@ export default function GooseMindPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
     // Try to restore from sessionStorage on mount
     if (typeof window !== 'undefined') {
-      const saved = sessionStorage.getItem('goosemind-messages');
+      const saved = sessionStorage.getItem('companion-messages');
       if (saved) {
         try {
           return JSON.parse(saved);
@@ -147,7 +147,7 @@ export default function GooseMindPage() {
   // Persist messages to sessionStorage
   useEffect(() => {
     if (chatMessages.length > 0) {
-      sessionStorage.setItem('goosemind-messages', JSON.stringify(chatMessages));
+      sessionStorage.setItem('companion-messages', JSON.stringify(chatMessages));
     }
   }, [chatMessages]);
   const [chatInput, setChatInput] = useState('');
@@ -205,7 +205,7 @@ export default function GooseMindPage() {
   const handleImageDownload = (imageSrc: string, index: number) => {
     const link = document.createElement('a');
     link.href = imageSrc;
-    link.download = `goosemind-chart-${Date.now()}-${index}.png`;
+    link.download = `companion-chart-${Date.now()}-${index}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -251,7 +251,7 @@ export default function GooseMindPage() {
   // Session ID for OpenClaw gateway conversation continuity
   const [sessionId, setSessionId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('goosemind-sessionId') || null;
+      return sessionStorage.getItem('companion-sessionId') || null;
     }
     return null;
   });
@@ -259,9 +259,9 @@ export default function GooseMindPage() {
   // Persist sessionId to sessionStorage
   useEffect(() => {
     if (sessionId) {
-      sessionStorage.setItem('goosemind-sessionId', sessionId);
+      sessionStorage.setItem('companion-sessionId', sessionId);
     } else {
-      sessionStorage.removeItem('goosemind-sessionId');
+      sessionStorage.removeItem('companion-sessionId');
     }
   }, [sessionId]);
 
@@ -391,8 +391,8 @@ export default function GooseMindPage() {
   const clearChat = () => {
     setChatMessages([]);
     setSessionId(null);
-    sessionStorage.removeItem('goosemind-messages');
-    sessionStorage.removeItem('goosemind-sessionId');
+    sessionStorage.removeItem('companion-messages');
+    sessionStorage.removeItem('companion-sessionId');
   };
 
   if (loading) {
@@ -401,7 +401,7 @@ export default function GooseMindPage() {
         <Box display="flex" alignItems="center" justifyContent="center" minH="60vh">
           <VStack spacing={3}>
             <Spinner size="lg" color={accentColor} />
-            <Text color={textSecondary}>Connecting to GooseMind...</Text>
+            <Text color={textSecondary}>Connecting to Companion AI...</Text>
           </VStack>
         </Box>
       </DashboardLayout>
@@ -803,7 +803,7 @@ export default function GooseMindPage() {
                   <HStack spacing={3} align="flex-end">
                     <Textarea
                       ref={inputRef}
-                      placeholder="Message GooseMind..."
+                      placeholder="Message Companion AI..."
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       rows={2}

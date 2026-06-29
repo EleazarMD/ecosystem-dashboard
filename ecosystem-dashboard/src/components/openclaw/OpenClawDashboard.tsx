@@ -144,7 +144,7 @@ export function OpenClawDashboard() {
                           <FiExternalLink />
                         </HStack>
                       </Link>
-                      <Link as={NextLink} href="/goose-mind" w="full">
+                      <Link as={NextLink} href="/companion" w="full">
                         <HStack
                           p={3}
                           borderRadius="md"
@@ -155,7 +155,7 @@ export function OpenClawDashboard() {
                         >
                           <Box flex={1}>
                             <Text fontSize="sm" fontWeight="500" color={textPrimary}>
-                              GooseMind Chat
+                              Companion Chat
                             </Text>
                             <Text fontSize="xs" color={textSecondary}>
                               Chat with AI agents including OpenClaw

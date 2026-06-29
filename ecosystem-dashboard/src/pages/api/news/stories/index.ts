@@ -3,7 +3,7 @@
  * GET /api/news/stories
  * 
  * Returns published news stories for iOS and other clients.
- * Compatible with GooseMind iOS app format.
+ * Compatible with Companion iOS app format.
  * Based on Chapter 20: Story Generation Architecture & Migration Plan
  */
 

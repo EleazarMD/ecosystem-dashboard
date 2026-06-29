@@ -477,14 +477,14 @@ async function executeEmailAction(approval: ApprovalRequest): Promise<any> {
 async function executeKnowledgeGraphAction(approval: ApprovalRequest): Promise<any> {
   const payload = approval.payload as any; // KnowledgeGraphPayload
   
-  // Check if this is from GooseMind learning loop (has goose-mind-learning source)
-  const isGooseMindLearning = payload.source === 'goose-mind-learning';
+  // Check if this is from companion learning loop (has companion-learning source)
+  const isCompanionLearning = payload.source === 'companion-learning';
   
-  if (isGooseMindLearning) {
-    // Call GooseMind's approval callback endpoint
-    const gooseMindUrl = process.env.NEXT_PUBLIC_GOOSE_MIND_API || 'https://rtx-workstation.tailb64e64.ts.net:8031';
+  if (isCompanionLearning) {
+    // Call companion's approval callback endpoint
+    const companionApiUrl = process.env.NEXT_PUBLIC_COMPANION_API || 'https://rtx-workstation.tailb64e64.ts.net:8031';
     
-    const response = await fetch(`${gooseMindUrl}/knowledge/approval-callback`, {
+    const response = await fetch(`${companionApiUrl}/knowledge/approval-callback`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -499,7 +499,7 @@ async function executeKnowledgeGraphAction(approval: ApprovalRequest): Promise<a
     });
     
     if (!response.ok) {
-      throw new Error(`GooseMind callback error: ${response.statusText}`);
+      throw new Error(`Companion callback error: ${response.statusText}`);
     }
     
     return response.json();

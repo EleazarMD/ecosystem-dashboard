@@ -83,7 +83,7 @@ export default async function handler(
             status: evt.status || 'confirmed',
             priority: 'normal',
             attendees: evt.attendees || [],
-            ai_extracted: evt.source === 'goose_mind_agent',
+            ai_extracted: evt.source === 'companion_agent',
           }));
           
           // Disable caching for calendar events

@@ -1,5 +1,5 @@
 /**
- * GooseMind Memory Service
+ * Child Memory Service
  * 
  * Implements working memory and context management for child AI conversations.
  * Inspired by Goose Agent SDK's Exchange + Moderator pattern.
@@ -87,7 +87,7 @@ export async function getRecipeMemoryConfig(recipeId?: string): Promise<RecipeMe
       topicCallbacks: dbConfig.topic_callbacks,
     };
   } catch (error) {
-    console.error('[GooseMind Memory] Error fetching recipe memory config:', error);
+    console.error('[Child Memory] Error fetching recipe memory config:', error);
     return DEFAULT_MEMORY_CONFIG;
   }
 }
@@ -138,10 +138,10 @@ export async function getRecentMessages(
       timestamp: row.timestamp,
     }));
 
-    console.log(`[GooseMind Memory] Retrieved ${messages.length} recent messages for user ${childUserId}`);
+    console.log(`[Child Memory] Retrieved ${messages.length} recent messages for user ${childUserId}`);
     return messages;
   } catch (error) {
-    console.error('[GooseMind Memory] Error retrieving messages:', error);
+    console.error('[Child Memory] Error retrieving messages:', error);
     return [];
   }
 }
@@ -233,7 +233,7 @@ export async function getChildContext(childUserId: string): Promise<ChildContext
       context.conversationSummary = summaryResult.rows[0].summary;
     }
 
-    console.log(`[GooseMind Memory] Retrieved context for user ${childUserId}:`, {
+    console.log(`[Child Memory] Retrieved context for user ${childUserId}:`, {
       interests: context.interests.length,
       topics: context.recentTopics.length,
       knowledge: context.knowledgeHighlights.length,
@@ -241,7 +241,7 @@ export async function getChildContext(childUserId: string): Promise<ChildContext
     });
 
   } catch (error) {
-    console.error('[GooseMind Memory] Error retrieving child context:', error);
+    console.error('[Child Memory] Error retrieving child context:', error);
   }
 
   return context;
@@ -267,10 +267,10 @@ export async function buildMemoryContext(
   
   if (providedHistory && providedHistory.length > 0) {
     messages = providedHistory;
-    console.log(`[GooseMind Memory] Using ${messages.length} provided messages`);
+    console.log(`[Child Memory] Using ${messages.length} provided messages`);
   } else {
     messages = await getRecentMessages(childUserId, conversationId, maxMessages);
-    console.log(`[GooseMind Memory] Retrieved ${messages.length} messages from DB (max: ${maxMessages})`);
+    console.log(`[Child Memory] Retrieved ${messages.length} messages from DB (max: ${maxMessages})`);
   }
 
   // Get child context
@@ -285,11 +285,11 @@ export async function buildMemoryContext(
 
   // Truncate if over limit (similar to Goose's ContextTruncate)
   if (tokenEstimate > DEFAULT_MAX_CONTEXT_TOKENS && messages.length > 4) {
-    console.log(`[GooseMind Memory] Context too large (${tokenEstimate} tokens), truncating...`);
+    console.log(`[Child Memory] Context too large (${tokenEstimate} tokens), truncating...`);
     messages = truncateMessages(messages, DEFAULT_MAX_CONTEXT_TOKENS - contextTokens);
   }
 
-  console.log(`[GooseMind Memory] Using ${memoryConfig.recallStyle} recall style for character`);
+  console.log(`[Child Memory] Using ${memoryConfig.recallStyle} recall style for character`);
 
   return {
     messages,
@@ -435,7 +435,7 @@ export async function storeTopicMemory(
       conversationId,
     ]);
   } catch (error) {
-    console.error('[GooseMind Memory] Error storing topic memory:', error);
+    console.error('[Child Memory] Error storing topic memory:', error);
   }
 }
 
@@ -472,7 +472,7 @@ export async function generateConversationSummary(
         'Authorization': `Bearer ${process.env.AI_GATEWAY_API_KEY || 'ai-gateway-api-key-2024'}`,
       },
       body: JSON.stringify({
-        model: process.env.CHILD_AI_MODEL || 'qwen3-8b',
+        model: process.env.CHILD_AI_MODEL || 'minimax-m3',
         messages: [
           {
             role: 'system',
@@ -506,7 +506,7 @@ export async function generateConversationSummary(
 
     return summary;
   } catch (error) {
-    console.error('[GooseMind Memory] Error generating summary:', error);
+    console.error('[Child Memory] Error generating summary:', error);
     return null;
   }
 }

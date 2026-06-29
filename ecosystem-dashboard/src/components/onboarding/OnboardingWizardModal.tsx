@@ -52,7 +52,7 @@ import {
   AlertDescription,
   Spinner,
 } from '@chakra-ui/react';
-import { CheckCircleIcon, WarningIcon, LockIcon } from '@chakra-ui/icons';
+import { CheckCircleIcon, WarningIcon, LockIcon, SpinnerIcon } from '@chakra-ui/icons';
 
 import {
   OnboardingState,
@@ -74,6 +74,24 @@ import {
   SecurityFormData,
   getDefaultInfrastructure,
 } from '@/lib/platform/onboarding-types';
+
+// ============================================================
+// Provisioning Progress Types
+// ============================================================
+
+interface ProvisioningStepState {
+  stepName: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
+  error?: string;
+}
+
+interface ProvisioningState {
+  active: boolean;
+  jobId: string | null;
+  steps: ProvisioningStepState[];
+  overallStatus: 'running' | 'completed' | 'failed';
+  error: string | null;
+}
 
 import { IdentityStep } from './steps/IdentityStep';
 import { EmailStep } from './steps/EmailStep';
@@ -159,6 +177,7 @@ export function OnboardingWizardModal({
   const toast = useToast();
   const [submitting, setSubmitting] = useState(false);
   const [stepErrors, setStepErrors] = useState<Record<string, string>>({});
+  const [provisioning, setProvisioning] = useState<ProvisioningState | null>(null);
 
   // Initialize state
   const [state, setState] = useState<OnboardingState>(() => ({
@@ -275,7 +294,7 @@ export function OnboardingWizardModal({
     }
   }, [state.currentStep, state.completedSteps, steps]);
 
-  // Submit
+  // Submit — calls the unified onboarding provision API
   const handleSubmit = useCallback(async () => {
     // Final validation
     const securityErrors = validateSecurity(state.security);
@@ -286,33 +305,123 @@ export function OnboardingWizardModal({
     }
 
     setSubmitting(true);
+    setProvisioning({
+      active: true,
+      jobId: null,
+      steps: [],
+      overallStatus: 'running',
+      error: null,
+    });
+
     try {
-      const res = await fetch('/api/platform/tenants/onboard-user', {
+      // Map wizard state to the unified OnboardingFormData schema
+      const formData = {
+        name: state.identity.fullName,
+        email: state.identity.email,
+        password: state.identity.password,
+        accountType: state.identity.accountType,
+        dateOfBirth: state.identity.dateOfBirth,
+        parentUserId: state.identity.parentUserId,
+        tenantMode: state.identity.tenantMode,
+        tenantName: state.identity.tenantName,
+        tenantSlug: state.identity.tenantSlug,
+        existingTenantId: state.identity.existingTenantId,
+        targetTier: state.identity.tier,
+        emailConfig: state.email.skipEmail ? undefined : {
+          provider: state.email.provider || '',
+          imapHost: state.email.imapServer,
+          imapPort: state.email.imapPort,
+          imapUsername: state.email.username,
+          imapAppPassword: state.email.password,
+        },
+        infrastructure: {
+          dockerEnabled: state.infrastructure.provisionAIGateway,
+          neo4jEnabled: true,
+        },
+        llmConfig: {
+          provider: 'local',
+          model: state.localLLMs.defaultChatModel,
+        },
+        cloudProviders: state.cloudProviders.providers
+          .filter(p => p.enabled && p.apiKey)
+          .map(p => ({ provider: p.id, apiKey: p.apiKey })),
+        exomindPairing: state.exomind.skipPairing ? undefined : {
+          deviceName: state.exomind.tenantEndpointUrl,
+          platform: 'ios',
+        },
+        security: {
+          zeroToleranceAck: state.security.zeroToleranceAccepted,
+          contentFilterLevel: state.security.contentFilterLevel,
+          parentalControlsEnabled: state.security.parentalControlsEnabled,
+          parentalControls: state.security.parentalControls,
+        },
+      };
+
+      const res = await fetch('/api/onboarding/provision', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          identity: state.identity,
-          email: state.email,
-          infrastructure: state.infrastructure,
-          localLLMs: state.localLLMs,
-          cloudProviders: state.cloudProviders,
-          exomind: state.exomind,
-          security: state.security,
+          formData,
+          targetTier: state.identity.tier,
+          tenantId: state.identity.existingTenantId,
         }),
       });
 
-      const data: OnboardingSubmitResponse = await res.json();
+      const data = await res.json();
 
-      if (data.success) {
-        toast({
-          title: 'Account created successfully!',
-          description: `Tenant ${data.tenantSlug} is now active.`,
-          status: 'success',
-          duration: 5000,
+      if (data.status === 'completed' || res.ok) {
+        // Map provisioning steps for display
+        const provSteps: ProvisioningStepState[] = (data.steps || []).map((s: any) => ({
+          stepName: s.stepName,
+          status: s.status,
+          error: s.error,
+        }));
+
+        setProvisioning({
+          active: false,
+          jobId: data.jobId,
+          steps: provSteps,
+          overallStatus: data.status === 'completed' ? 'completed' : 'failed',
+          error: data.error || null,
         });
-        onComplete?.(data);
-        onClose();
+
+        if (data.status === 'completed') {
+          toast({
+            title: 'Account provisioned successfully!',
+            description: `Tenant is now active. ${data.steps?.length || 0} services enrolled.`,
+            status: 'success',
+            duration: 5000,
+          });
+
+          // Map to OnboardingSubmitResponse for callback compatibility
+          const response: OnboardingSubmitResponse = {
+            success: true,
+            tenantId: data.tenantId,
+            tenantSlug: state.identity.tenantSlug,
+            provisioningSteps: provSteps.map(s => ({
+              id: s.stepName,
+              name: s.stepName,
+              status: s.status === 'completed' ? 'completed' : s.status === 'failed' ? 'failed' : 'skipped',
+            })),
+          };
+          onComplete?.(response);
+          onClose();
+        } else {
+          toast({
+            title: 'Provisioning failed',
+            description: data.error || 'Some steps failed during provisioning.',
+            status: 'error',
+            duration: 7000,
+          });
+        }
       } else {
+        setProvisioning({
+          active: false,
+          jobId: null,
+          steps: [],
+          overallStatus: 'failed',
+          error: data.error || 'Provisioning failed',
+        });
         toast({
           title: 'Onboarding failed',
           description: data.error || 'Please try again.',
@@ -321,6 +430,13 @@ export function OnboardingWizardModal({
         });
       }
     } catch (error) {
+      setProvisioning({
+        active: false,
+        jobId: null,
+        steps: [],
+        overallStatus: 'failed',
+        error: 'Network error',
+      });
       toast({
         title: 'Network error',
         description: 'Could not reach the server. Please try again.',
@@ -445,7 +561,57 @@ export function OnboardingWizardModal({
 
         {/* Body */}
         <ModalBody py={6} overflowY="auto">
-          {renderStepContent()}
+          {provisioning && provisioning.overallStatus !== 'running' ? (
+            <VStack spacing={4} align="stretch">
+              <Alert
+                status={provisioning.overallStatus === 'completed' ? 'success' : 'error'}
+                borderRadius="md"
+              >
+                <AlertIcon />
+                <AlertTitle>
+                  {provisioning.overallStatus === 'completed' ? 'Provisioning Complete!' : 'Provisioning Failed'}
+                </AlertTitle>
+                <AlertDescription>
+                  {provisioning.error || `${provisioning.steps.filter(s => s.status === 'completed').length} of ${provisioning.steps.length} steps completed.`}
+                </AlertDescription>
+              </Alert>
+              <VStack spacing={2} align="stretch">
+                {provisioning.steps.map((step, idx) => (
+                  <HStack key={idx} spacing={3} px={4} py={2} borderRadius="md" bg="gray.800">
+                    {step.status === 'completed' && <CheckCircleIcon color="green.400" />}
+                    {step.status === 'failed' && <WarningIcon color="red.400" />}
+                    {step.status === 'skipped' && <Text color="gray.500">⏭️</Text>}
+                    {step.status === 'in_progress' && <Spinner size="sm" color="blue.400" />}
+                    {step.status === 'pending' && <Text color="gray.600">○</Text>}
+                    <Box flex={1}>
+                      <Text fontSize="sm" color="gray.300">{step.stepName}</Text>
+                      {step.error && (
+                        <Text fontSize="xs" color="red.400">{step.error}</Text>
+                      )}
+                    </Box>
+                  </HStack>
+                ))}
+              </VStack>
+              {provisioning.overallStatus === 'completed' && (
+                <Button colorScheme="green" onClick={onClose} leftIcon={<CheckCircleIcon />}>
+                  Done
+                </Button>
+              )}
+              {provisioning.overallStatus === 'failed' && (
+                <Button colorScheme="blue" onClick={() => setProvisioning(null)}>
+                  Back to Wizard
+                </Button>
+              )}
+            </VStack>
+          ) : provisioning && provisioning.active ? (
+            <VStack spacing={4} py={8}>
+              <Spinner size="xl" color="blue.400" />
+              <Text fontSize="lg" color="gray.300">Provisioning your account...</Text>
+              <Text fontSize="sm" color="gray.500">This may take 30-60 seconds while we set up your services.</Text>
+            </VStack>
+          ) : (
+            renderStepContent()
+          )}
         </ModalBody>
 
         {/* Footer */}

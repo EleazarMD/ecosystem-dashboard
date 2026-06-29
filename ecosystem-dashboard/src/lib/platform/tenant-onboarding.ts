@@ -297,19 +297,19 @@ export class TenantOnboardingService {
   private async configureAgentAccess(tenantId: string, tier: TenantTier): Promise<void> {
     const agentConfig = {
       free: {
-        gooseMind: false,
+        companionAI: false,
         workspaceAI: true,
         pageAgent: true,
         voiceEnabled: false,
       },
       basic: {
-        gooseMind: true,
+        companionAI: true,
         workspaceAI: true,
         pageAgent: true,
         voiceEnabled: true,
       },
       premium: {
-        gooseMind: true,
+        companionAI: true,
         workspaceAI: true,
         pageAgent: true,
         voiceEnabled: true,
@@ -343,8 +343,8 @@ export class TenantOnboardingService {
   private getEnabledAgents(tier: TenantTier): string[] {
     const agents: Record<TenantTier, string[]> = {
       free: ['workspace-ai', 'page-agent'],
-      basic: ['workspace-ai', 'page-agent', 'goose-mind'],
-      premium: ['workspace-ai', 'page-agent', 'goose-mind', 'dashboard-ai', 'openclaw-agent'],
+      basic: ['workspace-ai', 'page-agent', 'companion-ai'],
+      premium: ['workspace-ai', 'page-agent', 'companion-ai', 'dashboard-ai', 'openclaw-agent'],
     };
     return agents[tier];
   }

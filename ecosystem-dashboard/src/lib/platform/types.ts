@@ -179,8 +179,8 @@ export const DEFAULT_SERVICES: ServiceConfig[] = [
     healthCheck: '/health',
   },
   {
-    id: 'goose-mind',
-    name: 'GooseMind',
+    id: 'companion-ai',
+    name: 'Companion AI',
     description: 'Personal AI assistant with voice, calendar, email',
     category: 'ai',
     enabled: true,
@@ -227,8 +227,8 @@ export const DEFAULT_SERVICES: ServiceConfig[] = [
 
 export const DEFAULT_AGENTS: AgentConfig[] = [
   {
-    id: 'goose-mind',
-    name: 'GooseMind Personal Assistant',
+    id: 'companion-ai',
+    name: 'Companion AI Assistant',
     description: 'Voice-enabled personal AI with calendar, email, and KB',
     type: 'personal',
     enabled: true,
@@ -325,12 +325,12 @@ export const DEFAULT_UI_FEATURES: UIFeatureConfig[] = [
     enabled: true,
   },
   {
-    id: 'goose-mind-panel',
-    name: 'GooseMind Panel',
+    id: 'companion-panel',
+    name: 'Companion Panel',
     description: 'Voice-enabled personal assistant panel',
     category: 'ai',
     enabled: true,
-    requiredAgents: ['goose-mind'],
+    requiredAgents: ['companion-ai'],
   },
   {
     id: 'page-agent-sidebar',
@@ -437,7 +437,7 @@ export function createDefaultPlatformConfig(): PlatformConfig {
       telemetryEnabled: true,
       maxConcurrentAgents: 5,
       defaultLLM: 'ministral-14b',
-      defaultAgent: 'goose-mind',
+      defaultAgent: 'companion-ai',
     },
   };
 }

@@ -1,7 +1,7 @@
 /**
  * Child Recipe Manager Component
  * 
- * Admin UI for managing GooseMind recipe assignments for children.
+ * Admin UI for managing Companion AI recipe assignments for children.
  * Parents can assign educational and character-based recipes.
  */
 
@@ -262,7 +262,7 @@ export function ChildRecipeManager({
       <GlassPanel variant="light" p={5}>
         <HStack justify="space-between" mb={4}>
           <Heading size="md">
-            🎭 {childName}'s GooseMind Characters
+            🎭 {childName}'s Companion AI Characters
           </Heading>
           <HStack>
             <IconButton
@@ -287,7 +287,7 @@ export function ChildRecipeManager({
           <Alert status="info" borderRadius="md">
             <AlertIcon />
             <Text>
-              No characters assigned yet. Add a character to personalize {childName}'s GooseMind experience!
+              No characters assigned yet. Add a character to personalize {childName}'s Companion AI experience!
             </Text>
           </Alert>
         ) : (

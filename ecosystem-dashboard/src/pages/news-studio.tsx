@@ -8,6 +8,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Head from 'next/head';
 import {
   Box,
+  Image,
   Flex,
   Grid,
   GridItem,
@@ -100,6 +101,7 @@ interface Story {
   sources: any[];
   audio_url?: string;
   audio_duration_seconds?: number;
+  cover_image_url?: string;
   created_at: string;
   status: string;
   frameworks_applied?: string[];
@@ -625,6 +627,24 @@ function StoriesGrid({
               _hover={{ bg: selectedStory?.id === story.id ? selectedBg : hoverBg }}
               transition="background 0.15s"
             >
+              <HStack spacing={3} align="start">
+                {/* Thumbnail */}
+                <Box flexShrink={0} borderRadius="md" overflow="hidden" w="48px" h="48px">
+                  {story.cover_image_url ? (
+                    <Image
+                      src={story.cover_image_url.startsWith('http') ? story.cover_image_url : `http://100.108.41.22:8412${story.cover_image_url}`}
+                      alt={story.title}
+                      w="48px" h="48px"
+                      objectFit="cover"
+                      fallbackSrc=""
+                    />
+                  ) : (
+                    <Flex w="48px" h="48px" align="center" justify="center" bg={`var(--chakra-colors-${getCategoryColor(story.category)}-50, #E2E8F0)`}>
+                      <Icon as={FiFileText} boxSize={5} color="gray.400" />
+                    </Flex>
+                  )}
+                </Box>
+                <Box flex="1" minWidth={0}>
               <HStack mb={1} spacing={2}>
                 <Badge size="sm" colorScheme={getCategoryColor(story.category)}>{story.category}</Badge>
                 <Badge size="sm" variant="outline" colorScheme={story.status === 'published' ? 'green' : story.status === 'ready' ? 'blue' : 'gray'}>
@@ -641,6 +661,8 @@ function StoriesGrid({
                 <Text>{story.reading_time_minutes} min read</Text>
                 <Text>•</Text>
                 <Text>{new Date(story.created_at).toLocaleDateString()}</Text>
+              </HStack>
+                </Box>
               </HStack>
             </Box>
           ))}

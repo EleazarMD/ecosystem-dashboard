@@ -24,6 +24,7 @@
     "upgrade-tier": "tsx scripts/upgrade-tier.ts",
     "agent:register": "node src/scripts/register-agent.js",
     "agent:health": "curl -s http://localhost:8404/api/agent/health | jq",
+    "agent:cli": "npx ts-node src/scripts/picode-agent-cli.ts",
     "kg:start": "node scripts/real-kg-service-manager.js start",
     "kg:stop": "node scripts/real-kg-service-manager.js stop",
     "kg:restart": "node scripts/real-kg-service-manager.js restart",

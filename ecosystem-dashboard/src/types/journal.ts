@@ -6,7 +6,7 @@
  * - Creative thinking and self-expression
  * - Highlighting positives of the day
  * - Reflecting on challenges and improvements
- * - GooseMind-powered skill evaluation and recommendations
+ * - AI-powered skill evaluation and recommendations
  */
 
 // ============================================================================
@@ -116,7 +116,7 @@ export interface JournalEntry {
   linkedPlannerItems?: string[];   // IDs of related planner items
   linkedWorkspacePages?: string[]; // IDs of related workspace pages
   
-  // GooseMind evaluation
+  // AI evaluation
   aiEvaluation?: JournalAIEvaluation;
   
   // Media attachments
@@ -129,7 +129,7 @@ export interface JournalEntry {
 }
 
 // ============================================================================
-// GooseMind AI Evaluation
+// AI Evaluation
 // ============================================================================
 
 export interface JournalSkillScore {

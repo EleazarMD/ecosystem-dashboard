@@ -56,7 +56,7 @@ import {
 } from 'react-icons/fi';
 import { useSemanticToken } from '@/hooks/useSemanticToken';
 
-const GOOSE_MIND_API = process.env.NEXT_PUBLIC_GOOSE_MIND_API || 'https://rtx-workstation.tailb64e64.ts.net:8031';
+const COMPANION_API = process.env.NEXT_PUBLIC_COMPANION_API || 'https://rtx-workstation.tailb64e64.ts.net:8031';
 
 interface KnowledgeItem {
   id: string;
@@ -121,7 +121,7 @@ const LearningTab: React.FC = () => {
 
   const fetchStats = useCallback(async () => {
     try {
-      const response = await fetch(`${GOOSE_MIND_API}/knowledge/stats`);
+      const response = await fetch(`${COMPANION_API}/knowledge/stats`);
       if (response.ok) {
         const data = await response.json();
         setStats(data);
@@ -139,7 +139,7 @@ const LearningTab: React.FC = () => {
       if (selectedStatus) params.append('status', selectedStatus);
       params.append('limit', '50');
       
-      const response = await fetch(`${GOOSE_MIND_API}/knowledge/review?${params}`);
+      const response = await fetch(`${COMPANION_API}/knowledge/review?${params}`);
       if (response.ok) {
         const data = await response.json();
         setItems(data.items || []);
@@ -163,7 +163,7 @@ const LearningTab: React.FC = () => {
 
   const handleUpdateStatus = async (itemId: string, newStatus: string) => {
     try {
-      const response = await fetch(`${GOOSE_MIND_API}/knowledge/update`, {
+      const response = await fetch(`${COMPANION_API}/knowledge/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -194,7 +194,7 @@ const LearningTab: React.FC = () => {
 
   const handleUpdateContent = async (itemId: string, newContent: string) => {
     try {
-      const response = await fetch(`${GOOSE_MIND_API}/knowledge/update`, {
+      const response = await fetch(`${COMPANION_API}/knowledge/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -225,7 +225,7 @@ const LearningTab: React.FC = () => {
     if (!confirm('Are you sure you want to delete this knowledge item?')) return;
     
     try {
-      const response = await fetch(`${GOOSE_MIND_API}/knowledge/${itemId}`, {
+      const response = await fetch(`${COMPANION_API}/knowledge/${itemId}`, {
         method: 'DELETE',
       });
       

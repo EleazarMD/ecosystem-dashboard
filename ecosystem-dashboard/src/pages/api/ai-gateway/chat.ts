@@ -1,4 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '../auth/[...nextauth]';
 
 /**
  * AI Gateway Chat API Endpoint
@@ -44,16 +46,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
+    // Resolve user ID for per-user API key routing via AI Gateway
+    const session = await getServerSession(req, res, authOptions);
+    const userId = (session?.user as any)?.id || null;
+
     // Forward request to appropriate endpoint
     const apiKey = process.env.AI_GATEWAY_API_KEY || process.env.NEXT_PUBLIC_AI_GATEWAY_API_KEY || 'ai-gateway-api-key-2024';
 
+    const gwHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Source': 'dashboard-ai-gateway-proxy',
+      'Authorization': isNIMModel ? 'Bearer nim' : `Bearer ${apiKey}`,
+    };
+    if (userId) {
+      gwHeaders['X-User-Id'] = userId;
+    }
+
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Source': 'dashboard-ai-gateway-proxy',
-        'Authorization': isNIMModel ? 'Bearer nim' : `Bearer ${apiKey}`
-      },
+      headers: gwHeaders,
       body: JSON.stringify({
         model: transformedModel,
         messages: messages || [{ role: 'user', content: 'Hello' }],

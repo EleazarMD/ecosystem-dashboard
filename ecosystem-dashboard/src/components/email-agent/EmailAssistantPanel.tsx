@@ -2,7 +2,7 @@
  * Email Assistant Panel
  * AI chat interface contextually focused on email content
  * Integrates with the dashboard's dynamic right panel system
- * Styled to match GooseMind chat interface
+ * Styled to match companion chat interface
  */
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -82,7 +82,7 @@ export default function EmailAssistantPanel({ customData }: EmailAssistantPanelP
   const borderColor = useSemanticToken('border.subtle');
   const bgSubtle = useSemanticToken('surface.subtle');
 
-  // GooseMind-style colors
+  // Companion-style colors
   const userMsgBg = useColorModeValue('linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)');
   const assistantMsgBg = useColorModeValue('white', 'gray.700');
   const accentColor = useColorModeValue('purple.500', 'purple.400');

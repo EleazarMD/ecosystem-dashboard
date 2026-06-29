@@ -8,14 +8,14 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcryptjs';
-import * as jwt from 'jsonwebtoken';
+import { issueAccessToken, issueRefreshToken, DEFAULT_ISSUER_CONFIG } from '../../../lib/platform/unified-token';
+import { checkRateLimit, getIP, RATE_LIMITS } from '../../../lib/platform/rate-limiter';
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://eleazar@localhost/ecosystem_unified',
 });
 
 const JWT_SECRET = process.env.NEXTAUTH_SECRET || 'your-development-secret-change-in-production';
-const JWT_EXPIRY = '30d';
 
 /**
  * Verify credentials - SAME LOGIC as NextAuth CredentialsProvider.authorize()
@@ -86,9 +86,24 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  // P2.11: Tighten CORS — only allow known client origins
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const devOrigins = ['http://localhost:3000', 'http://127.0.0.1:3000'];
+  const allAllowed = [...allowedOrigins, ...devOrigins];
+  const origin = req.headers.origin;
+  if (origin && allAllowed.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Vary', 'Origin');
+  } else if (process.env.NODE_ENV !== 'production') {
+    res.setHeader('Access-Control-Allow-Origin', origin || 'http://localhost:3000');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -96,6 +111,12 @@ export default async function handler(
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // P2.10: Rate limit — 10 login attempts per IP per 15 minutes
+  const ip = getIP(req);
+  if (!checkRateLimit(`mobileLogin:ip:${ip}`, RATE_LIMITS.mobileLogin.maxRequests, RATE_LIMITS.mobileLogin.windowMs)) {
+    return res.status(429).json({ error: 'Too many login attempts. Please try again later.' });
   }
 
   try {
@@ -116,22 +137,91 @@ export default async function handler(
       return res.status(500).json({ error: 'Failed to load user data' });
     }
 
-    const token = jwt.sign(
+    // Determine client type and platform from request headers
+    const xClient = (req.headers['x-client'] as string) || '';
+    const clientType = xClient.includes('macOS') ? 'macos' : 'ios';
+    const platform = xClient.includes('macOS') ? 'macos' : 'ios';
+    const clientId = xClient || 'Hyperspace-iOS';
+
+    // Resolve features from subscription tier
+    const { getTierFeatures } = require('../../../lib/subscription-tiers');
+    const features = getTierFeatures(userData.subscriptionTier) as string[];
+
+    // Issue unified access token
+    const accessToken = issueAccessToken(
       {
+        sub: userData.id,
         userId: userData.id,
         email: userData.email,
+        name: userData.name,
         platformRole: userData.platformRole,
+        accountType: userData.accountType,
+        tenantId: userData.tenants[0]?.tenantId,
+        tenantSlug: userData.tenants[0]?.tenantSlug,
+        tenantRole: userData.tenants[0]?.roleId,
+        subscriptionTier: userData.subscriptionTier,
+        features,
+        clientType: clientType as any,
+        platform: platform as any,
+        clientId,
+        authMethod: 'jwt',
       },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRY }
+      {
+        issuer: 'mobile-login',
+        secret: JWT_SECRET,
+        accessTokenTTL: DEFAULT_ISSUER_CONFIG.accessTokenTTL!,
+        refreshTokenTTL: DEFAULT_ISSUER_CONFIG.refreshTokenTTL!,
+      }
     );
 
-    console.log('[Mobile Auth] User logged in:', userData.email);
+    // Issue unified refresh token (30d)
+    const refreshToken = issueRefreshToken(
+      {
+        sub: userData.id,
+        userId: userData.id,
+        email: userData.email,
+        name: userData.name,
+        platformRole: userData.platformRole,
+        accountType: userData.accountType,
+        subscriptionTier: userData.subscriptionTier,
+        features,
+        clientType: clientType as any,
+        platform: platform as any,
+        clientId,
+        authMethod: 'jwt',
+      },
+      {
+        issuer: 'mobile-login',
+        secret: JWT_SECRET,
+        accessTokenTTL: DEFAULT_ISSUER_CONFIG.accessTokenTTL!,
+        refreshTokenTTL: DEFAULT_ISSUER_CONFIG.refreshTokenTTL!,
+      }
+    );
+
+    // Register/update client in client_registrations
+    try {
+      await pool.query(
+        `INSERT INTO client_registrations
+           (user_id, tenant_id, client_type, client_id, client_name, platform,
+            auth_method, capabilities, is_active, last_seen_at, registered_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'jwt', '[]'::jsonb, true, now(), now())
+         ON CONFLICT (user_id, client_id) WHERE is_active = true DO UPDATE SET
+           last_seen_at = now(), is_active = true`,
+        [userData.id, userData.tenants[0]?.tenantId || null, clientType, clientId,
+         req.body.deviceName || clientId, platform]
+      );
+    } catch { /* non-fatal */ }
+
+    console.log('[Mobile Auth] User logged in:', userData.email, 'client:', clientType);
 
     return res.status(200).json({
-      token,
+      token: accessToken,
+      refreshToken,
       user: userData,
-      expiresIn: 30 * 24 * 60 * 60,
+      expiresIn: DEFAULT_ISSUER_CONFIG.accessTokenTTL,
+      tokenType: 'unified',
+      clientType,
+      platform,
     });
   } catch (error) {
     console.error('[Mobile Auth] Login error:', error);
