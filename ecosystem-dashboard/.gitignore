@@ -1,4 +1,7 @@
 
 # Apple push notification secrets
-config/
+/config/
 *.p8
+
+# Build artifacts
+tsconfig.tsbuildinfo
