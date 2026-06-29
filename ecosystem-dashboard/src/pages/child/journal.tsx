@@ -4,7 +4,7 @@
  * A creative journaling experience integrated with:
  * - Workspace-AI for writing assistance
  * - Planner for scheduling and reminders
- * - GooseMind for skill evaluation and recommendations
+ * - Companion AI for skill evaluation and recommendations
  * 
  * Features:
  * - Daily prompts and mood tracking
@@ -14,7 +14,12 @@
  * - Theme-aware design (Minecraft/Pusheen)
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  KNOWN_ACTIVITY_IDS,
+  useActivityContext,
+  createJournalContextProvider,
+} from '@/domains/learning/shared/activity-registry';
 import {
   Box,
   Container,
@@ -93,6 +98,7 @@ import { getServerSession } from 'next-auth';
 import { useRouter } from 'next/router';
 import { authOptions } from '../api/auth/[...nextauth]';
 import ChildDashboardLayout from '@/components/layout/ChildDashboardLayout';
+import { StudioReturnBanner } from '@/components/child/learning-kit';
 import { useChildTheme } from '@/components/child/ChildThemeProvider';
 import { BackgroundContextMenu, getBackgroundStyles, BackgroundMode } from '@/components/child/BackgroundContextMenu';
 import { useRightPanel } from '@/contexts/RightPanelContext';
@@ -118,6 +124,10 @@ function JournalPageContent() {
   const router = useRouter();
   const toast = useToast();
   const { colors, childExtras, themeId } = useChildTheme();
+
+  // Register Journal context provider with the Context Hub
+  const journalStateRef = useRef({ childName: '' });
+  useActivityContext(KNOWN_ACTIVITY_IDS.JOURNAL, () => createJournalContextProvider(journalStateRef));
   const { setContext, setIsOpen } = useRightPanel();
   
   // State
@@ -193,10 +203,7 @@ function JournalPageContent() {
   const bgStyles = getBackgroundStyles(bgMode);
 
   // Panel is managed by ChildDashboardLayout via pageType="journal"
-  // Just ensure it's open on mount
-  useEffect(() => {
-    setIsOpen(true);
-  }, [setIsOpen]);
+  // Panel stays closed by default; user opens via right-rail buttons
 
   // Fetch data on mount
   useEffect(() => {
@@ -1141,6 +1148,7 @@ function JournalPageContent() {
         
         <Box position="relative" zIndex={1}>
           <Container maxW="4xl" py={6}>
+          <StudioReturnBanner />
           <VStack spacing={6} align="stretch">
             {/* Header */}
             <Box

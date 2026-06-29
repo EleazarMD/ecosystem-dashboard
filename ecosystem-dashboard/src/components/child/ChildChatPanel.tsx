@@ -27,6 +27,7 @@ import {
   Spinner,
 } from '@chakra-ui/react';
 import { FiStar, FiBook, FiAward, FiZap } from 'react-icons/fi';
+import { ChildTutorTab } from './ChildTutorTab';
 
 interface Character {
   id: string;
@@ -1016,6 +1017,10 @@ export function ChildChatPanel({
       </Button>
     </VStack>
   );
+
+  if (activeTab === 'chat') {
+    return <ChildTutorTab defaultActivityId="child-chat" defaultTitle="Chat" />;
+  }
 
   return (
     <Box p={3} h="full" overflowY="auto">

@@ -609,6 +609,24 @@ export const PANEL_REGISTRY: Record<string, PanelMetadata> = {
     component: dynamic(() => import('@/components/child/ChildBookExplorerPanel')),
   },
 
+  'child-pokemon-lab': {
+    id: 'child-pokemon-lab',
+    displayName: 'Pokémon Lab Helper',
+    description: 'Tutor prompts and concept reminders',
+    icon: 'FiZap',
+    iconColor: 'yellow.500',
+    component: dynamic(() => import('@/components/child/ChildPokemonLabPanel')),
+  },
+
+  'child-learn': {
+    id: 'child-learn',
+    displayName: 'Learning Buddy',
+    description: 'Tutor prompts, progress, and learning path',
+    icon: 'FiZap',
+    iconColor: 'purple.500',
+    component: dynamic(() => import('@/components/child/ChildLearnPanel')),
+  },
+
   // ===== MONITORING PANELS =====
   'monitoring-alerts': {
     id: 'monitoring-alerts',

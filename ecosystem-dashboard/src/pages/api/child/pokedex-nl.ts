@@ -44,15 +44,15 @@ Available GraphQL queries:
 - allItems(limit: Int, offset: Int): [Item]
 - graphStats: Stats
 
-Pokemon fields: id name pokedex_number height weight base_experience sprite_front sprite_back sprite_shiny official_artwork cries types abilities { id name is_hidden } stats { stat base_value } species { id name genus is_legendary is_mythical is_baby capture_rate color shape habitat description growth_rate }
-SearchResult fields: id name pokedex_number sprite_front official_artwork types
-TypeEffectiveness fields: type strong_against weak_against immune_to vulnerable_to resists_from
-Move fields: id name type power pp accuracy damage_class effect level learn_method
-Form fields: id name is_default is_battle_only form_order sprite_front sprite_back types
-TeamSuggestion fields: id name pokedex_number sprite_front official_artwork total_stats types is_legendary is_mythical
-WeaknessCalc fields: covered_types weak_to team_size
-TypeCoverage fields: super_effective not_covered coverage_pct
-Stats fields: total_nodes total_rels pokemon species types moves abilities items tcg_cards anime_episodes
+Pokemon fields: id name pokedexNumber height weight baseExperience spriteFront spriteBack spriteShiny officialArtwork spriteDreamWorld cries types abilities { id name isHidden } stats { stat baseValue } species { id name genus isLegendary isMythical isBaby captureRate color shape habitat description growthRate }
+SearchResult fields: id name pokedexNumber spriteFront officialArtwork spriteDreamWorld types
+TypeEffectiveness fields: type strongAgainst weakAgainst immuneTo vulnerableTo resistsFrom
+Move fields: id name type power pp accuracy damageClass effect level learnMethod
+Form fields: id name isDefault isBattleOnly formOrder spriteFront spriteBack types
+TeamSuggestion fields: id name pokedexNumber spriteFront officialArtwork spriteDreamWorld totalStats types isLegendary isMythical
+WeaknessCalc fields: coveredTypes weakTo teamSize
+TypeCoverage fields: superEffective notCovered coveragePct
+Stats fields: totalNodes totalRels pokemon species types moves abilities items tcgCards animeEpisodes
 
 Rules:
 1. Return ONLY a valid GraphQL query string — no markdown, no explanation, no backticks.
@@ -112,7 +112,7 @@ export default async function handler(
         Authorization: `Bearer ${process.env.CHILD_SAFETY_API_KEY || 'child-safety-key'}`,
       },
       body: JSON.stringify({
-        model: process.env.CHILD_AI_MODEL || 'qwen3-8b',
+        model: process.env.CHILD_AI_MODEL || 'minimax-m3',
         messages: [
           { role: 'system', content: SCHEMA_CONTEXT },
           { role: 'user', content: question },
@@ -188,7 +188,7 @@ function generateFallbackQuery(question: string): string {
   const typeMatch = q.match(/(?:show|find|get|list)\s+(?:me\s+)?(?:all\s+)?(\w+)\s+type/);
   if (typeMatch) {
     const typeName = typeMatch[1];
-    return `query { pokemonByType(typeName: "${typeName}", limit: 20) { id name pokedex_number sprite_front official_artwork types } }`;
+    return `query { pokemonByType(typeName: "${typeName}", limit: 20) { id name pokedexNumber spriteFront officialArtwork types } }`;
   }
 
   // "what is X's type" / "tell me about X"
@@ -196,13 +196,13 @@ function generateFallbackQuery(question: string): string {
   if (nameMatch) {
     const name = nameMatch[1];
     if (name !== 'all' && name !== 'the' && name.length > 1) {
-      return `query { pokemonByName(name: "${name}") { id name pokedex_number types abilities { id name is_hidden } stats { stat base_value } species { id name genus is_legendary is_mythical description } } }`;
+      return `query { pokemonByName(name: "${name}") { id name pokedexNumber types abilities { id name isHidden } stats { stat baseValue } species { id name genus isLegendary isMythical description } } }`;
     }
   }
 
   // "how many pokemon" / "graph stats" / "stats"
   if (q.includes('how many') || q.includes('stats') || q.includes('count') || q.includes('graph')) {
-    return `query { graphStats { total_nodes total_rels pokemon species types moves abilities items tcg_cards anime_episodes } }`;
+    return `query { graphStats { totalNodes totalRels pokemon species types moves abilities items tcgCards animeEpisodes } }`;
   }
 
   // "what types exist" / "all types"
@@ -224,20 +224,20 @@ function generateFallbackQuery(question: string): string {
     const type1 = teamMatch[1];
     const type2 = teamMatch[2] || '';
     const types = type2 ? `["${type1}", "${type2}"]` : `["${type1}"]`;
-    return `query { teamSuggest(types: ${types}, limit: 10) { id name pokedex_number sprite_front official_artwork total_stats types is_legendary is_mythical } }`;
+    return `query { teamSuggest(types: ${types}, limit: 10) { id name pokedexNumber spriteFront officialArtwork totalStats types isLegendary isMythical } }`;
   }
 
   // "type effectiveness" / "X strong against"
   const effMatch = q.match(/(\w+)\s+(?:strong|weak|effective|effectiveness)/);
   if (effMatch) {
-    return `query { typeEffectiveness(typeName: "${effMatch[1]}") { type strong_against weak_against immune_to vulnerable_to resists_from } }`;
+    return `query { typeEffectiveness(typeName: "${effMatch[1]}") { type strongAgainst weakAgainst immuneTo vulnerableTo resistsFrom } }`;
   }
 
   // Default: search by the first word
   const words = q.split(/\s+/).filter((w) => w.length > 2 && !['show', 'find', 'tell', 'about', 'the', 'all', 'me', 'what', 'how', 'many'].includes(w));
   if (words.length > 0) {
-    return `query { searchPokemon(query: "${words[0]}", limit: 12) { id name pokedex_number sprite_front official_artwork types } }`;
+    return `query { searchPokemon(query: "${words[0]}", limit: 12) { id name pokedexNumber spriteFront officialArtwork types } }`;
   }
 
-  return `query { graphStats { total_nodes total_rels pokemon species types moves abilities items tcg_cards anime_episodes } }`;
+  return `query { graphStats { totalNodes totalRels pokemon species types moves abilities items tcgCards animeEpisodes } }`;
 }

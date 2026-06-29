@@ -93,18 +93,25 @@ Style-specific examples:
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': process.env.AI_GATEWAY_API_KEY || 'ai-gateway-api-key-2024',
+        // Child-services pattern: minor/restricted key + strict filtering.
+        'Authorization': `Bearer ${process.env.CHILD_SAFETY_API_KEY || 'child-safety-key'}`,
         'X-Service-ID': 'prompt-augmenter',
         'X-User-ID': userId,
       },
       body: JSON.stringify({
-        model: 'qwen3-8b', // Local model, no external API calls
+        model: process.env.CHILD_AI_MODEL || 'minimax-m3',
+        contract: 'minor-restricted',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Enhance this prompt using ${styleLabel} style: "${prompt}"` }
         ],
         temperature: 0.7, // Some creativity for varied results
         max_tokens: 200,
+        metadata: {
+          user_type: 'child',
+          content_filter: 'strict',
+          service_id: 'prompt-augmenter',
+        },
       }),
       signal: AbortSignal.timeout(20000), // 20 second timeout
     });

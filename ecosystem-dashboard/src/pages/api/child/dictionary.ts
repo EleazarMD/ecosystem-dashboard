@@ -14,7 +14,9 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://eleazar@localhost/ecosystem_unified',
 });
 
-const AI_GATEWAY_URL = process.env.AI_GATEWAY_AI_URL || process.env.AI_GATEWAY_URL || 'http://localhost:8777';
+const AI_GATEWAY_URL = process.env.AI_GATEWAY_URL || 'http://localhost:8777';
+const CHILD_SAFETY_API_KEY = process.env.CHILD_SAFETY_API_KEY || 'child-safety-key';
+const CHILD_AI_MODEL = process.env.CHILD_AI_MODEL || 'minimax-m3';
 
 interface DictionaryEntry {
   word: string;
@@ -122,27 +124,34 @@ Make it engaging and fun! Use emojis sparingly in examples.
 Return ONLY valid JSON, no markdown.`;
 
   try {
-    const model = process.env.CHILD_AI_MODEL || 'qwen3-32b';
-    const apiKey = process.env.AI_GATEWAY_API_KEY || 'ai-gateway-api-key-2024';
-    
+    const model = CHILD_AI_MODEL;
+
     console.log('[Dictionary] Calling AI Gateway at:', AI_GATEWAY_URL);
     console.log('[Dictionary] Using model:', model);
-    
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
-    
+
     const response = await fetch(`${AI_GATEWAY_URL}/api/v1/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        // Child-services pattern: the minor/restricted key signals the gateway
+        // to apply strict content filtering for this account.
+        'Authorization': `Bearer ${CHILD_SAFETY_API_KEY}`,
         'X-Service-ID': 'child-dictionary',
       },
       body: JSON.stringify({
         model,
+        contract: 'minor-restricted',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
         max_tokens: 800,
+        metadata: {
+          user_type: 'child',
+          content_filter: 'strict',
+          service_id: 'child-dictionary',
+        },
       }),
       signal: controller.signal,
     });

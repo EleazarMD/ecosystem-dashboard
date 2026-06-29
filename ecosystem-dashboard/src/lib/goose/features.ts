@@ -2,7 +2,7 @@
  * Goose Feature Registry
  * Centralized feature definitions for all Goose UI implementations
  * 
- * Each Goose UI (GooseMind, PageAgent, WorkspaceAI, AgenticControl) can
+ * Each Goose UI (Companion AI, PageAgent, WorkspaceAI, AgenticControl) can
  * enable/disable features based on their use case.
  */
 
@@ -175,7 +175,7 @@ export const GOOSE_FEATURES: Record<GooseFeatureId, GooseFeature> = {
  * Goose UI Presets - predefined feature sets for different use cases
  */
 export type GoosePresetId = 
-  | 'goose-mind'
+  | 'companion-ai'
   | 'page-agent'
   | 'workspace-ai'
   | 'dashboard-ai'
@@ -193,9 +193,9 @@ export interface GoosePreset {
 }
 
 export const GOOSE_PRESETS: Record<GoosePresetId, GoosePreset> = {
-  'goose-mind': {
-    id: 'goose-mind',
-    name: 'GooseMind Personal Assistant',
+  'companion-ai': {
+    id: 'companion-ai',
+    name: 'Companion AI Assistant',
     description: 'Full-featured personal AI assistant with voice, calendar, email',
     backendUrl: 'https://rtx-workstation.tailb64e64.ts.net:8031',
     defaultModel: 'ministral-14b',

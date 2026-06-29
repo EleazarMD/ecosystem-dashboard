@@ -10,7 +10,12 @@
  * - Notion-inspired workspace integration
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  KNOWN_ACTIVITY_IDS,
+  useActivityContext,
+  createPlannerContextProvider,
+} from '@/domains/learning/shared/activity-registry';
 import {
   Box,
   Container,
@@ -150,6 +155,10 @@ function PlannerPageContent() {
   const router = useRouter();
   const toast = useToast();
   const { colors, childExtras } = useChildTheme();
+
+  // Register Planner context provider with the Context Hub
+  const plannerStateRef = useRef({ childName: '' });
+  useActivityContext(KNOWN_ACTIVITY_IDS.PLANNER, () => createPlannerContextProvider(plannerStateRef));
   const { setContext, setIsOpen } = useRightPanel();
   const { progress } = useStudentProgress();
   

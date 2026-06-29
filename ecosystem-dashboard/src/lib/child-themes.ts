@@ -10,13 +10,13 @@
 
 import { ThemePreset } from '@/theme/types';
 
-export type ChildThemeId = 'child-default' | 'child-pusheen' | 'child-minecraft';
+export type ChildThemeId = 'child-default' | 'child-pusheen' | 'child-minecraft' | 'child-pokemon';
 
 /**
  * Child-specific extras that extend the base ThemePreset
  */
 export interface ChildThemeExtras {
-  themeName?: 'minecraft' | 'pusheen' | 'default';
+  themeName?: 'minecraft' | 'pusheen' | 'default' | 'pokemon';
   ageRange: string;
   avatar: {
     default: string;
@@ -31,6 +31,7 @@ export interface ChildThemeExtras {
       email?: string;
       dictionary?: string;
       journal?: string;
+      pokemonLab?: string;
       default?: string;
     };
     headerBanner?: {
@@ -51,6 +52,10 @@ export interface ChildThemeExtras {
     camera?: string;
     dictionary?: string;
     journal?: string;
+    learn?: string;
+    pokemonLab?: string;
+    learningPath?: string;
+    teams?: string;
   };
   welcomeMessages: string[];
   badges: {
@@ -84,8 +89,8 @@ export const pusheenTheme: ChildTheme = {
     accentHover: '#FFA0AE',
 
     background: '#FFF5EE',        // Seashell (fallback, pattern used in CSS)
-    backgroundSecondary: 'rgba(255, 255, 255, 0.75)',  // More transparent for background visibility
-    backgroundTertiary: 'rgba(255, 240, 230, 0.8)',
+    backgroundSecondary: 'rgba(255, 255, 255, 0.92)',  // High opacity for readability
+    backgroundTertiary: 'rgba(255, 240, 230, 0.92)',
 
     text: '#5D4E37',
     textSecondary: '#7A6B54',
@@ -95,8 +100,8 @@ export const pusheenTheme: ChildTheme = {
     border: '#F5E6D3',
     borderHover: '#EDD9C0',
 
-    glassBackground: 'rgba(255, 245, 238, 0.8)',
-    glassBorder: '1px solid rgba(139, 115, 85, 0.2)',
+    glassBackground: 'rgba(255, 245, 238, 0.92)',
+    glassBorder: '1px solid rgba(139, 115, 85, 0.3)',
   },
 
   typography: {
@@ -171,6 +176,10 @@ export const pusheenTheme: ChildTheme = {
       camera: '/themes/pusheen/Icons/Camera.png',
       dictionary: '/themes/pusheen/Icons/Books.png',
       journal: '/themes/pusheen/Icons/Notes.png',
+      learn: '/themes/pusheen/Icons/Books.png',
+      pokemonLab: '/themes/pusheen/Icons/Google-Maps.png',
+      learningPath: '/themes/pusheen/Icons/Maps.png',
+      teams: '/themes/pusheen/Icons/Contacts.png',
     },
     welcomeMessages: [
       "Hi there! 🐱 I'm your cozy helper. What shall we do today?",
@@ -216,8 +225,8 @@ export const minecraftTheme: ChildTheme = {
     accentHover: '#3DC1FA',
 
     background: '#87CEEB',        // Sky blue
-    backgroundSecondary: 'rgba(135, 206, 235, 0.75)', // Sky blue tint - more boy-friendly
-    backgroundTertiary: 'rgba(152, 216, 170, 0.8)',   // Light green
+    backgroundSecondary: 'rgba(245, 222, 179, 0.92)', // Wheat — solid, readable with dark text
+    backgroundTertiary: 'rgba(152, 216, 170, 0.92)',   // Light green
 
     text: '#2C2C2C',
     textSecondary: '#4A4A4A',
@@ -227,7 +236,7 @@ export const minecraftTheme: ChildTheme = {
     border: '#5D8C3E',            // Green border instead of brown
     borderHover: '#55CDFC',       // Blue on hover
 
-    glassBackground: 'rgba(135, 206, 235, 0.85)',  // Sky blue glass
+    glassBackground: 'rgba(245, 222, 179, 0.92)',  // Wheat glass
     glassBorder: '2px solid #5D8C3E',
   },
 
@@ -325,6 +334,10 @@ export const minecraftTheme: ChildTheme = {
       camera: '/themes/minecraft/Icons/Camera.png',
       dictionary: '/themes/minecraft/Icons/Books.png',
       journal: '/themes/minecraft/Icons/Notes.png',
+      learn: '/themes/minecraft/Icons/Books.png',
+      pokemonLab: '/themes/minecraft/Icons/Google-Maps.png',
+      learningPath: '/themes/minecraft/Icons/Maps.png',
+      teams: '/themes/minecraft/Icons/Contacts.png',
     },
     welcomeMessages: [
       "Hey there, adventurer! ⛏️ Ready to explore?",
@@ -448,12 +461,145 @@ export const defaultChildTheme: ChildTheme = {
 };
 
 // ============================================================
+// POKEMON THEME - Adventurous, type-colored, knowledge graph explorer
+// ============================================================
+export const pokemonTheme: ChildTheme = {
+  id: 'child-pokemon',
+  name: 'Pokemon Lab',
+  description: 'Explore the Pokemon knowledge graph!',
+  mode: 'dark',
+
+  colors: {
+    primary: '#3b7dd8',           // Pokeball blue
+    primaryHover: '#2a6bc7',
+    primaryActive: '#1a5ab6',
+    secondary: '#ee1515',         // Pokeball red
+    secondaryHover: '#d41212',
+    accent: '#f7d02c',            // Electric yellow
+    accentHover: '#e6c01b',
+
+    background: '#1a1a2e',        // Deep navy
+    backgroundSecondary: 'rgba(26, 26, 46, 0.95)',
+    backgroundTertiary: 'rgba(22, 36, 71, 0.92)',
+
+    text: '#f0f0f0',
+    textSecondary: '#c0c0d0',
+    textMuted: '#9090a0',
+    textInverse: '#1a1a2e',
+
+    border: '#3b7dd8',
+    borderHover: '#f7d02c',
+
+    glassBackground: 'rgba(22, 36, 71, 0.95)',
+    glassBorder: '2px solid #3b7dd8',
+  },
+
+  typography: {
+    fontHeading: '"Nunito", "Poppins", sans-serif',
+    fontBody: '"Nunito", sans-serif',
+    fontMono: '"JetBrains Mono", monospace',
+    fontSizeScale: 'md',
+  },
+
+  radii: {
+    card: '12px',
+    button: '8px',
+    input: '8px',
+    modal: '16px',
+  },
+
+  shadows: {
+    card: '0 4px 20px rgba(59, 125, 216, 0.2)',
+    cardHover: '0 8px 30px rgba(59, 125, 216, 0.3)',
+    popover: '0 10px 40px rgba(59, 125, 216, 0.25)',
+    modal: '0 20px 60px rgba(59, 125, 216, 0.3)',
+  },
+
+  components: {
+    Card: { variant: 'elevated' },
+    Button: { variant: 'solid' },
+    Input: { variant: 'filled' },
+  },
+
+  glassBlur: '8px',
+  density: 'comfortable',
+
+  childExtras: {
+    themeName: 'pokemon',
+    ageRange: '6-12',
+    avatar: {
+      default: '/themes/pokemon/Icons/pokeball.png.svg',
+      options: [
+        '/themes/pokemon/Icons/pokeball.png.svg',
+        '/themes/pokemon/Icons/greatball.png.svg',
+        '/themes/pokemon/Icons/ultraball.png.svg',
+        '/themes/pokemon/Widgets/pikachu.png.svg',
+      ],
+    },
+    decorations: {
+      emoji: ['🔴', '⚡', '🔥', '💧', '🌿', '⚔️', '✨', '🏆', '🕸️', '📊'],
+      cardStyle: 'rounded',
+      backgroundImages: {
+        home: '/themes/pokemon/Wallpapers/pokeball-scatter.svg',
+        chat: '/themes/pokemon/Wallpapers/type-grid.svg',
+        dictionary: '/themes/pokemon/Wallpapers/type-grid.svg',
+        pokemonLab: '/themes/pokemon/Wallpapers/pokeball-pattern.svg',
+        journal: '/themes/pokemon/Wallpapers/pokeball-scatter.svg',
+        default: '/themes/pokemon/Wallpapers/pokeball-pattern.svg',
+      },
+      headerBanner: {
+        background: 'linear-gradient(135deg, #1a1a2e 0%, #162447 50%, #0f3460 100%)',
+        pattern: `url("data:image/svg+xml,%3Csvg width='100' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Cdefs%3E%3Cpattern id='pb' x='0' y='0' width='50' height='50' patternUnits='userSpaceOnUse'%3E%3Ccircle cx='25' cy='25' r='15' fill='none' stroke='%23ee1515' stroke-width='1.5' opacity='0.15'/%3E%3Cline x1='10' y1='25' x2='40' y2='25' stroke='%23fff' stroke-width='1' opacity='0.1'/%3E%3Ccircle cx='25' cy='25' r='4' fill='none' stroke='%23fff' stroke-width='1' opacity='0.1'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='100' height='100' fill='url(%23pb)'/%3E%3C/svg%3E")`,
+        texture: `
+          radial-gradient(circle at 20% 80%, rgba(59, 125, 216, 0.08) 0%, transparent 50%),
+          radial-gradient(circle at 80% 20%, rgba(247, 208, 44, 0.06) 0%, transparent 50%)
+        `,
+      },
+    },
+    serviceIcons: {
+      home: '/themes/pokemon/Icons/home.svg',
+      chat: '/themes/pokemon/Icons/greatball.png.svg',
+      art: '/themes/pokemon/Icons/ultraball.png.svg',
+      writing: '/themes/pokemon/Icons/pencil.svg',
+      email: '/themes/pokemon/Icons/envelope.svg',
+      planner: '/themes/pokemon/Icons/calendar.svg',
+      dictionary: '/themes/pokemon/Icons/pokedex.svg',
+      journal: '/themes/pokemon/Icons/notebook.svg',
+      books: '/themes/pokemon/Icons/book.svg',
+      learn: '/themes/pokemon/Icons/learn.svg',
+      pokemonLab: '/themes/pokemon/Icons/pokemon-lab.svg',
+      learningPath: '/themes/pokemon/Icons/map.svg',
+      teams: '/themes/pokemon/Icons/users.svg',
+    },
+    welcomeMessages: [
+      "Gotta learn 'em all! 🔴 Welcome to the Pokemon Lab!",
+      "Hey trainer! ⚡ Ready to explore the knowledge graph?",
+      "Pokemon knowledge awaits! 🏆 What will you discover today?",
+      "Welcome to the Lab! 🔬 Let's explore Pokemon data together!",
+    ],
+    badges: {
+      firstChat: '🔴',
+      streak3: '⚡',
+      streak7: '🏆',
+      helper: '🛡️',
+      creative: '✨',
+    },
+    widgets: [
+      '/themes/pokemon/Widgets/pikachu.png.svg',
+      '/themes/pokemon/Widgets/pokeball.png.svg',
+      '/themes/pokemon/Widgets/type-badges.png.svg',
+    ],
+  },
+};
+
+// ============================================================
 // THEME REGISTRY
 // ============================================================
 export const childThemes: Record<ChildThemeId, ChildTheme> = {
   'child-default': defaultChildTheme,
   'child-pusheen': pusheenTheme,
   'child-minecraft': minecraftTheme,
+  'child-pokemon': pokemonTheme,
 };
 
 export function getChildTheme(themeId: ChildThemeId | string | null | undefined): ChildTheme {

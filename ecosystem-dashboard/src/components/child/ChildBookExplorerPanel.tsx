@@ -47,6 +47,8 @@ import {
   FiVolumeX,
 } from 'react-icons/fi';
 import { useChildTheme } from './ChildThemeProvider';
+import { ChildTutorTab } from './ChildTutorTab';
+import { KNOWN_ACTIVITY_IDS } from '@/domains/learning/shared/activity-registry';
 import { ChildMessageRenderer } from './ChildMessageRenderer';
 import { ChildChatInput } from './ChildChatInput';
 
@@ -226,16 +228,7 @@ export default function ChildBookExplorerPanel({
         const data = await res.json();
         setQuizQuestions(data.questions || []);
       } else {
-        // Fallback mock questions
-        setQuizQuestions([
-          {
-            id: '1',
-            question: 'What is the main theme of this book?',
-            options: ['Friendship', 'Adventure', 'Mystery', 'Learning'],
-            correctIndex: 0,
-            explanation: 'The book focuses on the importance of friendship!',
-          },
-        ]);
+        setQuizQuestions([]);
       }
     } catch (error) {
       console.error('Failed to load quiz:', error);
@@ -899,8 +892,15 @@ export default function ChildBookExplorerPanel({
   );
 
   return (
-    <Box h="full" p={4}>
-      {activeTab === 'reading-buddy' && renderReadingBuddy()}
+    <Box h="full" p={activeTab === 'chat' ? 0 : 4}>
+      {activeTab === 'chat' && (
+        <Box h="full" display="flex" flexDirection="column">
+          <ChildTutorTab
+            defaultActivityId={KNOWN_ACTIVITY_IDS.BOOKS}
+            defaultTitle="Reading Buddy"
+          />
+        </Box>
+      )}
       {activeTab === 'vocabulary' && renderVocabulary()}
       {activeTab === 'quiz' && renderQuiz()}
       {activeTab === 'explore' && renderExplore()}

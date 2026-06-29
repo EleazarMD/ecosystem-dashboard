@@ -278,7 +278,6 @@ export function CreativeActivityPanel({
                 cursor="pointer"
                 onClick={() => startActivity(activity.id)}
                 _hover={{ borderColor: 'blue.300', shadow: 'md' }}
-                transition="all 0.2s"
               >
                 <HStack spacing={3} mb={2}>
                   <Text fontSize="2xl">{activity.emoji}</Text>

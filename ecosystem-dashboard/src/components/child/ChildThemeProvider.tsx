@@ -8,27 +8,44 @@
 import React, { createContext, useContext, ReactNode, useState, useEffect, useMemo } from 'react';
 import { extendTheme, ChakraProvider, ThemeConfig } from '@chakra-ui/react';
 import { ChildTheme, ChildThemeId, getChildTheme, defaultChildTheme } from '@/lib/child-themes';
+import {
+  activityRegistry,
+  ActivityId,
+  resolveEffectiveTheme,
+  EffectiveChildTheme,
+} from '@/domains/learning/shared/activity-registry';
 
 interface ChildThemeContextType {
   isChildMode: boolean;
   avatarEmoji: string;
   setAvatarEmoji: (emoji: string) => void;
-  theme: ChildTheme;
+  theme: EffectiveChildTheme;
   themeId: ChildThemeId;
   setThemeId: (id: ChildThemeId) => void;
   colors: ChildTheme['colors'];
   childExtras: ChildTheme['childExtras'];
+  /** Active activity id (if any activity-scoped theme is applied). */
+  activeActivityId: ActivityId | null;
+  /** Set the active activity by id; null clears the overlay. */
+  setActiveActivityId: (id: ActivityId | null) => void;
+  /** Effective theme = base child theme ⊕ activity overlay. */
+  effectiveTheme: EffectiveChildTheme;
 }
+
+const _defaultEffective = { ...defaultChildTheme, isolateFromBaseWallpaper: false } as EffectiveChildTheme;
 
 const ChildThemeContext = createContext<ChildThemeContextType>({
   isChildMode: false,
   avatarEmoji: '🦊',
   setAvatarEmoji: () => {},
-  theme: defaultChildTheme,
+  theme: _defaultEffective,
   themeId: 'child-default',
   setThemeId: () => {},
   colors: defaultChildTheme.colors,
   childExtras: defaultChildTheme.childExtras,
+  activeActivityId: null,
+  setActiveActivityId: () => {},
+  effectiveTheme: _defaultEffective,
 });
 
 export const useChildTheme = () => useContext(ChildThemeContext);
@@ -37,6 +54,8 @@ interface ChildThemeProviderProps {
   children: ReactNode;
   isChildMode?: boolean;
   initialThemeId?: ChildThemeId;
+  /** Active activity id for activity-scoped theming (§2 Activity Theme overlay). */
+  activeActivityId?: ActivityId | null;
 }
 
 function createChakraTheme(theme: ChildTheme) {
@@ -134,13 +153,15 @@ function createChakraTheme(theme: ChildTheme) {
   });
 }
 
-export function ChildThemeProvider({ 
-  children, 
+export function ChildThemeProvider({
+  children,
   isChildMode = true,
   initialThemeId = 'child-default',
+  activeActivityId: initialActivityId = null,
 }: ChildThemeProviderProps) {
   const [themeId, setThemeId] = useState<ChildThemeId>(initialThemeId);
   const [avatarEmoji, setAvatarEmoji] = useState('🦊');
+  const [activeActivityId, setActiveActivityId] = useState<ActivityId | null>(initialActivityId ?? null);
 
   // Fetch theme from API on mount (with localStorage cache)
   useEffect(() => {
@@ -175,7 +196,17 @@ export function ChildThemeProvider({
     fetchTheme();
   }, []);
 
-  const theme = useMemo(() => getChildTheme(themeId), [themeId]);
+  const baseTheme = useMemo(() => getChildTheme(themeId), [themeId]);
+
+  // Resolve effective theme: base child theme ⊕ activity overlay (§2).
+  const effectiveTheme = useMemo(() => {
+    if (!activeActivityId) return { ...baseTheme, isolateFromBaseWallpaper: false } as EffectiveChildTheme;
+    const activity = activityRegistry.get(activeActivityId);
+    if (!activity?.theme) return { ...baseTheme, isolateFromBaseWallpaper: false } as EffectiveChildTheme;
+    return resolveEffectiveTheme(baseTheme, activity.theme);
+  }, [baseTheme, activeActivityId]);
+
+  const theme = effectiveTheme;
   const chakraTheme = useMemo(() => createChakraTheme(theme), [theme]);
 
   // Update avatar to theme default if not set
@@ -194,7 +225,10 @@ export function ChildThemeProvider({
     setThemeId,
     colors: theme.colors,
     childExtras: theme.childExtras,
-  }), [isChildMode, avatarEmoji, theme, themeId]);
+    activeActivityId,
+    setActiveActivityId,
+    effectiveTheme,
+  }), [isChildMode, avatarEmoji, theme, themeId, activeActivityId, effectiveTheme]);
 
   return (
     <ChildThemeContext.Provider value={contextValue}>

@@ -131,7 +131,7 @@ interface ChildChatUIProps {
   serviceName: string;
   serviceEmoji: string;
   onBack?: () => void;
-  useGooseMind?: boolean; // Use enhanced GooseMind chat with recipes
+  useCompanionAI?: boolean; // Use enhanced Companion AI chat with recipes
 }
 
 export function ChildChatUI({
@@ -139,7 +139,7 @@ export function ChildChatUI({
   serviceName,
   serviceEmoji,
   onBack,
-  useGooseMind = true, // Default to using GooseMind
+  useCompanionAI = true, // Default to using Companion AI
 }: ChildChatUIProps) {
   const toast = useToast();
   const { avatarEmoji } = useChildTheme();
@@ -490,8 +490,8 @@ export function ChildChatUI({
     fetchUsage();
     checkApprovalStatus();
     
-    // Fetch character and suggestions if using GooseMind
-    if (useGooseMind) {
+    // Fetch character and suggestions if using Companion AI
+    if (useCompanionAI) {
       fetchCharacterAndSuggestions();
     } else if (messages.length === 0) {
       // Add default welcome message only if no saved messages
@@ -506,7 +506,7 @@ export function ChildChatUI({
 
   const fetchCharacterAndSuggestions = async () => {
     try {
-      const res = await fetch(`/api/child/goosemind/chat?serviceId=${serviceId}`);
+      const res = await fetch(`/api/child/companion/chat?serviceId=${serviceId}`);
       const data = await res.json();
       
       if (res.ok) {
@@ -707,8 +707,8 @@ export function ChildChatUI({
         return;
       }
 
-      // Use child chat endpoint (now routes through Goose backend with child-goosemind agent)
-      const endpoint = '/api/child/chat';
+      // PI Code Convergence: call the unified agent-turn endpoint directly
+      const endpoint = '/api/child/companion/agent-turn';
       
       // Get selected character/recipe from localStorage for multi-tenant recipe loading
       const selectedRecipeId = typeof window !== 'undefined' 
@@ -726,25 +726,29 @@ export function ChildChatUI({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          serviceId,
           message: userMessage.content,
-          // Conversation ID for session continuity
-          conversationId: currentConversationId || undefined,
-          // Selected recipe/character for multi-tenant compliance
-          recipeId: selectedRecipeId || undefined,
-          // Spanish learning mode settings
-          spanishMode: spanishMode.enabled ? {
-            enabled: true,
-            level: spanishMode.level,
-            focus: spanishMode.focus,
-          } : undefined,
-          // Creative mode settings for inline image generation
-          creativeMode: creativeMode.enabled ? {
-            enabled: true,
-            activity: creativeMode.activity,
-          } : undefined,
-          // Conversation history for context retention
-          conversationHistory,
+          activityId: 'free-chat',
+          intent: 'talk',
+          contextState: {
+            serviceId,
+            // Conversation ID for session continuity
+            conversationId: currentConversationId || undefined,
+            // Selected recipe/character for multi-tenant compliance
+            recipeId: selectedRecipeId || undefined,
+            // Spanish learning mode settings
+            spanishMode: spanishMode.enabled ? {
+              enabled: true,
+              level: spanishMode.level,
+              focus: spanishMode.focus,
+            } : undefined,
+            // Creative mode settings for inline image generation
+            creativeMode: creativeMode.enabled ? {
+              enabled: true,
+              activity: creativeMode.activity,
+            } : undefined,
+            // Conversation history for context retention
+            conversationHistory,
+          },
         }),
       });
 
@@ -759,56 +763,29 @@ export function ChildChatUI({
       console.log('[ChildChat] Response status:', res.status, 'Data:', data);
 
       if (res.ok) {
-        // Handle blocked response (returned with 200 status)
-        if (data.blocked) {
-          setMessages(prev => [...prev, {
-            id: Date.now().toString() + '-blocked',
-            role: 'system',
-            content: data.message || "I can't help with that. Let's talk about something else! 🌟",
-            timestamp: new Date(),
-            wasFiltered: true,
-          }]);
-        } else {
-          const assistantMessage: Message = {
-            id: Date.now().toString() + '-response',
-            role: 'assistant',
-            content: data.response || "I'm thinking...",
-            timestamp: new Date(),
-            wasFiltered: data.wasFiltered,
-            filterMessage: data.filterMessage,
-          };
+        const assistantMessage: Message = {
+          id: Date.now().toString() + '-response',
+          role: 'assistant',
+          content: data.response || "I'm thinking...",
+          timestamp: new Date(),
+        };
 
-          setMessages(prev => [...prev, assistantMessage]);
-          setUsageMinutes(data.usageMinutes || usageMinutes);
-          
-          // Update active character with iconPath from response
-          if (data.character) {
-            setActiveCharacter(data.character);
-          }
-        }
+        setMessages(prev => [...prev, assistantMessage]);
 
-        if (data.wasFiltered) {
-          toast({
-            title: '🛡️ Content filtered',
-            description: 'Some content was adjusted to keep things safe!',
-            status: 'info',
-            duration: 3000,
-          });
-        }
-
-        if (data.usageLimitReached) {
-          setIsBlocked(true);
-          setBlockReason('time_limit');
+        // Agent-turn may return rich payloads (conceptCheck, hintCard, celebration, etc.)
+        // These are handled by the companion UI if present
+        if (data.personaName) {
+          // Update active character name from persona
         }
       } else if (res.status === 403) {
-        // Content blocked or access denied
+        // Content blocked or access denied (may still come from middleware)
         if (data.requiresApproval) {
           onOpen(); // Show approval request modal
         } else {
           setMessages(prev => [...prev, {
             id: Date.now().toString() + '-blocked',
             role: 'system',
-            content: data.message || "I can't help with that. Let's talk about something else! 🌟",
+            content: data.message || data.error || "I can't help with that. Let's talk about something else! 🌟",
             timestamp: new Date(),
             wasFiltered: true,
           }]);
@@ -951,20 +928,24 @@ export function ChildChatUI({
       // Build context from the story so far
       const storyContext = messageToContiue.content;
       
-      const res = await fetch('/api/child/chat', {
+      const res = await fetch('/api/child/companion/agent-turn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          serviceId,
           message: 'Continue the story! What happens next?',
-          conversationId: currentConversationId || undefined,
-          // Pass the story context so AI knows what to continue
-          conversationHistory: [
-            { role: 'assistant', content: storyContext },
-            { role: 'user', content: 'Yes! Continue the story! What happens next?' }
-          ],
-          // Signal this is a story continuation
-          storyContinuation: true,
+          activityId: 'free-chat',
+          intent: 'talk',
+          contextState: {
+            serviceId,
+            conversationId: currentConversationId || undefined,
+            // Pass the story context so AI knows what to continue
+            conversationHistory: [
+              { role: 'assistant', content: storyContext },
+              { role: 'user', content: 'Yes! Continue the story! What happens next?' }
+            ],
+            // Signal this is a story continuation
+            storyContinuation: true,
+          },
         }),
       });
 
@@ -1009,7 +990,7 @@ export function ChildChatUI({
     setMessages([]);
     setCurrentConversationId(null);
     // Re-fetch character greeting
-    if (useGooseMind) {
+    if (useCompanionAI) {
       fetchCharacterAndSuggestions();
     }
     toast({
@@ -1169,7 +1150,7 @@ export function ChildChatUI({
               )}
               {activeCharacter && !isMobile && (
                 <Badge colorScheme="purple" variant="subtle" fontSize="xs">
-                  GooseMind
+                  Companion AI
                 </Badge>
               )}
               {spanishMode.enabled && (
@@ -1668,63 +1649,7 @@ export function ChildChatUI({
           ) : (
             <ChildChatInput
               showQuickRepliesInline={true}
-              onSend={(message) => {
-                setInput(message);
-                // Trigger send with the message
-                setTimeout(() => {
-                  const syntheticInput = message;
-                  if (syntheticInput.trim()) {
-                    setInput('');
-                    // Call handleSend logic directly
-                    const newMessage: Message = {
-                      id: Date.now().toString(),
-                      role: 'user',
-                      content: syntheticInput,
-                      timestamp: new Date(),
-                    };
-                    setMessages(prev => [...prev, newMessage]);
-                    setLoading(true);
-                    
-                    // Make API call
-                    fetch('/api/child/goosemind/chat', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        message: syntheticInput,
-                        characterId: activeCharacter?.id,
-                        characterName: activeCharacter?.name,
-                        spanishMode,
-                      }),
-                    })
-                      .then(res => res.json())
-                      .then(data => {
-                        if (data.response) {
-                          const aiMessage: Message = {
-                            id: (Date.now() + 1).toString(),
-                            role: 'assistant',
-                            content: data.response,
-                            timestamp: new Date(),
-                          };
-                          setMessages(prev => [...prev, aiMessage]);
-                          if (data.remainingMinutes !== undefined) {
-                            // Update remaining minutes if available
-                          }
-                        }
-                      })
-                      .catch(err => {
-                        console.error('Chat error:', err);
-                        const errorMessage: Message = {
-                          id: (Date.now() + 1).toString(),
-                          role: 'assistant',
-                          content: "Oops! Something went wrong. Can you try again? 🤔",
-                          timestamp: new Date(),
-                        };
-                        setMessages(prev => [...prev, errorMessage]);
-                      })
-                      .finally(() => setLoading(false));
-                  }
-                }, 0);
-              }}
+              onSend={(message) => handleSend(message)}
               isLoading={loading}
               placeholder={isMobile ? "Type or speak..." : "Type your message or tap 🎤 to speak..."}
               mode="compact"

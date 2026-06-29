@@ -70,7 +70,7 @@ const AVATAR_EMOJIS = ['🦊', '🐼', '🦁', '🐸', '🦋', '🐙', '🦄', '
 
 const SERVICE_EMOJIS: Record<string, { emoji: string; color: string }> = {
   'workspace': { emoji: '📝', color: 'blue' },
-  'goosemind-chat': { emoji: '🤖', color: 'purple' },
+  'companion-chat': { emoji: '🤖', color: 'purple' },
   'calendar': { emoji: '📅', color: 'green' },
   'image-studio': { emoji: '🎨', color: 'pink' },
   'research-lab': { emoji: '🔬', color: 'teal' },

@@ -2,7 +2,7 @@
  * Child Workspace Page Builder API
  * 
  * AI-powered page structure generation for kids that:
- * 1. Connects to Kid's GooseMind Agent
+ * 1. Connects to Kid's Companion AI Agent
  * 2. Generates age-appropriate page structures
  * 3. Provides block editing tools similar to adult workspace
  * 4. Filters content through child safety middleware
@@ -164,7 +164,7 @@ async function handleGeneratePage(
             'Authorization': `Bearer ${process.env.CHILD_SAFETY_API_KEY || 'child-safety-key'}`,
           },
           body: JSON.stringify({
-            model: process.env.CHILD_AI_MODEL || 'llama3.2:3b',
+            model: process.env.CHILD_AI_MODEL || 'minimax-m3',
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: `Create a page structure for: ${filteredPrompt}` },
@@ -428,7 +428,7 @@ async function handleSuggestContent(
             'Authorization': `Bearer ${process.env.CHILD_SAFETY_API_KEY || 'child-safety-key'}`,
           },
           body: JSON.stringify({
-            model: process.env.CHILD_AI_MODEL || 'llama3.2:3b',
+            model: process.env.CHILD_AI_MODEL || 'minimax-m3',
             messages: [
               {
                 role: 'system',

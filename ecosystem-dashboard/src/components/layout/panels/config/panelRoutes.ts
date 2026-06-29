@@ -528,6 +528,47 @@ export const PANEL_ROUTES: PanelRoute[] = [
     panelId: 'child-journal',
     priority: 10,
   },
+  {
+    contexts: ['child-pokemon-lab'],
+    tabId: 'tutor',
+    panelId: 'child-pokemon-lab',
+    priority: 50,
+  },
+  {
+    contexts: ['child-pokemon-lab'],
+    tabId: 'concepts',
+    panelId: 'child-pokemon-lab',
+    priority: 50,
+  },
+  {
+    contexts: ['child-pokemon-lab'],
+    panelId: 'child-pokemon-lab',
+    priority: 10,
+  },
+  // Learn Hub / Learning Path / Teams (all share the child-learn context)
+  {
+    contexts: ['child-learn'],
+    tabId: 'tutor',
+    panelId: 'child-learn',
+    priority: 50,
+  },
+  {
+    contexts: ['child-learn'],
+    tabId: 'progress',
+    panelId: 'child-learn',
+    priority: 50,
+  },
+  {
+    contexts: ['child-learn'],
+    tabId: 'path',
+    panelId: 'child-learn',
+    priority: 50,
+  },
+  {
+    contexts: ['child-learn'],
+    panelId: 'child-learn',
+    priority: 10,
+  },
 
   // Approvals Tabs
   {

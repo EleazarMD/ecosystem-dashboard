@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400">
+  <defs>
+    <linearGradient id="hero" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="50%" stop-color="#162447"/>
+      <stop offset="100%" stop-color="#0f3460"/>
+    </linearGradient>
+    <pattern id="dots" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+      <circle cx="20" cy="20" r="2" fill="#ffffff" opacity="0.05"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="400" fill="url(#hero)"/>
+  <rect width="1200" height="400" fill="url(#dots)"/>
+  <!-- Decorative pokeballs -->
+  <g opacity="0.1">
+    <circle cx="950" cy="80" r="60" fill="none" stroke="#ee1515" stroke-width="5"/>
+    <line x1="890" y1="80" x2="1010" y2="80" stroke="#fff" stroke-width="5"/>
+    <circle cx="950" cy="80" r="15" fill="none" stroke="#fff" stroke-width="3"/>
+  </g>
+  <g opacity="0.08">
+    <circle cx="1100" cy="300" r="50" fill="none" stroke="#3b7dd8" stroke-width="4"/>
+    <line x1="1050" y1="300" x2="1150" y2="300" stroke="#fff" stroke-width="4"/>
+    <circle cx="1100" cy="300" r="12" fill="none" stroke="#fff" stroke-width="2"/>
+  </g>
+  <g opacity="0.06">
+    <circle cx="80" cy="320" r="40" fill="none" stroke="#f7d02c" stroke-width="3"/>
+    <line x1="40" y1="320" x2="120" y2="320" stroke="#fff" stroke-width="3"/>
+    <circle cx="80" cy="320" r="10" fill="none" stroke="#fff" stroke-width="2"/>
+  </g>
+</svg>

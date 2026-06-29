@@ -4,25 +4,34 @@
  * Child-friendly AI chat interface
  */
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { GetServerSideProps } from 'next';
 import { getServerSession } from 'next-auth';
 import { useRouter } from 'next/router';
 import { authOptions } from '../api/auth/[...nextauth]';
 import { ChildChatUI } from '@/components/child/ChildChatUI';
 import ChildDashboardLayout from '@/components/layout/ChildDashboardLayout';
+import {
+  KNOWN_ACTIVITY_IDS,
+  useActivityContext,
+  createFreeChatContextProvider,
+} from '@/domains/learning/shared/activity-registry';
 
 function ChildChatPageContent() {
   const router = useRouter();
   // Note: RightPanelContext automatically detects /child/chat route and sets context
 
+  // Register FreeChat context provider with the Context Hub
+  const chatStateRef = useRef({ childName: '' });
+  useActivityContext(KNOWN_ACTIVITY_IDS.FREE_CHAT, () => createFreeChatContextProvider(chatStateRef));
+
   return (
     <ChildChatUI
       serviceId="personal-ai"
-      serviceName="GooseMind"
+      serviceName="Companion AI"
       serviceEmoji="🌟"
       onBack={() => router.push('/child/home')}
-      useGooseMind={true}
+      useCompanionAI={true}
     />
   );
 }

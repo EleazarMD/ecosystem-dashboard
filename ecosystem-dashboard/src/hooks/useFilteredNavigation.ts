@@ -27,7 +27,7 @@ const PARENT_NAV_PATHS = [
   '/workspace',
   '/email',
   '/calendar',
-  '/goose-mind',
+  '/companion',
   '/image-studio',
   '/settings',
 ];
@@ -35,7 +35,7 @@ const PARENT_NAV_PATHS = [
 // Child-allowed service paths (filtered by parental controls at API level)
 const CHILD_NAV_PATHS = [
   '/workspace',
-  '/goose-mind',
+  '/companion',
   '/image-studio',
   '/calendar',
   '/email',
@@ -45,7 +45,7 @@ const CHILD_NAV_PATHS = [
 // Map regular paths to child-specific paths
 const CHILD_PATH_MAP: Record<string, string> = {
   '/workspace': '/child/workspace',
-  '/goose-mind': '/child/chat',
+  '/companion': '/child/chat',
   '/image-studio': '/child/art-studio',
   '/email': '/child/email',
   '/dashboard': '/child/home',
@@ -56,7 +56,7 @@ const CHILD_PATH_MAP: Record<string, string> = {
 // Child-friendly labels
 const CHILD_LABEL_MAP: Record<string, string> = {
   '/workspace': 'Writing',
-  '/goose-mind': 'Chat',
+  '/companion': 'Chat',
   '/image-studio': 'Art Studio',
   '/email': 'Email Helper',
   '/calendar': 'My Planner',

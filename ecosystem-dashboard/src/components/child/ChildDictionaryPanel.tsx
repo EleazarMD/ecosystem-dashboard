@@ -9,6 +9,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { ChildTutorTab } from './ChildTutorTab';
+import { KNOWN_ACTIVITY_IDS } from '@/domains/learning/shared/activity-registry';
 import {
   Box,
   VStack,
@@ -324,94 +326,6 @@ export default function ChildDictionaryPanel() {
           </VStack>
         );
       
-      case 'ask-character':
-        return (
-          <VStack spacing={3} align="stretch" h="100%">
-            <Box 
-              bg={isMinecraft ? 'green.50' : 'pink.50'} 
-              p={3} 
-              borderRadius={isMinecraft ? '4px' : 'lg'}
-              border="1px solid"
-              borderColor={isMinecraft ? 'green.200' : 'pink.200'}
-            >
-              <HStack mb={2}>
-                <Text fontSize="lg">💬</Text>
-                <Text fontSize="sm" fontWeight="bold">Ask Character</Text>
-              </HStack>
-              <Text fontSize="xs" color="gray.600">
-                Ask your favorite character to explain this word in their own way!
-              </Text>
-            </Box>
-            
-            {currentWord ? (
-              <>
-                <Divider />
-                
-                <Box>
-                  <Text fontSize="xs" fontWeight="bold" mb={2} color="gray.600">
-                    Choose Character
-                  </Text>
-                  <RadioGroup value={selectedCharacter} onChange={setSelectedCharacter}>
-                    <Stack spacing={2}>
-                      {CHARACTERS.map((char) => (
-                        <Radio 
-                          key={char.id} 
-                          value={char.id}
-                          size="sm"
-                          colorScheme={themeColor}
-                        >
-                          <HStack spacing={2}>
-                            <Text fontSize="md">{char.emoji}</Text>
-                            <Box>
-                              <Text fontSize="xs" fontWeight="bold">{char.name}</Text>
-                              <Text fontSize="xs" color="gray.500">{char.description}</Text>
-                            </Box>
-                          </HStack>
-                        </Radio>
-                      ))}
-                    </Stack>
-                  </RadioGroup>
-                </Box>
-                
-                <Divider />
-                
-                <Box flex={1}>
-                  <Text fontSize="xs" fontWeight="bold" mb={2} color="gray.600">
-                    Your Message
-                  </Text>
-                  <Textarea
-                    value={characterMessage}
-                    onChange={(e) => setCharacterMessage(e.target.value)}
-                    placeholder="What do you want to ask?"
-                    size="sm"
-                    fontSize="xs"
-                    borderRadius={isMinecraft ? '4px' : 'md'}
-                    minH="100px"
-                    resize="vertical"
-                  />
-                </Box>
-                
-                <Button
-                  colorScheme={themeColor}
-                  size="sm"
-                  leftIcon={<FiMessageCircle />}
-                  onClick={handleAskCharacter}
-                  borderRadius={isMinecraft ? '4px' : 'full'}
-                >
-                  Ask {CHARACTERS.find(c => c.id === selectedCharacter)?.name}
-                </Button>
-              </>
-            ) : (
-              <Box textAlign="center" py={6}>
-                <Text fontSize="2xl" mb={2}>🔍</Text>
-                <Text fontSize="xs" color="gray.500">
-                  Search for a word first!
-                </Text>
-              </Box>
-            )}
-          </VStack>
-        );
-        
       case 'my-collection':
         return (
           <VStack spacing={3} align="stretch">
@@ -668,6 +582,8 @@ export default function ChildDictionaryPanel() {
           </VStack>
         );
         
+      case 'chat':
+        return null;
       default:
         return (
           <VStack spacing={3} align="center" py={4}>
@@ -681,7 +597,16 @@ export default function ChildDictionaryPanel() {
   };
 
   return (
-    <Box p={3} h="100%" overflow="auto">
+    <Box p={activeTab === 'chat' ? 0 : 3} h="100%" overflow="auto">
+
+      {activeTab === 'chat' && (
+        <Box h="full" display="flex" flexDirection="column">
+          <ChildTutorTab
+            defaultActivityId={KNOWN_ACTIVITY_IDS.DICTIONARY}
+            defaultTitle="Dictionary Helper"
+          />
+        </Box>
+      )}
       {renderContent()}
     </Box>
   );

@@ -1,7 +1,7 @@
 /**
  * Journal AI Evaluation API
  * 
- * GooseMind-powered evaluation of journal entries:
+ * Companion AI-powered evaluation of journal entries:
  * - Skill assessment (creativity, expression, reflection, vocabulary, structure)
  * - Personalized recommendations
  * - Writing prompts based on user's style
@@ -110,7 +110,7 @@ export default async function handler(
 }
 
 /**
- * Evaluate a journal entry using GooseMind
+ * Evaluate a journal entry using Companion AI
  */
 async function evaluateEntry(
   entry: JournalEntry,
@@ -120,7 +120,7 @@ async function evaluateEntry(
   const typeConfig = JOURNAL_TYPE_CONFIG[entry.type];
   
   // Build evaluation prompt
-  const prompt = `You are GooseMind, a friendly and encouraging AI assistant helping children become better writers and thinkers. 
+  const prompt = `You are Companion AI, a friendly and encouraging AI assistant helping children become better writers and thinkers. 
 
 Evaluate this ${typeConfig.label} journal entry from a child. Be VERY encouraging and positive while providing helpful feedback.
 
@@ -174,7 +174,7 @@ IMPORTANT:
         'X-Service-ID': 'child-journal',
       },
       body: JSON.stringify({
-        model: process.env.CHILD_AI_MODEL || 'qwen3-8b',
+        model: process.env.CHILD_AI_MODEL || 'minimax-m3',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
         max_tokens: 1500,
@@ -255,7 +255,7 @@ Respond with a JSON array of 3 short, kid-friendly suggestions:
         'X-Service-ID': 'child-journal',
       },
       body: JSON.stringify({
-        model: process.env.CHILD_AI_MODEL || 'qwen3-8b',
+        model: process.env.CHILD_AI_MODEL || 'minimax-m3',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
         max_tokens: 500,
@@ -315,7 +315,7 @@ Respond in JSON: {"prompt": "<the prompt>", "emoji": "<relevant emoji>"}`;
         'X-Service-ID': 'child-journal',
       },
       body: JSON.stringify({
-        model: process.env.CHILD_AI_MODEL || 'qwen3-8b',
+        model: process.env.CHILD_AI_MODEL || 'minimax-m3',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.8,
         max_tokens: 300,
@@ -363,7 +363,7 @@ Do NOT write the content for them - just give them a nudge.`;
         'X-Service-ID': 'child-journal',
       },
       body: JSON.stringify({
-        model: process.env.CHILD_AI_MODEL || 'qwen3-8b',
+        model: process.env.CHILD_AI_MODEL || 'minimax-m3',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
         max_tokens: 200,

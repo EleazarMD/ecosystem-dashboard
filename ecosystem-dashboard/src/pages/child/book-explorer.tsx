@@ -10,7 +10,12 @@
  * Themed to match child's selected theme (Pusheen, Minecraft, etc.)
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  KNOWN_ACTIVITY_IDS,
+  useActivityContext,
+  createBooksContextProvider,
+} from '@/domains/learning/shared/activity-registry';
 import { GetServerSideProps } from 'next';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../api/auth/[...nextauth]';
@@ -54,6 +59,7 @@ import {
 } from 'react-icons/fi';
 import { useRouter } from 'next/router';
 import ChildDashboardLayout from '@/components/layout/ChildDashboardLayout';
+import { StudioReturnBanner } from '@/components/child/learning-kit';
 import { useChildTheme } from '@/components/child/ChildThemeProvider';
 import { BackgroundContextMenu, getBackgroundStyles, BackgroundMode } from '@/components/child/BackgroundContextMenu';
 import { useRightPanel } from '@/contexts/RightPanelContext';
@@ -127,6 +133,10 @@ function BookExplorerContent() {
   const router = useRouter();
   const toast = useToast();
   const { colors, childExtras } = useChildTheme();
+
+  // Register Books context provider with the Context Hub
+  const booksStateRef = useRef({ childName: '' });
+  useActivityContext(KNOWN_ACTIVITY_IDS.BOOKS, () => createBooksContextProvider(booksStateRef));
   const { setContext, setIsOpen, setCustomData } = useRightPanel();
   
   const [books, setBooks] = useState<Book[]>([]);
@@ -169,7 +179,7 @@ function BookExplorerContent() {
   // Set right panel context - keep closed by default
   // Only run on mount to avoid closing panel when user opens it
   useEffect(() => {
-    setContext('child-book-explorer');
+    setContext('child-books');
     setIsOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -395,6 +405,7 @@ function BookExplorerContent() {
         />
 
         <Container maxW="container.xl" py={6} position="relative" zIndex={1}>
+          <StudioReturnBanner />
           <VStack spacing={4} align="stretch">
             {/* Header with themed icon and usage */}
             <HStack justify="space-between" align="center" flexWrap="wrap" gap={4}>

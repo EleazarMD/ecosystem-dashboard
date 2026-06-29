@@ -6,5 +6,4 @@
 
 export { ChildThemeProvider, useChildTheme } from './ChildThemeProvider';
 export { ChildDashboard } from './ChildDashboard';
-export { ChildChatWrapper } from './ChildChatWrapper';
 export { ChildEmailPanel } from './ChildEmailPanel';

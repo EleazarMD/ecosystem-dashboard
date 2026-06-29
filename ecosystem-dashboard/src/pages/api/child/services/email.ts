@@ -104,7 +104,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           'Authorization': `Bearer ${process.env.CHILD_SAFETY_API_KEY || 'child-safety-key'}`,
         },
         body: JSON.stringify({
-          model: process.env.CHILD_AI_MODEL || 'llama3.2:3b',
+          model: process.env.CHILD_AI_MODEL || 'minimax-m3',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: filteredMessage },

@@ -1,9 +1,9 @@
 /**
  * Book Chat API for Children's Reading Buddy
  * 
- * Routes through the child's GooseMind agent for personalized, character-driven responses.
+ * Routes through the child's Companion AI agent for personalized, character-driven responses.
  * Fetches book context from GraphRAG and page content from database.
- * Includes content safety filtering via GooseMind middleware.
+ * Includes content safety filtering via Companion AI middleware.
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
@@ -64,7 +64,7 @@ export default async function handler(
   const isPageMode = currentPage && totalPages;
   const action = explicitAction || detectAction(message);
 
-  // Variables to store book metadata for GooseMind
+  // Variables to store book metadata for Companion AI
   let summary: string | null = null;
   let characters: string[] = [];
   let themes: string[] = [];
@@ -217,12 +217,12 @@ Story Parts: ${plotPoints.join(', ') || 'An exciting journey'}
       }
     }
 
-    // Route through GooseMind for personalized, character-driven responses
+    // Route through companion chat for personalized, character-driven responses
     // This uses the child's assigned character and applies content safety
     // ALWAYS use localhost for internal server-to-server calls to avoid network issues
-    const gooseMindUrl = 'http://localhost:3000/api/child/goosemind/chat';
+    const companionChatUrl = 'http://localhost:3000/api/child/companion/chat';
     
-    // Build bookReaderMode payload for GooseMind
+    // Build bookReaderMode payload for companion chat
     const bookReaderMode = {
       enabled: true,
       action: action,
@@ -237,10 +237,10 @@ Story Parts: ${plotPoints.join(', ') || 'An exciting journey'}
     };
 
     // Forward cookies for session authentication
-    console.log('[Book Chat] Calling GooseMind at:', gooseMindUrl);
+    console.log('[Book Chat] Calling companion chat at:', companionChatUrl);
     console.log('[Book Chat] Book context:', { bookId, bookTitle, currentPage, action, hasPageContent: !!pageContent });
     
-    const response = await fetch(gooseMindUrl, {
+    const response = await fetch(companionChatUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -254,8 +254,8 @@ Story Parts: ${plotPoints.join(', ') || 'An exciting journey'}
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[Book Chat] GooseMind error:', response.status, errorText);
-      throw new Error(`GooseMind request failed: ${response.status} - ${errorText.substring(0, 200)}`);
+      console.error('[Book Chat] Companion AI error:', response.status, errorText);
+      throw new Error(`Companion AI request failed: ${response.status} - ${errorText.substring(0, 200)}`);
     }
 
     const data = await response.json();

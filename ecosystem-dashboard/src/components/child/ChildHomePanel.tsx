@@ -7,7 +7,12 @@
  * - Discover: New tools and learning opportunities
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ChildTutorTab } from './ChildTutorTab';
+import { KNOWN_ACTIVITY_IDS } from '@/domains/learning/shared/activity-registry';
+import { useChildTheme } from './ChildThemeProvider';
+import { StreakFlame, DailyGoalRing, LevelChip, MasteryBar, DailyMissionCard } from './learning-kit';
+import { useKidsPCG } from '@/hooks/useKidsPCG';
 import {
   Box,
   VStack,
@@ -20,13 +25,10 @@ import {
   Spinner,
   SimpleGrid,
   Badge,
-  Progress,
   Tooltip,
   useToast,
   InputGroup,
   InputRightElement,
-  CircularProgress,
-  CircularProgressLabel,
 } from '@chakra-ui/react';
 import { 
   FiSend, 
@@ -127,6 +129,8 @@ export function ChildHomePanel({ activeTab }: ChildHomePanelProps) {
   const router = useRouter();
   const toast = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { colors } = useChildTheme();
+  const { fetchProgress, fetchAchievements } = useKidsPCG();
 
   // Daily Guide state
   const [messages, setMessages] = useState<AIMessage[]>([
@@ -136,38 +140,72 @@ export function ChildHomePanel({ activeTab }: ChildHomePanelProps) {
   const [loading, setLoading] = useState(false);
   const [dailyTip, setDailyTip] = useState(DAILY_TIPS[0]);
 
-  // Progress state
+  // Progress state — derived from PCG API
   const [goals, setGoals] = useState<LearningGoal[]>(LEARNING_GOALS);
   const [achievements, setAchievements] = useState<Achievement[]>(ACHIEVEMENTS);
   const [weeklyStats, setWeeklyStats] = useState({ totalMinutes: 0, activitiesCompleted: 0, streak: 0 });
+  const [pcgLevel, setPcgLevel] = useState({ level: 1, xp: 0, xpToNext: 100 });
 
-  // Load data from localStorage
+  // Load real data from PCG API
+  const loadPCGData = useCallback(async () => {
+    try {
+      const [progress, pcgAchievements] = await Promise.all([
+        fetchProgress(),
+        fetchAchievements(),
+      ]);
+
+      if (progress && progress.length > 0) {
+        const artworks = progress.find((p: any) => p.metricName === 'artworks_created')?.currentValue || 0;
+        const words = progress.find((p: any) => p.metricName === 'words_learned')?.currentValue || 0;
+        const pages = progress.find((p: any) => p.metricName === 'pages_created')?.currentValue || 0;
+        const tasks = progress.find((p: any) => p.metricName === 'tasks_completed')?.currentValue || 0;
+        const books = progress.find((p: any) => p.metricName === 'books_read')?.currentValue || 0;
+        const journal = progress.find((p: any) => p.metricName === 'journal_entries')?.currentValue || 0;
+        const streak = Math.max(...progress.map((p: any) => p.streakCount || 0), 0);
+
+        // Update goals with real PCG data
+        setGoals([
+          { id: '1', title: 'Reading Time', emoji: '📖', progress: books * 15, target: 30, unit: 'min' },
+          { id: '2', title: 'Words Learned', emoji: '🧠', progress: words, target: 20, unit: 'words' },
+          { id: '3', title: 'Stories Written', emoji: '✍️', progress: pages, target: 3, unit: 'stories' },
+          { id: '4', title: 'Art Created', emoji: '🎨', progress: artworks, target: 5, unit: 'pictures' },
+        ]);
+
+        // Derive level/XP from PCG metrics
+        const totalXP = artworks * 15 + words * 5 + pages * 20 + tasks * 10 + books * 25 + journal * 10;
+        const lvl = Math.floor(totalXP / 100) + 1;
+        setPcgLevel({ level: lvl, xp: totalXP % 100, xpToNext: 100 });
+
+        // Update weekly stats
+        const totalActivities = artworks + words + pages + tasks + books + journal;
+        setWeeklyStats({
+          totalMinutes: Math.round(totalActivities * 5), // estimate 5 min per activity
+          activitiesCompleted: totalActivities,
+          streak,
+        });
+      }
+
+      // Map PCG achievements to panel achievements
+      if (pcgAchievements && pcgAchievements.length > 0) {
+        const mapped: Achievement[] = pcgAchievements.slice(0, 6).map((a: any, i: number) => ({
+          id: a.id || String(i),
+          title: a.title || a.achievementCode || 'Badge',
+          emoji: a.icon || '🏅',
+          description: a.description || '',
+          earned: true,
+          earnedDate: a.earnedAt ? new Date(a.earnedAt).toLocaleDateString() : undefined,
+        }));
+        setAchievements(mapped);
+      }
+    } catch (error) {
+      console.error('[ChildHomePanel] Failed to load PCG data:', error);
+    }
+  }, [fetchProgress, fetchAchievements]);
+
   useEffect(() => {
-    // Random daily tip
     setDailyTip(DAILY_TIPS[Math.floor(Math.random() * DAILY_TIPS.length)]);
-    
-    // Load saved progress
-    const savedGoals = localStorage.getItem('childLearningGoals');
-    if (savedGoals) {
-      try {
-        setGoals(JSON.parse(savedGoals));
-      } catch (e) {}
-    }
-    
-    const savedAchievements = localStorage.getItem('childAchievements');
-    if (savedAchievements) {
-      try {
-        setAchievements(JSON.parse(savedAchievements));
-      } catch (e) {}
-    }
-
-    const savedStats = localStorage.getItem('childWeeklyStats');
-    if (savedStats) {
-      try {
-        setWeeklyStats(JSON.parse(savedStats));
-      } catch (e) {}
-    }
-  }, []);
+    loadPCGData();
+  }, [loadPCGData]);
 
   // Scroll to bottom of messages
   useEffect(() => {
@@ -184,16 +222,20 @@ export function ChildHomePanel({ activeTab }: ChildHomePanelProps) {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/child/chat', {
+      const res = await fetch('/api/child/companion/agent-turn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMessage,
-          context: `You are a friendly Learning Buddy for kids! Help them plan their day and suggest fun learning activities.
+          activityId: 'home',
+          intent: 'talk',
+          contextState: {
+            context: `You are a friendly Learning Buddy for kids! Help them plan their day and suggest fun learning activities.
             Be encouraging and use simple language. Add emojis to be fun!
             Suggest specific activities they can do in the app (Chat, Art Studio, Writing, Planner).
             Keep responses short (2-3 sentences) and exciting!`,
-          service: 'learning-buddy',
+            service: 'learning-buddy',
+          },
         }),
       });
 
@@ -204,15 +246,9 @@ export function ChildHomePanel({ activeTab }: ChildHomePanelProps) {
         throw new Error('API error');
       }
     } catch (error) {
-      const fallbackResponses = [
-        "That sounds great! 🌟 Why not start with some creative writing in the Workspace?",
-        "Awesome idea! 🎨 The Art Studio is perfect for that!",
-        "I love your enthusiasm! 📚 Let's check your Planner to organize your day!",
-        "You're doing amazing! 💪 Keep up the great work!",
-      ];
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)]
+        content: 'I had trouble connecting just now. Please try again in a moment! 🔄',
       }]);
     } finally {
       setLoading(false);
@@ -237,6 +273,9 @@ export function ChildHomePanel({ activeTab }: ChildHomePanelProps) {
           </Box>
         </HStack>
       </HStack>
+
+      {/* Daily Mission — hero card */}
+      <DailyMissionCard compact />
 
       {/* Daily Tip */}
       <Box bg="yellow.50" borderRadius="lg" p={3}>
@@ -334,68 +373,41 @@ export function ChildHomePanel({ activeTab }: ChildHomePanelProps) {
 
   // Render Progress tab
   const renderProgress = () => {
-    const totalGoalProgress = goals.reduce((acc, g) => acc + (g.progress / g.target), 0) / goals.length * 100;
     const earnedCount = achievements.filter(a => a.earned).length;
     
     return (
-      <VStack spacing={3} align="stretch">
-        {/* Header */}
-        <HStack justify="space-between">
-          <HStack>
-            <Text fontSize="2xl">📊</Text>
-            <Box>
-              <Text fontWeight="bold" fontSize="sm">My Progress</Text>
-              <Text fontSize="xs" color="gray.500">Track your learning!</Text>
-            </Box>
+      <VStack spacing={4} align="stretch">
+        {/* Gamification header */}
+        <HStack justify="space-between" px={1}>
+          <HStack spacing={2}>
+            <StreakFlame days={weeklyStats.streak} size="sm" />
+            <LevelChip level={pcgLevel.level} xp={pcgLevel.xp} xpToNext={pcgLevel.xpToNext} />
           </HStack>
+          <DailyGoalRing value={weeklyStats.activitiesCompleted} goal={5} size={56} label="Today" />
         </HStack>
 
-        {/* Overall Progress */}
-        <HStack justify="space-around" p={3} bg="purple.50" borderRadius="lg">
-          <VStack spacing={1}>
-            <CircularProgress value={totalGoalProgress} color="purple.500" size="50px">
-              <CircularProgressLabel fontSize="xs" fontWeight="bold">
-                {Math.round(totalGoalProgress)}%
-              </CircularProgressLabel>
-            </CircularProgress>
-            <Text fontSize="2xs" color="gray.500">Goals</Text>
-          </VStack>
-          <Divider orientation="vertical" h="50px" />
-          <VStack spacing={1}>
-            <Text fontSize="2xl" fontWeight="bold" color="orange.500">
-              {weeklyStats.streak}
-            </Text>
-            <Text fontSize="2xs" color="gray.500">Day Streak 🔥</Text>
-          </VStack>
-          <Divider orientation="vertical" h="50px" />
-          <VStack spacing={1}>
-            <Text fontSize="2xl" fontWeight="bold" color="green.500">
-              {earnedCount}
-            </Text>
-            <Text fontSize="2xs" color="gray.500">Badges 🏆</Text>
-          </VStack>
-        </HStack>
+        <Divider />
 
         {/* Learning Goals */}
         <Box>
-          <Text fontSize="xs" fontWeight="bold" mb={2} color="gray.600">🎯 Learning Goals</Text>
-          <VStack spacing={2} align="stretch" maxH="120px" overflowY="auto">
+          <Text fontSize="xs" fontWeight="700" letterSpacing="0.02em" mb={3} color={colors.textSecondary}>🎯 Learning Goals</Text>
+          <VStack spacing={2.5} align="stretch" maxH="120px" overflowY="auto">
             {goals.map((goal) => (
-              <Box key={goal.id} p={2} bg="gray.50" borderRadius="md">
-                <HStack justify="space-between" mb={1}>
+              <Box key={goal.id} p={3} bg={colors.backgroundTertiary} borderRadius="lg">
+                <HStack justify="space-between" mb={1.5}>
                   <HStack>
                     <Text>{goal.emoji}</Text>
-                    <Text fontSize="xs" fontWeight="medium">{goal.title}</Text>
+                    <Text fontSize="xs" fontWeight="600" color={colors.text}>{goal.title}</Text>
                   </HStack>
-                  <Text fontSize="2xs" color="gray.500">
+                  <Text fontSize="2xs" color={colors.textMuted}>
                     {goal.progress}/{goal.target} {goal.unit}
                   </Text>
                 </HStack>
-                <Progress 
-                  value={(goal.progress / goal.target) * 100} 
-                  size="xs" 
-                  colorScheme="green" 
-                  borderRadius="full"
+                <MasteryBar
+                  value={(goal.progress / goal.target) * 100}
+                  segments={5}
+                  showPercent={false}
+                  size="sm"
                 />
               </Box>
             ))}
@@ -406,8 +418,8 @@ export function ChildHomePanel({ activeTab }: ChildHomePanelProps) {
 
         {/* Achievements */}
         <Box>
-          <HStack justify="space-between" mb={2}>
-            <Text fontSize="xs" fontWeight="bold" color="gray.600">🏆 Achievements</Text>
+          <HStack justify="space-between" mb={3}>
+            <Text fontSize="xs" fontWeight="700" letterSpacing="0.02em" color={colors.textSecondary}>🏆 Achievements</Text>
             <Badge colorScheme="purple" fontSize="2xs">{earnedCount}/{achievements.length}</Badge>
           </HStack>
           <SimpleGrid columns={3} spacing={2} maxH="100px" overflowY="auto">
@@ -415,14 +427,14 @@ export function ChildHomePanel({ activeTab }: ChildHomePanelProps) {
               <Tooltip key={achievement.id} label={achievement.description}>
                 <Box
                   p={2}
-                  bg={achievement.earned ? 'yellow.50' : 'gray.100'}
-                  borderRadius="md"
+                  bg={achievement.earned ? `${colors.accent}22` : colors.backgroundTertiary}
+                  borderRadius="lg"
                   textAlign="center"
                   opacity={achievement.earned ? 1 : 0.5}
                   cursor="pointer"
                 >
                   <Text fontSize="xl">{achievement.emoji}</Text>
-                  <Text fontSize="2xs" noOfLines={1}>{achievement.title}</Text>
+                  <Text fontSize="2xs" noOfLines={1} color={colors.text}>{achievement.title}</Text>
                 </Box>
               </Tooltip>
             ))}
@@ -430,16 +442,16 @@ export function ChildHomePanel({ activeTab }: ChildHomePanelProps) {
         </Box>
 
         {/* Weekly Summary */}
-        <Box p={2} bg="blue.50" borderRadius="lg">
-          <Text fontSize="xs" fontWeight="bold" color="blue.700" mb={1}>📅 This Week</Text>
+        <Box p={3} bg={`${colors.primary}11`} borderRadius="lg">
+          <Text fontSize="xs" fontWeight="700" color={colors.primary} mb={1.5}>📅 This Week</Text>
           <HStack justify="space-around">
             <VStack spacing={0}>
-              <Text fontSize="sm" fontWeight="bold" color="blue.600">{weeklyStats.totalMinutes}</Text>
-              <Text fontSize="2xs" color="gray.500">Minutes</Text>
+              <Text fontSize="sm" fontWeight="800" color={colors.primary}>{weeklyStats.totalMinutes}</Text>
+              <Text fontSize="2xs" color={colors.textMuted}>Minutes</Text>
             </VStack>
             <VStack spacing={0}>
-              <Text fontSize="sm" fontWeight="bold" color="blue.600">{weeklyStats.activitiesCompleted}</Text>
-              <Text fontSize="2xs" color="gray.500">Activities</Text>
+              <Text fontSize="sm" fontWeight="800" color={colors.primary}>{weeklyStats.activitiesCompleted}</Text>
+              <Text fontSize="2xs" color={colors.textMuted}>Activities</Text>
             </VStack>
           </HStack>
         </Box>
@@ -449,14 +461,14 @@ export function ChildHomePanel({ activeTab }: ChildHomePanelProps) {
 
   // Render Discover tab
   const renderDiscover = () => (
-    <VStack spacing={3} align="stretch">
+    <VStack spacing={4} align="stretch">
       {/* Header */}
       <HStack justify="space-between">
-        <HStack>
+        <HStack spacing={3}>
           <Text fontSize="2xl">🔍</Text>
           <Box>
-            <Text fontWeight="bold" fontSize="sm">Discover</Text>
-            <Text fontSize="xs" color="gray.500">Find new things to learn!</Text>
+            <Text fontWeight="700" fontSize="sm" color={colors.text}>Discover</Text>
+            <Text fontSize="xs" color={colors.textMuted}>Find new things to learn!</Text>
           </Box>
         </HStack>
       </HStack>
@@ -591,7 +603,16 @@ export function ChildHomePanel({ activeTab }: ChildHomePanelProps) {
   );
 
   return (
-    <Box p={3} h="full">
+    <Box p={activeTab === 'chat' ? 0 : 3} h="full">
+
+      {activeTab === 'chat' && (
+        <Box h="full" display="flex" flexDirection="column">
+          <ChildTutorTab
+            defaultActivityId={KNOWN_ACTIVITY_IDS.LEARN_HUB}
+            defaultTitle="Learning Buddy"
+          />
+        </Box>
+      )}
       {activeTab === 'daily-guide' && renderDailyGuide()}
       {activeTab === 'progress' && renderProgress()}
       {activeTab === 'discover' && renderDiscover()}

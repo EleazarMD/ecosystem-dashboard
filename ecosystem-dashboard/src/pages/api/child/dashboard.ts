@@ -86,16 +86,63 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const streakDays = parseInt(streakResult.rows[0]?.streak_days || '0');
 
-    // Get achievements (placeholder - would be from achievements table)
-    const achievements = [
+    // Get achievements from PCG achievements table
+    let achievements: any[] = [
       { id: '1', name: 'First Chat', emoji: '💬', description: 'Had your first conversation!', earnedAt: new Date().toISOString() },
       { id: '2', name: 'Explorer', emoji: '🔍', description: 'Tried 3 different services', earnedAt: new Date().toISOString() },
     ];
+    try {
+      const achResult = await pool.query(`
+        SELECT id, achievement_type, title, description, icon, category, earned_at
+        FROM child_achievements
+        WHERE child_id = $1
+        ORDER BY earned_at DESC
+        LIMIT 10
+      `, [user.id]);
+      if (achResult.rows.length > 0) {
+        achievements = achResult.rows.map(r => ({
+          id: r.id,
+          name: r.title || r.achievement_type,
+          emoji: r.icon || '🏆',
+          description: r.description || '',
+          category: r.category || 'general',
+          earnedAt: r.earned_at,
+        }));
+      }
+    } catch (e) {
+      // Table may not exist yet, keep placeholder achievements
+    }
+
+    // Get weekly usage data for chart
+    let weeklyData: Array<{ day: string; minutes: number; date: string }> = [];
+    try {
+      const weekResult = await pool.query(`
+        SELECT 
+          TO_CHAR(usage_date, 'Dy') as day_name,
+          usage_date::text as date,
+          COALESCE(total_minutes, 0) as minutes
+        FROM generate_series(
+          CURRENT_DATE - INTERVAL '6 days',
+          CURRENT_DATE,
+          INTERVAL '1 day'
+        ) AS d(usage_date)
+        LEFT JOIN child_daily_usage cdu 
+          ON cdu.usage_date = d.usage_date AND cdu.child_user_id = $1
+        ORDER BY d.usage_date
+      `, [user.id]);
+      weeklyData = weekResult.rows.map(r => ({
+        day: r.day_name?.charAt(0) || '?',
+        minutes: parseInt(r.minutes || '0'),
+        date: r.date,
+      }));
+    } catch (e) {
+      // Fall back to empty array
+    }
 
     // Build allowed services list with child-friendly names
     const allServices = [
-      { id: 'personal-ai', name: 'AI Chat', emoji: '🤖', description: 'Chat with your AI friend', color: 'purple', path: '/goose-mind' },
-      { id: 'goosemind-voice', name: 'Voice Chat', emoji: '🎙️', description: 'Talk to GooseMind', color: 'blue', path: '/goose-mind?mode=voice' },
+      { id: 'personal-ai', name: 'AI Chat', emoji: '🤖', description: 'Chat with your AI friend', color: 'purple', path: '/companion' },
+      { id: 'companion-voice', name: 'Voice Chat', emoji: '🎙️', description: 'Talk to your Companion', color: 'blue', path: '/companion?mode=voice' },
       { id: 'image-studio', name: 'Art Studio', emoji: '🎨', description: 'Create amazing pictures', color: 'pink', path: '/image-studio' },
       { id: 'workspace', name: 'My Workspace', emoji: '📝', description: 'Write and create', color: 'green', path: '/workspace' },
       { id: 'calendar', name: 'Calendar', emoji: '📅', description: 'See your schedule', color: 'orange', path: '/calendar' },
@@ -135,6 +182,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       messageCount: usage.message_count,
       streakDays,
       achievements,
+      weeklyData,
       allowedServices,
       blockedServices: blockedServiceIds,
       // Theme data

@@ -32,19 +32,20 @@ import {
   VStack,
   useBreakpointValue,
   Heading,
+  Tooltip,
 } from '@chakra-ui/react';
 import { ChevronDownIcon } from '@chakra-ui/icons';
 import NextLink from 'next/link';
 import { useRouter } from 'next/router';
 import dynamic from 'next/dynamic';
 import { ChildThemeProvider, useChildTheme } from '@/components/child/ChildThemeProvider';
+import { activityRegistry } from '@/domains/learning/shared/activity-registry';
 import { ChildRightPanelButtons } from './ChildRightPanelButtons';
 import { useRightPanel } from '@/contexts/RightPanelContext';
 import { useAuth } from '@/context/AuthContext';
 import { useSemanticToken } from '@/hooks/useSemanticToken';
 import { SimpleGlassPanel } from '../ui/SimpleGlassPanel';
 import ErrorBoundary from '../common/ErrorBoundary';
-import { AIGatewayClientProvider } from '@/lib/ai-gateway-client-provider';
 import {
   HomeIcon,
   ChatBubbleLeftRightIcon,
@@ -55,6 +56,9 @@ import {
   BookOpenIcon,
   DocumentTextIcon,
   AcademicCapIcon,
+  BeakerIcon,
+  MapIcon,
+  UsersIcon,
 } from '@heroicons/react/24/outline';
 
 const DynamicRightPanel = dynamic(
@@ -64,7 +68,7 @@ const DynamicRightPanel = dynamic(
 
 interface ChildDashboardLayoutProps {
   children: ReactNode;
-  pageType?: 'home' | 'chat' | 'art' | 'workspace' | 'email' | 'planner' | 'books' | 'dictionary' | 'journal' | 'learn';
+  pageType?: 'home' | 'chat' | 'art' | 'workspace' | 'email' | 'planner' | 'books' | 'dictionary' | 'journal' | 'learn' | 'learning-path' | 'teams' | 'pokemon-lab';
 }
 
 interface ChildNavItem {
@@ -149,13 +153,31 @@ function ChildDashboardLayoutInner({ children, pageType = 'home' }: ChildDashboa
       books: 'child-books',
       dictionary: 'child-dictionary',
       journal: 'child-journal',
+      learn: 'child-learn',
+      'pokemon-lab': 'child-pokemon-lab',
+      'learning-path': 'child-learn',
+      teams: 'child-learn',
     };
     const context = contextMap[pageType] || 'child-home';
     setContext(context as any);
-    
-    // Only open panel on initial mount for desktop landscape, not on every render
-    if (!hasInitialized.current && !isMobile && !isPortrait) {
-      setIsPanelOpen(true);
+
+    // Wire the Context Hub: resolve the activity from the registry by pageType
+    // and set the focus. This makes the Pi Code agent "always in the loop" —
+    // every child surface registers its focus on mount.
+    const activity = activityRegistry.findByPageType(pageType);
+    if (activity) {
+      // Dynamic import to avoid SSR issues with the Context Hub singleton
+      import('@/domains/learning/shared/context-hub-service').then(({ getContextHub }) => {
+        const hub = getContextHub();
+        hub.setFocus(activity.id);
+      }).catch(() => {
+        // Context Hub not available — non-blocking
+      });
+    }
+
+    // Panel is closed by default; user opens it via right-rail buttons or activity triggers
+    if (!hasInitialized.current) {
+      setIsPanelOpen(false);
       hasInitialized.current = true;
     }
   }, [pageType, isMobile, isPortrait, setContext, setIsPanelOpen]);
@@ -166,8 +188,10 @@ function ChildDashboardLayoutInner({ children, pageType = 'home' }: ChildDashboa
   // Build child navigation with themed icons
   const childNavItems: ChildNavItem[] = [
     { label: 'Home', path: '/child/home', icon: HomeIcon, imageIcon: serviceIcons?.home },
-    { label: 'Learn', path: '/child/learn', icon: AcademicCapIcon },
-    { label: 'Pokemon Lab', path: '/child/pokemon-lab', icon: AcademicCapIcon },
+    { label: 'Learn', path: '/child/learn', icon: AcademicCapIcon, imageIcon: serviceIcons?.learn },
+    { label: 'Pokemon Lab', path: '/child/pokemon-lab', icon: BeakerIcon, imageIcon: serviceIcons?.pokemonLab },
+    { label: 'My Path', path: '/child/learning-path', icon: MapIcon, imageIcon: serviceIcons?.learningPath },
+    { label: 'My Teams', path: '/child/teams', icon: UsersIcon, imageIcon: serviceIcons?.teams },
     { label: 'Chat', path: '/child/chat', icon: ChatBubbleLeftRightIcon, imageIcon: serviceIcons?.chat },
     { label: 'Art Studio', path: '/child/art-studio', icon: PaintBrushIcon, imageIcon: serviceIcons?.art },
     { label: 'Workspace', path: '/child/workspace', icon: PencilSquareIcon, imageIcon: serviceIcons?.writing },
@@ -192,40 +216,57 @@ function ChildDashboardLayoutInner({ children, pageType = 'home' }: ChildDashboa
     const isActive = router.pathname === item.path;
     
     return (
-      <NextLink href={item.path} key={item.path} passHref legacyBehavior>
-        <Box
-          as="a"
-          display="flex"
-          flexDirection="column"
-          alignItems="center"
-          justifyContent="center"
-          p={2}
-          borderRadius="xl"
-          bg={isActive ? colors?.primary + '22' : 'transparent'}
-          _hover={{ bg: colors?.primary + '11', transform: 'scale(1.05)' }}
-          transition="all 0.2s"
-          cursor="pointer"
-          w="56px"
-          h="60px"
-        >
-          {item.imageIcon ? (
-            <Box
-              as="img"
-              src={item.imageIcon}
-              alt={item.label}
-              w="28px"
-              h="28px"
-              objectFit="contain"
-              style={{ imageRendering: childExtras?.decorations?.cardStyle === 'pixelated' ? 'pixelated' : 'auto' }}
-            />
-          ) : (
-            <Icon as={item.icon} boxSize={5} color={isActive ? colors?.primary : textPrimary} />
-          )}
-          <Text fontSize="xs" mt={1} color={isActive ? colors?.primary : textPrimary} fontWeight={isActive ? 'bold' : 'normal'}>
-            {item.label}
-          </Text>
-        </Box>
-      </NextLink>
+      <Tooltip key={item.path} label={item.label} placement="right" hasArrow>
+        <NextLink href={item.path} passHref legacyBehavior>
+          <Box
+            as="a"
+            display="flex"
+            flexDirection="column"
+            alignItems="center"
+            justifyContent="center"
+            position="relative"
+            p={2}
+            borderRadius="xl"
+            bg={isActive ? colors?.primary + '22' : 'transparent'}
+            _hover={{ bg: colors?.primary + '11', transform: 'scale(1.08)' }}
+            transition="all 0.2s"
+            cursor="pointer"
+            w="56px"
+            h="60px"
+          >
+            {/* Active indicator bar */}
+            {isActive && (
+              <Box
+                position="absolute"
+                left="-8px"
+                top="50%"
+                transform="translateY(-50%)"
+                w="4px"
+                h="32px"
+                borderRadius="full"
+                bg={colors?.primary}
+                boxShadow={`0 0 8px ${colors?.primary}88`}
+              />
+            )}
+            {item.imageIcon ? (
+              <Box
+                as="img"
+                src={item.imageIcon}
+                alt={item.label}
+                w="28px"
+                h="28px"
+                objectFit="contain"
+                style={{ imageRendering: childExtras?.decorations?.cardStyle === 'pixelated' ? 'pixelated' : 'auto' }}
+              />
+            ) : (
+              <Icon as={item.icon} boxSize={5} color={isActive ? colors?.primary : textPrimary} />
+            )}
+            <Text fontSize="xs" mt={1} color={isActive ? colors?.primary : textPrimary} fontWeight={isActive ? 'bold' : 'normal'}>
+              {item.label}
+            </Text>
+          </Box>
+        </NextLink>
+      </Tooltip>
     );
   };
 
@@ -237,16 +278,16 @@ function ChildDashboardLayoutInner({ children, pageType = 'home' }: ChildDashboa
         top="0"
         left="0"
         right="0"
-        h="70px"
+        h="60px"
         zIndex={1100}
         borderRadius="0"
         borderBottom="1px solid"
         borderColor={borderDefault}
       >
-        <Flex h="full" px={4} align="center" justify="flex-start">
+        <Flex h="full" px={4} align="center" justify="space-between">
           {/* Logo / Title */}
-          <HStack spacing={3}>
-            <Text fontSize="xl" fontWeight="bold" color={colors?.primary}>
+          <HStack spacing={2.5}>
+            <Text fontSize="lg" fontWeight="800" letterSpacing="-0.02em" color={colors?.primary}>
               {childExtras?.welcomeMessages?.[0]?.split(' ')[0] || '🌟'} Kids Portal
             </Text>
           </HStack>
@@ -256,7 +297,7 @@ function ChildDashboardLayoutInner({ children, pageType = 'home' }: ChildDashboa
       {/* User Menu - Fixed in upper right corner */}
       <Box
         position="fixed"
-        top="12px"
+        top="8px"
         right="16px"
         zIndex={1200}
       >
@@ -438,18 +479,23 @@ function ChildDashboardLayoutInner({ children, pageType = 'home' }: ChildDashboa
       <Box
         position="fixed"
         left="0"
-        top="70px"
-        bottom="0"
-        w="80px"
+        top="72px"
+        bottom="12px"
+        w="76px"
         bg={bgSecondary}
         borderRight="1px solid"
         borderColor={borderDefault}
-        py={4}
+        borderTopRightRadius="20px"
+        borderBottomRightRadius="20px"
+        boxShadow="4px 0 16px rgba(0,0,0,0.04)"
+        py={3}
         zIndex={1000}
         overflowY="auto"
+        overflowX="hidden"
         display={{ base: 'none', md: 'block' }}
+        mx="8px"
       >
-        <VStack spacing={2} align="center">
+        <VStack spacing={1.5} align="center">
           {childNavItems.map(renderNavItem)}
         </VStack>
       </Box>
@@ -458,16 +504,26 @@ function ChildDashboardLayoutInner({ children, pageType = 'home' }: ChildDashboa
       <Box
         as="main"
         position="fixed"
-        left={{ base: '0', md: '80px' }}
-        right={isPanelOpen ? `${panelWidth}px` : '56px'}
-        top="70px"
-        bottom="0"
+        left={{ base: '0', md: '92px' }}
+        right={isPanelOpen ? `${panelWidth + 8}px` : '64px'}
+        top="72px"
+        bottom="12px"
         overflowY="auto"
+        overflowX="hidden"
         transition="right 0.2s ease-out"
         backgroundImage={backgroundImage ? `url(${backgroundImage})` : undefined}
         backgroundSize={pageType === 'home' ? '400px' : 'cover'}
         backgroundPosition="center"
         backgroundRepeat={pageType === 'home' ? 'repeat' : 'no-repeat'}
+        borderRadius="24px"
+        boxShadow="0 4px 30px rgba(0,0,0,0.06)"
+        border="1px solid"
+        borderColor={borderDefault}
+        sx={{
+          scrollbarWidth: 'thin',
+          '&::-webkit-scrollbar': { width: '6px' },
+          '&::-webkit-scrollbar-thumb': { borderRadius: 'full', bg: 'blackAlpha.200' },
+        }}
       >
         {children}
       </Box>
@@ -485,11 +541,9 @@ function ChildDashboardLayoutInner({ children, pageType = 'home' }: ChildDashboa
           componentName="DynamicRightPanel"
           fallback={<Box p={4}>Panel temporarily disabled</Box>}
         >
-          <AIGatewayClientProvider>
-            <DynamicRightPanel
-              onClose={() => setIsPanelOpen(false)}
-            />
-          </AIGatewayClientProvider>
+          <DynamicRightPanel
+            onClose={() => setIsPanelOpen(false)}
+          />
         </ErrorBoundary>
       )}
 
@@ -503,27 +557,44 @@ function ChildDashboardLayoutInner({ children, pageType = 'home' }: ChildDashboa
           </DrawerHeader>
           <DrawerBody>
             <VStack spacing={2} align="stretch">
-              {childNavItems.map((item) => (
-                <NextLink href={item.path} key={item.path} passHref legacyBehavior>
-                  <HStack
-                    as="a"
-                    p={3}
-                    borderRadius="lg"
-                    bg={router.pathname === item.path ? colors?.primary + '22' : 'transparent'}
-                    _hover={{ bg: colors?.primary + '11' }}
-                    onClick={onClose}
-                  >
-                    {item.imageIcon ? (
-                      <Box as="img" src={item.imageIcon} w="24px" h="24px" objectFit="contain" />
-                    ) : (
-                      <Icon as={item.icon} boxSize={5} />
-                    )}
-                    <Text fontWeight={router.pathname === item.path ? 'bold' : 'normal'}>
-                      {item.label}
-                    </Text>
-                  </HStack>
-                </NextLink>
-              ))}
+              {childNavItems.map((item) => {
+                const isActive = router.pathname === item.path;
+                return (
+                  <NextLink href={item.path} key={item.path} passHref legacyBehavior>
+                    <HStack
+                      as="a"
+                      p={3}
+                      borderRadius="lg"
+                      position="relative"
+                      bg={isActive ? colors?.primary + '22' : 'transparent'}
+                      _hover={{ bg: colors?.primary + '11', transform: 'translateX(4px)' }}
+                      transition="all 0.2s"
+                      onClick={onClose}
+                    >
+                      {isActive && (
+                        <Box
+                          position="absolute"
+                          left="0"
+                          top="50%"
+                          transform="translateY(-50%)"
+                          w="3px"
+                          h="24px"
+                          borderRadius="full"
+                          bg={colors?.primary}
+                        />
+                      )}
+                      {item.imageIcon ? (
+                        <Box as="img" src={item.imageIcon} w="24px" h="24px" objectFit="contain" />
+                      ) : (
+                        <Icon as={item.icon} boxSize={5} color={isActive ? colors?.primary : undefined} />
+                      )}
+                      <Text fontWeight={isActive ? 'bold' : 'normal'} color={isActive ? colors?.primary : undefined}>
+                        {item.label}
+                      </Text>
+                    </HStack>
+                  </NextLink>
+                );
+              })}
             </VStack>
           </DrawerBody>
         </DrawerContent>
@@ -533,8 +604,9 @@ function ChildDashboardLayoutInner({ children, pageType = 'home' }: ChildDashboa
 }
 
 export default function ChildDashboardLayout({ children, pageType }: ChildDashboardLayoutProps) {
+  const activity = pageType ? activityRegistry.findByPageType(pageType) : undefined;
   return (
-    <ChildThemeProvider isChildMode={true}>
+    <ChildThemeProvider isChildMode={true} activeActivityId={activity?.id ?? null}>
       <ChildDashboardLayoutInner pageType={pageType}>
         {children}
       </ChildDashboardLayoutInner>

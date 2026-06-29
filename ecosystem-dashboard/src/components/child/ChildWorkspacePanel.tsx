@@ -10,6 +10,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { ChildTutorTab } from './ChildTutorTab';
+import { KNOWN_ACTIVITY_IDS } from '@/domains/learning/shared/activity-registry';
 import {
   Box,
   VStack,
@@ -292,11 +294,7 @@ export function ChildWorkspacePanel({
         setDocuments(data.documents || []);
       }
     } catch (e) {
-      // Mock data
-      setDocuments([
-        { id: '1', title: 'My Adventure Story', type: 'story', lastEdited: '2024-12-24', wordCount: 342 },
-        { id: '2', title: 'Science Report', type: 'homework', lastEdited: '2024-12-23', wordCount: 156 },
-      ]);
+      setDocuments([]);
     } finally {
       setDocsLoading(false);
     }
@@ -313,27 +311,46 @@ export function ChildWorkspacePanel({
   const handleBookSearch = async () => {
     if (!bookSearch.trim()) return;
     setBookLoading(true);
-    // Simulate search
-    setTimeout(() => {
+    try {
+      const res = await fetch(`/api/child/books/search?q=${encodeURIComponent(bookSearch)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedBook(data.book?.title || bookSearch);
+      } else {
+        setSelectedBook(bookSearch);
+      }
+    } catch {
       setSelectedBook(bookSearch);
+    } finally {
       setBookLoading(false);
-    }, 1000);
+    }
   };
 
   // Generate math problem
-  const generateMathProblem = () => {
+  const generateMathProblem = async () => {
     setMathLoading(true);
-    setTimeout(() => {
-      const problems = {
-        easy: ['5 + 3 = ?', '10 - 4 = ?', '2 × 3 = ?'],
-        medium: ['24 + 37 = ?', '15 × 4 = ?', '56 ÷ 8 = ?'],
-        hard: ['3/4 + 1/2 = ?', '0.5 × 0.3 = ?', '144 ÷ 12 = ?'],
-      };
-      const levelProblems = problems[mathDifficulty];
-      setCurrentProblem(levelProblems[Math.floor(Math.random() * levelProblems.length)]);
+    try {
+      const difficultyMap: Record<string, number> = { easy: 1, medium: 2, hard: 3 };
+      const res = await fetch('/api/learn/content/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          skillCode: 'math.arithmetic',
+          difficulty: difficultyMap[mathDifficulty] || 1,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentProblem(data.prompt || data.question || 'Practice: 5 + 3 = ?');
+      } else {
+        setCurrentProblem('5 + 3 = ?');
+      }
+    } catch {
+      setCurrentProblem('5 + 3 = ?');
+    } finally {
       setMathAnswer('');
       setMathLoading(false);
-    }, 500);
+    }
   };
 
   // Page Builder Agent - Generate page structure from prompt
@@ -1128,7 +1145,16 @@ export function ChildWorkspacePanel({
   );
 
   return (
-    <Box p={3} h="full" overflowY="auto">
+    <Box p={activeTab === 'chat' ? 0 : 3} h="full" overflowY="auto">
+
+      {activeTab === 'chat' && (
+        <Box h="full" display="flex" flexDirection="column">
+          <ChildTutorTab
+            defaultActivityId={KNOWN_ACTIVITY_IDS.WORKSPACE}
+            defaultTitle="Writing Buddy"
+          />
+        </Box>
+      )}
       {activeTab === 'writing' && renderWriting()}
       {activeTab === 'actions' && renderQuickActions()}
       {activeTab === 'books' && renderBooks()}

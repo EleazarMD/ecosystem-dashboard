@@ -8,6 +8,8 @@
  */
 
 import React, { useState } from 'react';
+import { ChildTutorTab } from './ChildTutorTab';
+import { KNOWN_ACTIVITY_IDS } from '@/domains/learning/shared/activity-registry';
 import {
   Box,
   VStack,
@@ -161,98 +163,15 @@ export function ChildEmailPanel({ activeTab, onSelectTemplate }: ChildEmailPanel
   const tipsProgress = (completedTips.length / WRITING_TIPS.length) * 100;
 
   return (
-    <Box h="100%" overflowY="auto" p={4}>
-      {activeTab === 'email-helper' && (
-        <VStack spacing={4} align="stretch">
-          {/* Header */}
-          <HStack justify="space-between">
-            <HStack>
-              <Text fontSize="2xl">✉️</Text>
-              <Text fontWeight="bold" fontSize="lg">Email Helper</Text>
-            </HStack>
-            <Badge colorScheme="green" fontSize="xs">AI Powered</Badge>
-          </HStack>
-
-          <Text fontSize="sm" color="gray.600">
-            I can help you write great emails! Just tell me who you want to write to and what you want to say.
-          </Text>
-
-          <Divider />
-
-          {/* Quick Actions */}
-          <Text fontWeight="bold" fontSize="sm" color="gray.700">Quick Help</Text>
-          <SimpleGrid columns={2} spacing={2}>
-            <Button
-              size="sm"
-              leftIcon={<Text>✨</Text>}
-              colorScheme="purple"
-              variant="outline"
-              borderRadius="full"
-            >
-              Make it better
-            </Button>
-            <Button
-              size="sm"
-              leftIcon={<Text>📝</Text>}
-              colorScheme="blue"
-              variant="outline"
-              borderRadius="full"
-            >
-              Fix spelling
-            </Button>
-            <Button
-              size="sm"
-              leftIcon={<Text>😊</Text>}
-              colorScheme="pink"
-              variant="outline"
-              borderRadius="full"
-            >
-              Make it nicer
-            </Button>
-            <Button
-              size="sm"
-              leftIcon={<Text>📏</Text>}
-              colorScheme="green"
-              variant="outline"
-              borderRadius="full"
-            >
-              Make it shorter
-            </Button>
-          </SimpleGrid>
-
-          <Divider />
-
-          {/* Writing Checklist */}
-          <Text fontWeight="bold" fontSize="sm" color="gray.700">Before You Send ✅</Text>
-          <VStack spacing={2} align="stretch">
-            {['Greeting at the start?', 'Said what you need?', 'Polite words used?', 'Signed your name?'].map((item, idx) => (
-              <HStack
-                key={idx}
-                p={2}
-                bg="gray.50"
-                borderRadius="lg"
-                cursor="pointer"
-                _hover={{ bg: 'green.50' }}
-              >
-                <Box
-                  w={5}
-                  h={5}
-                  borderRadius="md"
-                  border="2px solid"
-                  borderColor="green.300"
-                  display="flex"
-                  alignItems="center"
-                  justifyContent="center"
-                >
-                  <FiCheck size={12} color="green" />
-                </Box>
-                <Text fontSize="sm">{item}</Text>
-              </HStack>
-            ))}
-          </VStack>
-        </VStack>
+    <Box h="100%" overflowY="auto" p={activeTab === 'chat' ? 0 : 4}>
+      {activeTab === 'chat' && (
+        <Box h="full" display="flex" flexDirection="column">
+          <ChildTutorTab
+            defaultActivityId={KNOWN_ACTIVITY_IDS.EMAIL}
+            defaultTitle="Email Helper"
+          />
+        </Box>
       )}
-
       {activeTab === 'templates' && (
         <VStack spacing={4} align="stretch">
           {/* Header */}

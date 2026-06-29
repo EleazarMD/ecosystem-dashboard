@@ -20,51 +20,94 @@ import {
   Icon,
 } from '@chakra-ui/react';
 import {
-  FiX,
-  FiCpu,
-  FiZap,
-  FiFileText,
-  FiShare2,
-  FiPlay,
-  FiMic,
-  FiMusic,
-  FiMessageCircle,
-  FiActivity,
-  FiLayers,
-  FiFolder,
-  FiSettings,
-  FiCalendar,
-  FiUser,
-  FiDatabase,
-  FiLink,
-  FiDollarSign,
-  FiTarget,
-} from 'react-icons/fi';
+  XMarkIcon,
+  CpuChipIcon,
+  BoltIcon,
+  DocumentTextIcon,
+  ShareIcon,
+  PlayIcon,
+  MicrophoneIcon,
+  MusicalNoteIcon,
+  ChatBubbleLeftRightIcon,
+  ChartBarIcon,
+  RectangleStackIcon,
+  FolderIcon,
+  Cog6ToothIcon,
+  CalendarIcon,
+  UserIcon,
+  CircleStackIcon,
+  LinkIcon,
+  BookOpenIcon,
+  CurrencyDollarIcon,
+  CursorArrowRaysIcon,
+  StarIcon,
+  ArrowTrendingUpIcon,
+  GlobeAltIcon,
+  PhotoIcon,
+  PencilSquareIcon,
+  EnvelopeIcon,
+  MapIcon,
+  MagnifyingGlassIcon,
+  QuestionMarkCircleIcon,
+  RadioIcon,
+  ExclamationTriangleIcon,
+  ClockIcon,
+  Squares2X2Icon,
+  UsersIcon,
+  ShieldCheckIcon,
+  ChartPieIcon,
+  AdjustmentsHorizontalIcon,
+  CheckCircleIcon,
+  LightBulbIcon,
+} from '@heroicons/react/24/outline';
 import { useRightPanel } from '@/contexts/RightPanelContext';
 import { usePanelResolver } from './panels/resolver/usePanelResolver';
 import { PanelRenderer } from './panels/renderer/PanelRenderer';
 import { useSemanticToken } from '@/hooks/useSemanticToken';
+import { useChildTheme } from '@/components/child/ChildThemeProvider';
+import { useContextHeader } from '@/domains/learning/shared/useContextHeader';
 
 // Icon mapping for tabs
 const iconMap: Record<string, any> = {
-  FiCpu,
-  FiZap,
-  FiFileText,
-  FiShare2,
-  FiPlay,
-  FiMic,
-  FiMusic,
-  FiMessageCircle,
-  FiActivity,
-  FiLayers,
-  FiFolder,
-  FiSettings,
-  FiCalendar,
-  FiUser,
-  FiDatabase,
-  FiLink,
-  FiDollarSign,
-  FiTarget,
+  FiCpu: CpuChipIcon,
+  FiZap: BoltIcon,
+  FiFileText: DocumentTextIcon,
+  FiShare2: ShareIcon,
+  FiPlay: PlayIcon,
+  FiMic: MicrophoneIcon,
+  FiMusic: MusicalNoteIcon,
+  FiMessageCircle: ChatBubbleLeftRightIcon,
+  FiActivity: ChartBarIcon,
+  FiLayers: RectangleStackIcon,
+  FiFolder: FolderIcon,
+  FiSettings: Cog6ToothIcon,
+  FiCalendar: CalendarIcon,
+  FiUser: UserIcon,
+  FiDatabase: CircleStackIcon,
+  FiLink: LinkIcon,
+  FiBookOpen: BookOpenIcon,
+  FiDollarSign: CurrencyDollarIcon,
+  FiTarget: CursorArrowRaysIcon,
+  FiStar: StarIcon,
+  FiTrendingUp: ArrowTrendingUpIcon,
+  FiCompass: GlobeAltIcon,
+  FiLightbulb: LightBulbIcon,
+  FiImage: PhotoIcon,
+  FiEdit: PencilSquareIcon,
+  FiMail: EnvelopeIcon,
+  FiBook: BookOpenIcon,
+  FiMap: MapIcon,
+  FiSearch: MagnifyingGlassIcon,
+  FiHelpCircle: QuestionMarkCircleIcon,
+  FiRadio: RadioIcon,
+  FiAlertTriangle: ExclamationTriangleIcon,
+  FiClock: ClockIcon,
+  FiGrid: Squares2X2Icon,
+  FiUsers: UsersIcon,
+  FiShield: ShieldCheckIcon,
+  FiPieChart: ChartPieIcon,
+  FiSliders: AdjustmentsHorizontalIcon,
+  FiCheckCircle: CheckCircleIcon,
 };
 
 interface DynamicRightPanelProps {
@@ -79,6 +122,7 @@ interface DynamicRightPanelProps {
 
 export default function DynamicRightPanelNew({ systemData, onClose }: DynamicRightPanelProps) {
   const { activeTab, setActiveTab, config, context, width, setWidth, customData } = useRightPanel();
+  const { colors, effectiveTheme } = useChildTheme();
 
   // Colors
   const bgColor = useSemanticToken('glass.background');
@@ -87,6 +131,13 @@ export default function DynamicRightPanelNew({ systemData, onClose }: DynamicRig
   const mutedColor = useSemanticToken('text.secondary');
   const resizeHandleColor = useSemanticToken('border.default');
   const resizeHandleHoverColor = useSemanticToken('interactive.primary');
+  const isChildContext = context.startsWith('child-');
+  const childSurface = effectiveTheme.surface;
+  const panelBg = isChildContext ? childSurface?.panel ?? colors.backgroundSecondary : bgColor;
+  const panelBorder = isChildContext ? childSurface?.border ?? colors.border : borderColor;
+  const panelText = isChildContext ? childSurface?.title ?? colors.text : textColor;
+  const panelMuted = isChildContext ? childSurface?.muted ?? colors.textMuted : mutedColor;
+  const panelCard = isChildContext ? childSurface?.card ?? colors.backgroundSecondary : bgColor;
 
   // Resize state
   const [isResizing, setIsResizing] = React.useState(false);
@@ -126,6 +177,9 @@ export default function DynamicRightPanelNew({ systemData, onClose }: DynamicRig
     };
   }, [isResizing, startX, startWidth, setWidth, context]);
 
+  // Contextual header info from Context Hub (child contexts only)
+  const ctxHeader = useContextHeader();
+
   // Resolve which panel to show
   const resolved = usePanelResolver({
     context,
@@ -157,16 +211,16 @@ export default function DynamicRightPanelNew({ systemData, onClose }: DynamicRig
     <Box
       position="fixed"
       right="0"
-      top="70px"
-      h="calc(100vh - 70px)"
+      top="64px"
+      h="calc(100vh - 64px)"
       w={`${width}px`}
-      bg={bgColor}
-      backdropFilter="blur(12px) saturate(180%)"
+      bg={panelBg}
+      backdropFilter={isChildContext ? 'none' : 'blur(12px) saturate(180%)'}
       borderLeft="1px solid"
-      borderColor={borderColor}
-      borderTopLeftRadius="24px"
-      borderBottomLeftRadius="24px"
-      boxShadow={useSemanticToken('glass.shadow')}
+      borderColor={panelBorder}
+      borderTopLeftRadius={isChildContext ? '20px' : '24px'}
+      borderBottomLeftRadius={isChildContext ? '20px' : '24px'}
+      boxShadow={isChildContext ? '-12px 0 28px rgba(15, 23, 42, 0.10)' : useSemanticToken('glass.shadow')}
       transition={isResizing ? 'none' : 'width 0.2s ease-out'}
       zIndex={1000}
       display="flex"
@@ -194,30 +248,39 @@ export default function DynamicRightPanelNew({ systemData, onClose }: DynamicRig
 
       {/* Header */}
       <HStack
-        px={4}
-        py={3}
+        px={isChildContext ? 3 : 4}
+        py={isChildContext ? 2 : 3}
         borderBottom="1px solid"
-        borderColor={borderColor}
+        borderColor={panelBorder}
         justify="space-between"
+        minH={isChildContext ? '46px' : undefined}
       >
-        <HStack spacing={2}>
+        <HStack spacing={2} minW={0} flex={1} overflow="hidden">
           {resolved.metadata.icon && (
-            <Icon as={iconMap[resolved.metadata.icon]} color={resolved.metadata.iconColor} boxSize={5} />
+            <Icon as={iconMap[resolved.metadata.icon]} color={isChildContext ? colors.primary : resolved.metadata.iconColor} boxSize={isChildContext ? 4 : 5} flexShrink={0} />
           )}
-          <Text fontSize="md" fontWeight="600" color={textColor}>
-            {resolved.metadata.displayName}
-          </Text>
+          <Box minW={0} overflow="hidden">
+            <Text fontSize={isChildContext ? 'sm' : 'md'} fontWeight="700" letterSpacing={isChildContext ? '-0.01em' : undefined} color={panelText} noOfLines={1}>
+              {isChildContext && ctxHeader.frameTitle ? ctxHeader.frameTitle : resolved.metadata.displayName}
+            </Text>
+            {isChildContext && ctxHeader.personaName && (
+              <Text fontSize="2xs" color={panelMuted} noOfLines={1}>
+                {ctxHeader.personaName}
+                {ctxHeader.toolCount > 0 && ` · ${ctxHeader.toolCount} tools`}
+              </Text>
+            )}
+          </Box>
         </HStack>
         <Tooltip label="Close panel" placement="left">
           <IconButton
             aria-label="Close panel"
-            icon={<FiX />}
+            icon={<Icon as={XMarkIcon} boxSize={5} />}
             size="sm"
             variant="ghost"
             onClick={onClose}
-            color={mutedColor}
+            color={panelMuted}
             _hover={{
-              bg: useSemanticToken('interactive.baseHover'),
+              bg: isChildContext ? panelCard : useSemanticToken('interactive.baseHover'),
             }}
           />
         </Tooltip>
@@ -228,13 +291,32 @@ export default function DynamicRightPanelNew({ systemData, onClose }: DynamicRig
         <Tabs
           index={activeTabIndex}
           onChange={(index) => setActiveTab(visibleTabs[index].id)}
-          variant="soft-rounded"
+          variant={isChildContext ? 'unstyled' : 'soft-rounded'}
           colorScheme="blue"
           size="sm"
         >
-          <TabList px={2} pt={2} pb={0} overflowX="auto" css={{ '&::-webkit-scrollbar': { display: 'none' } }}>
+          <TabList px={isChildContext ? 3 : 2} pt={isChildContext ? 2.5 : 2} pb={isChildContext ? 1.5 : 0} gap={isChildContext ? 1.5 : 0} overflowX="auto" css={{ '&::-webkit-scrollbar': { display: 'none' } }}>
             {visibleTabs.map((tab) => (
-              <Tab key={tab.id} fontSize="xs" px={3} py={1.5}>
+              <Tab
+                key={tab.id}
+                fontSize="xs"
+                px={isChildContext ? 3 : 3}
+                py={isChildContext ? 2 : 1.5}
+                borderRadius="full"
+                border={isChildContext ? '1px solid' : undefined}
+                borderColor={isChildContext ? 'transparent' : undefined}
+                color={isChildContext ? panelMuted : undefined}
+                fontWeight="700"
+                letterSpacing="-0.01em"
+                whiteSpace="nowrap"
+                _selected={isChildContext ? {
+                  bg: panelCard,
+                  borderColor: colors.primary,
+                  color: panelText,
+                  boxShadow: '0 2px 8px rgba(15, 23, 42, 0.08)',
+                } : undefined}
+                _hover={isChildContext ? { bg: panelCard, color: panelText } : undefined}
+              >
                 {iconMap[tab.icon] && <Icon as={iconMap[tab.icon]} boxSize={3} mr={1.5} />}
                 {tab.label}
               </Tab>

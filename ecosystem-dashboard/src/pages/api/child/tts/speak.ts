@@ -15,11 +15,10 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-// Chatterbox TTS - Local self-hosted TTS service
-// CPU version runs on 4123, GPU version on 5003
-const CHATTERBOX_URL = process.env.CHATTERBOX_TTS_URL || 'http://localhost:4123';
+// Qwen TTS - Running on RTX workstation
+const QWEN_TTS_URL = process.env.QWEN_TTS_URL || 'http://100.108.41.22:4200';
 
-import { ALL_TTS_VOICES, getVoiceById, getDefaultVoiceForTheme, getChatterboxParams } from '@/lib/platform/tts-voices-config';
+import { ALL_TTS_VOICES, getVoiceById, getDefaultVoiceForTheme, getQwenTTSVoiceId, getQwenTTSParams } from '@/lib/platform/tts-voices-config';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -147,44 +146,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    // Get voice-specific Chatterbox parameters
+    // Get Qwen TTS voice ID and parameters
     const voiceConfig = validVoice || getDefaultVoiceForTheme(userTheme);
-    const chatterboxParams = getChatterboxParams(voiceConfig);
+    const qwenVoiceId = getQwenTTSVoiceId(voiceConfig.id);
+    const qwenParams = getQwenTTSParams(voiceConfig);
 
-    console.log('[Child TTS] Calling Chatterbox at:', CHATTERBOX_URL);
-    console.log('[Child TTS] Voice config:', voiceConfig?.id, 'Params:', chatterboxParams);
+    console.log('[Child TTS] Calling Qwen TTS at:', QWEN_TTS_URL);
+    console.log('[Child TTS] Voice config:', voiceConfig?.id, '→ Qwen voice:', qwenVoiceId);
     console.log('[Child TTS] Text length:', cleanText.length);
 
-    // Call Chatterbox TTS (local, self-hosted)
+    // Call Qwen TTS (RTX workstation)
     let ttsResponse;
     try {
-      ttsResponse = await fetch(`${CHATTERBOX_URL}/v1/audio/speech`, {
+      ttsResponse = await fetch(`${QWEN_TTS_URL}/api/tts/synthesize`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          input: cleanText,
-          voice: preferences.voice_id === 'default' ? undefined : preferences.voice_id,
-          // Character-specific Chatterbox parameters
-          exaggeration: chatterboxParams.exaggeration,
-          cfg_weight: chatterboxParams.cfg_weight,
-          temperature: chatterboxParams.temperature,
+          text: cleanText,
+          voice_id: qwenVoiceId,
+          language: 'English',
+          temperature: qwenParams.temperature,
+          top_p: qwenParams.top_p,
         }),
       });
-      console.log('[Child TTS] Chatterbox response status:', ttsResponse.status);
+      console.log('[Child TTS] Qwen TTS response status:', ttsResponse.status);
     } catch (fetchError) {
       console.error('[Child TTS] Fetch error:', fetchError);
       return res.status(200).json({
         text: cleanText,
         useBrowserTTS: true,
-        error: 'Chatterbox connection failed',
+        error: 'Qwen TTS connection failed',
       });
     }
 
     if (!ttsResponse.ok) {
       const errorText = await ttsResponse.text();
-      console.error('[Child TTS] Chatterbox error:', ttsResponse.status, errorText);
+      console.error('[Child TTS] Qwen TTS error:', ttsResponse.status, errorText);
       
       // Fallback: return text for browser TTS
       return res.status(200).json({
@@ -200,7 +199,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const audioBuffer = await ttsResponse.arrayBuffer();
     console.log('[Child TTS] Audio buffer size:', audioBuffer.byteLength);
     const audioBase64 = Buffer.from(audioBuffer).toString('base64');
-    // Chatterbox returns WAV format, not MP3
+    // Qwen TTS returns WAV format
     const audioDataUrl = `data:audio/wav;base64,${audioBase64}`;
     console.log('[Child TTS] Audio data URL length:', audioDataUrl.length);
 

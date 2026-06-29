@@ -10,10 +10,31 @@ import {
   VStack,
   Tooltip,
   Text,
+  Icon,
 } from '@chakra-ui/react';
+import {
+  BookOpenIcon,
+  ChatBubbleLeftRightIcon,
+  CpuChipIcon,
+  PencilSquareIcon,
+  FolderIcon,
+  DocumentTextIcon,
+  MapIcon,
+  MagnifyingGlassIcon,
+  QuestionMarkCircleIcon,
+  Cog6ToothIcon,
+  CursorArrowRaysIcon,
+  ArrowTrendingUpIcon,
+  GlobeAltIcon,
+  StarIcon,
+  UserIcon,
+  PhotoIcon,
+  LightBulbIcon,
+  BoltIcon,
+} from '@heroicons/react/24/outline';
 import { useSemanticToken } from '@/hooks/useSemanticToken';
-import { useRouter } from 'next/router';
-import { useRightPanel, type PanelContext } from '@/contexts/RightPanelContext';
+import { useRightPanel } from '@/contexts/RightPanelContext';
+import { useChildTheme } from '@/components/child/ChildThemeProvider';
 
 interface ChildRightPanelButtonsProps {
   isPanelOpen: boolean;
@@ -21,63 +42,58 @@ interface ChildRightPanelButtonsProps {
   setActiveTab: (tab: string) => void;
 }
 
-interface PanelTabButton {
-  id: string;
-  label: string;
-  emoji: string;
-  color: string;
-}
-
-// Context-specific panel tabs for each child page - must match PANEL_CONFIGS in RightPanelContext
-const CHILD_CONTEXT_TABS: Record<string, PanelTabButton[]> = {
-  'child-home': [
-    { id: 'daily-guide', label: 'Today', emoji: '🌟', color: 'yellow.400' },
-    { id: 'progress', label: 'Progress', emoji: '📊', color: 'blue.400' },
-    { id: 'discover', label: 'Discover', emoji: '🔍', color: 'purple.400' },
-  ],
-  'child-chat': [
-    { id: 'characters', label: 'Characters', emoji: '🎭', color: 'purple.400' },
-    { id: 'learning', label: 'Learning', emoji: '📚', color: 'green.400' },
-    { id: 'topics', label: 'Topics', emoji: '💬', color: 'blue.400' },
-  ],
-  'child-art': [
-    { id: 'art-agent', label: 'Art Helper', emoji: '🎨', color: 'pink.400' },
-    { id: 'image-settings', label: 'Style', emoji: '🖼️', color: 'purple.400' },
-    { id: 'gallery', label: 'Gallery', emoji: '📸', color: 'blue.400' },
-  ],
-  'child-planner': [
-    { id: 'study-buddy', label: 'Study Buddy', emoji: '📚', color: 'green.400' },
-    { id: 'goals', label: 'Goals', emoji: '🎯', color: 'orange.400' },
-    { id: 'settings', label: 'Settings', emoji: '⚙️', color: 'gray.400' },
-  ],
-  'child-workspace': [
-    { id: 'builder', label: 'AI Builder', emoji: '🤖', color: 'purple.400' },
-    { id: 'writing', label: 'Writing', emoji: '✍️', color: 'blue.400' },
-    { id: 'actions', label: 'Actions', emoji: '⚡', color: 'yellow.400' },
-    { id: 'documents', label: 'Docs', emoji: '📁', color: 'cyan.400' },
-  ],
-  'child-email': [
-    { id: 'email-helper', label: 'Helper', emoji: '✉️', color: 'blue.400' },
-    { id: 'templates', label: 'Templates', emoji: '📝', color: 'green.400' },
-    { id: 'tips', label: 'Tips', emoji: '💡', color: 'yellow.400' },
-  ],
-  'child-books': [
-    { id: 'reading-buddy', label: 'Reading Buddy', emoji: '📚', color: 'green.400' },
-    { id: 'vocabulary', label: 'Words', emoji: '📝', color: 'blue.400' },
-    { id: 'quiz', label: 'Quiz Me', emoji: '❓', color: 'purple.400' },
-    { id: 'explore', label: 'Explore', emoji: '🔍', color: 'orange.400' },
-  ],
+const iconMap: Record<string, any> = {
+  FiBook: BookOpenIcon,
+  FiBookOpen: BookOpenIcon,
+  FiCompass: GlobeAltIcon,
+  FiCpu: CpuChipIcon,
+  FiEdit: PencilSquareIcon,
+  FiFileText: DocumentTextIcon,
+  FiFolder: FolderIcon,
+  FiHelpCircle: QuestionMarkCircleIcon,
+  FiImage: PhotoIcon,
+  FiLightbulb: LightBulbIcon,
+  FiMap: MapIcon,
+  FiMessageCircle: ChatBubbleLeftRightIcon,
+  FiSearch: MagnifyingGlassIcon,
+  FiSettings: Cog6ToothIcon,
+  FiStar: StarIcon,
+  FiTarget: CursorArrowRaysIcon,
+  FiTrendingUp: ArrowTrendingUpIcon,
+  FiUser: UserIcon,
+  FiZap: BoltIcon,
 };
 
-// Map routes to context names - must match PANEL_CONFIGS keys
-const ROUTE_TO_CONTEXT: Record<string, PanelContext> = {
-  '/child/home': 'child-home',
-  '/child/chat': 'child-chat',
-  '/child/art-studio': 'child-art',
-  '/child/planner': 'child-planner',
-  '/child/workspace': 'child-workspace',
-  '/child/email': 'child-email',
-  '/child/book-explorer': 'child-books',
+// Theme-aware tab accent colors — fallback to theme primary if no match
+const tabAccent: Record<string, string> = {
+  chat: 'primary',
+  progress: 'primary',
+  discover: 'accent',
+  characters: 'accent',
+  learning: 'primary',
+  topics: 'accent',
+  'image-settings': 'accent',
+  gallery: 'primary',
+  goals: 'accent',
+  workspace: 'primary',
+  settings: 'textMuted',
+  builder: 'accent',
+  writing: 'primary',
+  actions: 'accent',
+  documents: 'primary',
+  templates: 'primary',
+  tips: 'accent',
+  vocabulary: 'primary',
+  quiz: 'accent',
+  explore: 'accent',
+  'create-note': 'primary',
+  'my-collection': 'accent',
+  'word-games': 'accent',
+  'writing-tips': 'primary',
+  prompts: 'accent',
+  path: 'primary',
+  concepts: 'primary',
+  'daily-guide': 'accent',
 };
 
 export const ChildRightPanelButtons: React.FC<ChildRightPanelButtonsProps> = ({
@@ -85,23 +101,24 @@ export const ChildRightPanelButtons: React.FC<ChildRightPanelButtonsProps> = ({
   setIsPanelOpen,
   setActiveTab,
 }) => {
-  const router = useRouter();
-  const currentPath = router.pathname;
-  const { activeTab, config } = useRightPanel();
+  const { config } = useRightPanel();
+  const { colors, effectiveTheme } = useChildTheme();
   
   // Semantic tokens for theme-aware styling
   const borderSubtle = useSemanticToken('border.subtle');
   const surfaceHover = useSemanticToken('surface.hover');
   const surfaceElevated = useSemanticToken('surface.elevated');
+  const childSurface = effectiveTheme.surface;
+  const railBg = childSurface?.panel ?? surfaceElevated;
+  const railBorder = childSurface?.border ?? borderSubtle;
+  const railCard = childSurface?.card ?? surfaceHover;
+  const railText = childSurface?.title ?? colors.text;
 
   // Don't show buttons if panel is open
   if (isPanelOpen) return null;
 
-  // Get current context and its tabs
-  const currentContext = ROUTE_TO_CONTEXT[currentPath] || 'child-home';
-  const contextTabs = CHILD_CONTEXT_TABS[currentContext] || CHILD_CONTEXT_TABS['child-home'];
-  
   // Get the default/primary tab for this context (first one opens the panel)
+  const contextTabs = config.tabs;
   const primaryTab = contextTabs[0];
   const secondaryTabs = contextTabs.slice(1);
 
@@ -116,29 +133,27 @@ export const ChildRightPanelButtons: React.FC<ChildRightPanelButtonsProps> = ({
     <Box
       position="fixed"
       right="0"
-      top="70px"
-      h="calc(100vh - 70px)"
+      top="72px"
+      bottom="12px"
+      h="auto"
       w="56px"
-      bg={surfaceElevated}
-      backdropFilter="blur(12px) saturate(150%)"
+      bg={railBg}
+      backdropFilter="none"
       borderLeft="1px solid"
-      borderColor={borderSubtle}
-      borderTopLeftRadius="28px"
-      borderBottomLeftRadius="28px"
-      boxShadow="lg"
+      borderColor={railBorder}
+      borderTopLeftRadius="20px"
+      borderBottomLeftRadius="20px"
+      boxShadow={`-8px 0 20px rgba(0,0,0,0.06)`}
       zIndex={1000}
       display="flex"
       flexDirection="column"
       alignItems="center"
       py={4}
-      sx={{
-        WebkitBackdropFilter: 'blur(12px) saturate(150%)',
-      }}
     >
       <VStack spacing={1}>
         {/* Primary button - Opens panel with default tab */}
         <Tooltip 
-          label={`${primaryTab.emoji} ${primaryTab.label}`} 
+          label={primaryTab.label} 
           placement="left" 
           hasArrow
           bg="gray.800"
@@ -154,9 +169,9 @@ export const ChildRightPanelButtons: React.FC<ChildRightPanelButtonsProps> = ({
             borderRadius="xl"
             cursor="pointer"
             position="relative"
-            bg={primaryTab.color}
+            bg={colors[tabAccent[primaryTab.id] as keyof typeof colors] ?? colors.primary}
             border="2px solid"
-            borderColor={primaryTab.color}
+            borderColor={colors[tabAccent[primaryTab.id] as keyof typeof colors] ?? colors.primary}
             _hover={{
               transform: 'translateX(-3px) scale(1.08)',
               boxShadow: 'lg',
@@ -170,20 +185,18 @@ export const ChildRightPanelButtons: React.FC<ChildRightPanelButtonsProps> = ({
             justifyContent="center"
             onClick={() => handleOpenPanel(primaryTab.id)}
           >
-            <Text fontSize="xl" lineHeight={1}>
-              {primaryTab.emoji}
-            </Text>
+            <Icon as={iconMap[primaryTab.icon ?? 'FiMessageCircle'] ?? ChatBubbleLeftRightIcon} boxSize={5} color="white" />
           </Box>
         </Tooltip>
         
         {/* Divider */}
-        <Box w="24px" h="2px" bg={borderSubtle} my={2} borderRadius="full" />
+        <Box w="24px" h="2px" bg={railBorder} my={2} borderRadius="full" />
         
         {/* Secondary tab shortcuts */}
         {secondaryTabs.map((tab) => (
           <Tooltip 
             key={tab.id}
-            label={`${tab.emoji} ${tab.label}`} 
+            label={tab.label} 
             placement="left" 
             hasArrow
             bg="gray.800"
@@ -202,9 +215,9 @@ export const ChildRightPanelButtons: React.FC<ChildRightPanelButtonsProps> = ({
               bg="transparent"
               border="2px solid transparent"
               _hover={{
-                bg: surfaceHover,
+                bg: railCard,
                 transform: 'translateX(-3px) scale(1.05)',
-                borderColor: tab.color,
+                borderColor: colors[tabAccent[tab.id] as keyof typeof colors] ?? colors.primary,
               }}
               transition="all 0.2s ease-out"
               minH="44px"
@@ -215,9 +228,7 @@ export const ChildRightPanelButtons: React.FC<ChildRightPanelButtonsProps> = ({
               justifyContent="center"
               onClick={() => handleOpenPanel(tab.id)}
             >
-              <Text fontSize="lg" lineHeight={1}>
-                {tab.emoji}
-              </Text>
+              <Icon as={iconMap[tab.icon ?? 'FiMessageCircle'] ?? ChatBubbleLeftRightIcon} boxSize={4} color={railText} />
             </Box>
           </Tooltip>
         ))}

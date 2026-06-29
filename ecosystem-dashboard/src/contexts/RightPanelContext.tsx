@@ -23,13 +23,14 @@ export type PanelContext =
   | 'child-home'
   | 'child-chat'
   | 'child-art'
-  | 'child-art-studio'
   | 'child-workspace'
   | 'child-email'
   | 'child-planner'
   | 'child-books'
   | 'child-dictionary'
   | 'child-journal'
+  | 'child-learn'
+  | 'child-pokemon-lab'
   | 'admin-dashboard'
   | 'admin-tenants'
   | 'admin-users'
@@ -238,96 +239,108 @@ const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
   'child-home': {
     width: 280,
     tabs: [
+      { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'daily-guide', label: 'Today', icon: 'FiStar' },
       { id: 'progress', label: 'Progress', icon: 'FiTrendingUp' },
       { id: 'discover', label: 'Discover', icon: 'FiCompass' },
     ],
-    defaultTab: 'daily-guide',
+    defaultTab: 'chat',
   },
   'child-chat': {
     width: 280,
     tabs: [
+      { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'characters', label: 'Characters', icon: 'FiUser' },
       { id: 'learning', label: 'Learning', icon: 'FiBook' },
-      { id: 'topics', label: 'Topics', icon: 'FiMessageCircle' },
+      { id: 'topics', label: 'Topics', icon: 'FiLightbulb' },
     ],
-    defaultTab: 'characters',
+    defaultTab: 'chat',
   },
   'child-art': {
     width: 280,
     tabs: [
-      { id: 'art-agent', label: 'Art Helper', icon: 'FiEdit' },
+      { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'image-settings', label: 'Style', icon: 'FiImage' },
       { id: 'gallery', label: 'Gallery', icon: 'FiImage' },
     ],
-    defaultTab: 'art-agent',
-  },
-  'child-art-studio': {
-    width: 280,
-    tabs: [
-      { id: 'art-agent', label: 'Art Helper', icon: 'FiEdit' },
-      { id: 'image-settings', label: 'Style', icon: 'FiImage' },
-      { id: 'gallery', label: 'Gallery', icon: 'FiImage' },
-    ],
-    defaultTab: 'art-agent',
+    defaultTab: 'chat',
   },
   'child-workspace': {
     width: 280,
     tabs: [
+      { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'builder', label: 'AI Builder', icon: 'FiCpu' },
       { id: 'writing', label: 'Writing', icon: 'FiEdit' },
       { id: 'actions', label: 'Actions', icon: 'FiZap' },
       { id: 'documents', label: 'Docs', icon: 'FiFolder' },
     ],
-    defaultTab: 'builder',
+    defaultTab: 'chat',
   },
   'child-email': {
     width: 280,
     tabs: [
-      { id: 'email-helper', label: 'Helper', icon: 'FiMail' },
+      { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'templates', label: 'Templates', icon: 'FiFileText' },
       { id: 'tips', label: 'Tips', icon: 'FiZap' },
     ],
-    defaultTab: 'email-helper',
+    defaultTab: 'chat',
   },
   'child-planner': {
     width: 280,
     tabs: [
-      { id: 'study-buddy', label: 'Study Buddy', icon: 'FiBook' },
+      { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'goals', label: 'Goals', icon: 'FiTarget' },
       { id: 'workspace', label: 'Workspace', icon: 'FiFileText' },
       { id: 'settings', label: 'Settings', icon: 'FiSettings' },
     ],
-    defaultTab: 'study-buddy',
+    defaultTab: 'chat',
   },
   'child-books': {
     width: 280,
     tabs: [
-      { id: 'reading-buddy', label: 'Reading Buddy', icon: 'FiBook' },
+      { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'vocabulary', label: 'Words', icon: 'FiEdit' },
       { id: 'quiz', label: 'Quiz Me', icon: 'FiHelpCircle' },
       { id: 'explore', label: 'Explore', icon: 'FiSearch' },
     ],
-    defaultTab: 'reading-buddy',
+    defaultTab: 'chat',
   },
   'child-dictionary': {
     width: 280,
     tabs: [
+      { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'create-note', label: 'Create Note', icon: 'FiEdit' },
-      { id: 'ask-character', label: 'Ask Character', icon: 'FiMessageCircle' },
       { id: 'my-collection', label: 'My Collection', icon: 'FiStar' },
       { id: 'word-games', label: 'Word Games', icon: 'FiZap' },
     ],
-    defaultTab: 'create-note',
+    defaultTab: 'chat',
   },
   'child-journal': {
     width: 280,
     tabs: [
+      { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'writing-tips', label: 'Tips', icon: 'FiEdit' },
       { id: 'prompts', label: 'Prompts', icon: 'FiZap' },
       { id: 'progress', label: 'Progress', icon: 'FiTrendingUp' },
     ],
-    defaultTab: 'writing-tips',
+    defaultTab: 'chat',
+  },
+  'child-learn': {
+    width: 280,
+    tabs: [
+      { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
+      { id: 'progress', label: 'Progress', icon: 'FiTrendingUp' },
+      { id: 'path', label: 'My Path', icon: 'FiMap' },
+    ],
+    defaultTab: 'chat',
+  },
+  'child-pokemon-lab': {
+    width: 280,
+    tabs: [
+      { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
+      { id: 'concepts', label: 'Concepts', icon: 'FiBookOpen' },
+    ],
+    defaultTab: 'chat',
   },
   // Admin Panel Contexts
   'admin-dashboard': {
@@ -423,11 +436,12 @@ export function RightPanelProvider({ children }: { children: React.ReactNode }) 
     _setCustomData(data);
   }, []);
 
-  // Logged wrapper for setIsOpen to track all calls
+  // Logged wrapper for setIsOpen to track all calls (dev-only to avoid console spam in production)
   const setIsOpen = React.useCallback((value: boolean | ((prev: boolean) => boolean)) => {
-    const newValue = typeof value === 'function' ? value(_isOpen) : value;
-    console.log(`📍 [RightPanel] setIsOpen called: ${_isOpen} → ${newValue}`);
-    console.trace('Call stack:');
+    if (process.env.NODE_ENV === 'development') {
+      const newValue = typeof value === 'function' ? value(_isOpen) : value;
+      console.log(`📍 [RightPanel] setIsOpen called: ${_isOpen} → ${newValue}`);
+    }
     _setIsOpen(value);
   }, [_isOpen]);
 
@@ -485,6 +499,12 @@ export function RightPanelProvider({ children }: { children: React.ReactNode }) 
       newContext = 'child-books';
     } else if (path === '/child/dictionary') {
       newContext = 'child-dictionary';
+    } else if (path === '/child/journal') {
+      newContext = 'child-journal';
+    } else if (path === '/child/pokemon-lab') {
+      newContext = 'child-pokemon-lab';
+    } else if (path === '/child/learn' || path === '/child/learning-path' || path === '/child/teams') {
+      newContext = 'child-learn';
     } else if (path === '/admin' || path === '/admin/index') {
       newContext = 'admin-dashboard';
     } else if (path.startsWith('/admin/tenants')) {
@@ -503,7 +523,9 @@ export function RightPanelProvider({ children }: { children: React.ReactNode }) 
 
     // Only update if context actually changed
     if (newContext !== context) {
-      console.log('[RightPanelContext] Route-based context change:', context, '→', newContext);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[RightPanelContext] Route-based context change:', context, '→', newContext);
+      }
       setContext(newContext);
 
       // Reset to default tab when route changes

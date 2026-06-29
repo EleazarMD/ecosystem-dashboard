@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80">
+  <!-- Type badges widget -->
+  <circle cx="20" cy="20" r="14" fill="#f7d02c" opacity="0.8"/>
+  <text x="20" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#000">E</text>
+  <circle cx="60" cy="20" r="14" fill="#ee8130" opacity="0.8"/>
+  <text x="60" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#fff">F</text>
+  <circle cx="20" cy="60" r="14" fill="#6390f0" opacity="0.8"/>
+  <text x="20" y="65" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#fff">W</text>
+  <circle cx="60" cy="60" r="14" fill="#7ac74c" opacity="0.8"/>
+  <text x="60" y="65" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#fff">G</text>
+</svg>

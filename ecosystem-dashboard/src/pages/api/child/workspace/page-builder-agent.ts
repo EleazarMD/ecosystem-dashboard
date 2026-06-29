@@ -21,7 +21,7 @@ const pool = new Pool({
 
 const AI_GATEWAY_URL = process.env.AI_GATEWAY_URL || 'http://localhost:8777';
 const GOOSE_API_URL = process.env.GOOSE_API_URL || 'http://localhost:8000';
-const USE_GOOSEMIND = process.env.USE_CHILD_GOOSEMIND !== 'false'; // Default to true
+const USE_COMPANION = process.env.USE_CHILD_COMPANION !== 'false'; // Default to true
 
 // ============================================================================
 // Types
@@ -293,10 +293,10 @@ async function handleMessage(
     content: message,
   });
 
-  // Route to GooseMind if enabled
-  if (USE_GOOSEMIND) {
+  // Route to Companion AI if enabled
+  if (USE_COMPANION) {
     const sessionId = state.sessionId || `page-builder-${Date.now()}`;
-    const gooseResult = await callChildGooseMind(message, sessionId, currentPage, childProfile);
+    const gooseResult = await callChildCompanion(message, sessionId, currentPage, childProfile);
     
     const response: ConversationMessage = {
       role: 'assistant',
@@ -1089,12 +1089,22 @@ async function handleRedesign(
     // Generate enhanced prompt for Qwen3
     const systemPrompt = generateRedesignPrompt(redesignAction, pageType, designStyle);
     
-    // Call AI Gateway (will route to Qwen3 locally)
-    const aiResponse = await fetch(`${AI_GATEWAY_URL}/api/chat/completions`, {
+    // Call AI Gateway using the child-services pattern (minor/restricted key).
+    const aiResponse = await fetch(`${AI_GATEWAY_URL}/api/v1/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.CHILD_SAFETY_API_KEY || 'child-safety-key'}`,
+        'X-Service-ID': 'child-page-builder',
+      },
       body: JSON.stringify({
-        model: 'qwen3-8b',  // Use local Qwen3 model
+        model: process.env.CHILD_AI_MODEL || 'minimax-m3',
+        contract: 'minor-restricted',
+        metadata: {
+          user_type: 'child',
+          content_filter: 'strict',
+          service_id: 'child-page-builder',
+        },
         messages: [
           {
             role: 'system',
@@ -1676,10 +1686,10 @@ function generateGenericBlocks(details: Record<string, any>): PageBlock[] {
 }
 
 // ============================================================================
-// GooseMind Integration
+// Companion AI Integration
 // ============================================================================
 
-async function callChildGooseMind(
+async function callChildCompanion(
   message: string,
   sessionId: string,
   currentPage?: CurrentPageContext,
@@ -1692,7 +1702,7 @@ async function callChildGooseMind(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        agent_id: 'child-goosemind',
+        agent_id: 'child-companion',
         session_id: sessionId,
         message: message,
         context: {
@@ -1708,12 +1718,12 @@ async function callChildGooseMind(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[PageBuilderAgent] GooseMind API error:', response.status, errorText);
-      throw new Error(`GooseMind API error: ${response.statusText}`);
+      console.error('[PageBuilderAgent] Companion AI API error:', response.status, errorText);
+      throw new Error(`Companion AI API error: ${response.statusText}`);
     }
 
     const data = await response.json();
-    console.log('[PageBuilderAgent] GooseMind response:', data);
+    console.log('[PageBuilderAgent] Companion AI response:', data);
     
     return {
       response: data.response || "I'm here to help! What would you like to do?",
@@ -1721,7 +1731,7 @@ async function callChildGooseMind(
       actions: data.actions,
     };
   } catch (error) {
-    console.error('[PageBuilderAgent] Failed to call GooseMind:', error);
+    console.error('[PageBuilderAgent] Failed to call Companion AI:', error);
     // Fallback to simple response
     return {
       response: "I'm having trouble connecting right now. Can you try again? 😊",

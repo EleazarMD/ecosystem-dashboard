@@ -4,7 +4,12 @@
  * Child-friendly email assistant interface
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  KNOWN_ACTIVITY_IDS,
+  useActivityContext,
+  createEmailContextProvider,
+} from '@/domains/learning/shared/activity-registry';
 import {
   Box,
   Container,
@@ -42,6 +47,10 @@ function EmailPageContent() {
   const router = useRouter();
   const toast = useToast();
   const { colors, childExtras } = useChildTheme();
+
+  // Register Email context provider with the Context Hub
+  const emailStateRef = useRef({ childName: '' });
+  useActivityContext(KNOWN_ACTIVITY_IDS.EMAIL, () => createEmailContextProvider(emailStateRef));
   const { setContext, setIsOpen } = useRightPanel();
 
   // Set right panel context - keep closed by default

@@ -10,7 +10,12 @@
  * - Themed UI (Minecraft/Pusheen)
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  KNOWN_ACTIVITY_IDS,
+  useActivityContext,
+  createDictionaryContextProvider,
+} from '@/domains/learning/shared/activity-registry';
 import {
   Box,
   Container,
@@ -150,6 +155,10 @@ function DictionaryPageContent() {
   const { colors, themeId, childExtras } = useChildTheme();
   const toast = useToast();
   const { setContext, setCustomData } = useRightPanel();
+
+  // Register Dictionary context provider with the Context Hub
+  const dictStateRef = useRef({ childName: '' });
+  useActivityContext(KNOWN_ACTIVITY_IDS.DICTIONARY, () => createDictionaryContextProvider(dictStateRef));
   
   // PCG integration for tracking vocabulary learning
   const { logActivity, updateProgress, addKnowledge } = useKidsPCG();

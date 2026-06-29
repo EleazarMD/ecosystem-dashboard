@@ -26,8 +26,9 @@ export function usePanelResolver({
 }: PanelResolverInput): ResolvedPanel {
 
   return useMemo(() => {
+    const debug = process.env.NODE_ENV === 'development';
     try {
-      console.log('[PanelResolver] Input:', { context, activeTab, customDataType: customData?.type, hasCustomData: !!customData });
+      if (debug) console.log('[PanelResolver] Input:', { context, activeTab, customDataType: customData?.type, hasCustomData: !!customData });
       
       // Sort routes by priority (highest first)
       const sortedRoutes = [...PANEL_ROUTES].sort((a, b) => (b.priority || 0) - (a.priority || 0));
@@ -42,7 +43,7 @@ export function usePanelResolver({
         // Check customData.type match (highest priority)
         if (route.customDataType) {
           if (customData?.type !== route.customDataType) {
-            console.log(`[PanelResolver] Route ${route.panelId} skipped: customData type mismatch (expected: ${route.customDataType}, got: ${customData?.type})`);
+            if (debug) console.log(`[PanelResolver] Route ${route.panelId} skipped: customData type mismatch (expected: ${route.customDataType}, got: ${customData?.type})`);
             continue;
           }
         }
@@ -50,7 +51,7 @@ export function usePanelResolver({
         // Check tab match
         if (route.tabId) {
           if (activeTab !== route.tabId) {
-            console.log(`[PanelResolver] Route ${route.panelId} skipped: tab mismatch (expected: ${route.tabId}, got: ${activeTab})`);
+            if (debug) console.log(`[PanelResolver] Route ${route.panelId} skipped: tab mismatch (expected: ${route.tabId}, got: ${activeTab})`);
             continue;
           }
         }
@@ -73,7 +74,7 @@ export function usePanelResolver({
         // Build props for the panel
         const props = buildPanelProps(panel.id, { customData, systemData, width, activeTab });
 
-        console.log('[PanelResolver] ✅ Resolved panel:', panel.id, panel.displayName);
+        if (debug) console.log('[PanelResolver] ✅ Resolved panel:', panel.id, panel.displayName);
         return {
           panelId: panel.id,
           metadata: panel,

@@ -10,6 +10,11 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
+  KNOWN_ACTIVITY_IDS,
+  useActivityContext,
+  createWorkspaceContextProvider,
+} from '@/domains/learning/shared/activity-registry';
+import {
   DndContext,
   closestCenter,
   KeyboardSensor,
@@ -106,6 +111,15 @@ import {
 } from '@/types/child-workspace';
 import { FormatToolbar } from '@/components/editor/FormatToolbar';
 import { useTextSelection } from '@/hooks/useTextSelection';
+
+// Helper to safely get icon string
+const getIconString = (icon: any, defaultIcon = '📄') => {
+  if (!icon) return defaultIcon;
+  if (typeof icon === 'object' && 'emoji' in icon) {
+    return icon.emoji;
+  }
+  return typeof icon === 'string' ? icon : defaultIcon;
+};
 
 // ============================================================================
 // Block Colors Configuration
@@ -621,7 +635,7 @@ function BlockEditor({ block, onUpdate, onDelete, onAddBlock, onTransformBlock, 
             p={2}
           >
             <HStack align="start" fontSize="sm">
-              <Text fontSize="sm">{typeof block.properties.icon === 'object' && block.properties.icon?.emoji ? block.properties.icon.emoji : (block.properties.icon || '💡')}</Text>
+              <Text fontSize="sm">{getIconString(block.properties.icon, '💡')}</Text>
               <Text color={colorConfig.text} flex={1}>{text}</Text>
             </HStack>
           </Box>
@@ -1103,7 +1117,7 @@ interface PageCardProps {
 
 function PageCard({ page, onClick, onDelete, isMinecraft, isPusheen, primaryColor }: PageCardProps) {
   const title = page.properties.title?.[0]?.text || 'Untitled';
-  const icon = typeof page.properties.icon === 'object' && page.properties.icon?.emoji ? page.properties.icon.emoji : (page.properties.icon || '📄');
+  const icon = getIconString(page.properties.icon, '📄');
   const updatedAt = new Date(page.updatedAt);
   const timeAgo = getTimeAgo(updatedAt);
 
@@ -1272,6 +1286,10 @@ function WorkspacePageContent() {
   const router = useRouter();
   const toast = useToast();
   const { colors, childExtras, themeId } = useChildTheme();
+
+  // Register Workspace context provider with the Context Hub
+  const workspaceStateRef = useRef({ childName: '' });
+  useActivityContext(KNOWN_ACTIVITY_IDS.WORKSPACE, () => createWorkspaceContextProvider(workspaceStateRef));
   const { setContext, setIsOpen, setCustomData, isOpen } = useRightPanel();
 
   // State
@@ -2050,7 +2068,7 @@ function WorkspacePageContent() {
               onClick={() => fetchPage(page.id)}
             >
               <HStack>
-                <Text fontSize="md">{typeof page.properties.icon === 'object' && page.properties.icon?.emoji ? page.properties.icon.emoji : (page.properties.icon || '📄')}</Text>
+                <Text fontSize="md">{getIconString(page.properties.icon, '📄')}</Text>
                 <Text fontWeight="medium" fontSize="sm" flex={1}>{page.properties.title?.[0]?.text || 'Untitled'}</Text>
                 <Text fontSize="xs" color="gray.500">{getTimeAgo(new Date(page.updatedAt))}</Text>
               </HStack>
@@ -2066,7 +2084,7 @@ function WorkspacePageContent() {
     if (!selectedPage) return null;
 
     const title = selectedPage.properties.title?.[0]?.text || 'Untitled';
-    const icon = typeof selectedPage.properties.icon === 'object' && selectedPage.properties.icon?.emoji ? selectedPage.properties.icon.emoji : (selectedPage.properties.icon || '📄');
+    const icon = getIconString(selectedPage.properties.icon, '📄');
 
     return (
       <VStack spacing={2} align="stretch">
@@ -2262,7 +2280,7 @@ function WorkspacePageContent() {
               <Text fontSize="xl" fontWeight="bold">Delete this page?</Text>
               {pageToDelete && (
                 <HStack>
-                  <Text fontSize="xl">{typeof pageToDelete.properties.icon === 'object' && pageToDelete.properties.icon?.emoji ? pageToDelete.properties.icon.emoji : (pageToDelete.properties.icon || '📄')}</Text>
+                  <Text fontSize="xl">{getIconString(pageToDelete.properties.icon, '📄')}</Text>
                   <Text fontWeight="medium">{pageToDelete.properties.title?.[0]?.text || 'Untitled'}</Text>
                 </HStack>
               )}

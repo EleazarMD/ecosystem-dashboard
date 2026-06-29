@@ -15,7 +15,8 @@ import {
   Box,
   HStack,
   VStack,
-  Input,
+  Textarea,
+  Icon,
   IconButton,
   Text,
   Button,
@@ -34,16 +35,14 @@ import {
   PopoverArrow,
   PopoverCloseButton,
 } from '@chakra-ui/react';
-import { 
-  FiSend, 
-  FiMic, 
-  FiMicOff, 
-  FiMaximize2, 
-  FiMinimize2,
-  FiMove,
-  FiX,
-  FiMessageCircle,
-} from 'react-icons/fi';
+import {
+  PaperAirplaneIcon,
+  MicrophoneIcon,
+  ArrowsPointingOutIcon,
+  ArrowsPointingInIcon,
+  Bars3Icon,
+  ChatBubbleLeftRightIcon,
+} from '@heroicons/react/24/outline';
 import { useChildTheme } from './ChildThemeProvider';
 
 interface QuickReply {
@@ -117,7 +116,16 @@ export const ChildChatInput: React.FC<ChildChatInputProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(true);
   const [showQuickRepliesPopover, setShowQuickRepliesPopover] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize textarea as the user types
+  const adjustHeight = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const newHeight = Math.min(el.scrollHeight, 160);
+    el.style.height = `${newHeight}px`;
+  }, []);
   
   // Voice input state
   const [isListening, setIsListening] = useState(false);
@@ -218,20 +226,25 @@ export const ChildChatInput: React.FC<ChildChatInputProps> = ({
 
   // Handle send
   const handleSend = useCallback(() => {
-    const message = inputValue.trim();
+    const message = (inputValue + interimTranscript).trim();
     if (!message || isLoading || disabled) return;
-    
+
     onSend(message);
     setInputValue('');
     setInterimTranscript('');
     setIsExpanded(false);
-    
+
+    // Reset textarea height after send
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+
     // Stop listening after send
     if (isListening && recognitionRef.current) {
       recognitionRef.current.stop();
       setIsListening(false);
     }
-  }, [inputValue, isLoading, disabled, onSend, isListening]);
+  }, [inputValue, interimTranscript, isLoading, disabled, onSend, isListening]);
 
   // Handle quick reply
   const handleQuickReply = useCallback((reply: QuickReply) => {
@@ -240,12 +253,17 @@ export const ChildChatInput: React.FC<ChildChatInputProps> = ({
   }, [isLoading, disabled, onSend]);
 
   // Handle key press
-  const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   }, [handleSend]);
+
+  // Adjust textarea height whenever the transcript grows
+  useEffect(() => {
+    adjustHeight();
+  }, [inputValue, interimTranscript, adjustHeight]);
 
   // Floating mode drag handlers
   const handleDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
@@ -358,16 +376,17 @@ export const ChildChatInput: React.FC<ChildChatInputProps> = ({
 
   // Render input bar
   const renderInputBar = () => (
-    <HStack 
-      spacing={0} 
-      w="full" 
-      bg="white" 
-      borderRadius="full" 
+    <HStack
+      spacing={0}
+      w="full"
+      bg="white"
+      borderRadius="full"
       border="2px solid"
       borderColor="gray.200"
       px={2}
-      py={1}
-      h="56px"
+      py={1.5}
+      minH="48px"
+      align="center"
       _focusWithin={{
         borderColor: colors?.primary || 'purple.400',
         boxShadow: `0 0 0 1px ${colors?.primary || 'purple.400'}`,
@@ -385,13 +404,14 @@ export const ChildChatInput: React.FC<ChildChatInputProps> = ({
             <IconButton
               aria-label="Quick actions"
               icon={<Text fontSize="xl" fontWeight="bold">+</Text>}
-              size="md"
+              size="sm"
               variant="ghost"
               colorScheme="purple"
               borderRadius="full"
               onClick={() => setShowQuickRepliesPopover(!showQuickRepliesPopover)}
               isDisabled={disabled}
-              minW="40px"
+              minW="32px"
+              h="32px"
             />
           </PopoverTrigger>
           <PopoverContent w="280px" borderRadius="xl" boxShadow="xl">
@@ -432,49 +452,58 @@ export const ChildChatInput: React.FC<ChildChatInputProps> = ({
         <Tooltip label={isListening ? 'Stop listening' : 'Voice input'} placement="top">
           <IconButton
             aria-label={isListening ? 'Stop listening' : 'Voice input'}
-            icon={isListening ? <FiMicOff /> : <FiMic />}
-            size="md"
+            icon={<Icon as={MicrophoneIcon} boxSize={4} />}
+            size="sm"
             variant={isListening ? 'solid' : 'ghost'}
             colorScheme={isListening ? 'red' : 'purple'}
             borderRadius="full"
             onClick={toggleVoiceInput}
             isDisabled={disabled}
-            minW="40px"
+            minW="32px"
+            h="32px"
           />
         </Tooltip>
       )}
-      
+
       {/* Text input */}
-      <Input
-        ref={inputRef}
+      <Textarea
+        ref={textareaRef}
         value={inputValue + interimTranscript}
         onChange={(e) => setInputValue(e.target.value)}
-        onKeyPress={handleKeyPress}
+        onKeyDown={handleKeyDown}
         onFocus={() => setIsExpanded(true)}
         placeholder={isListening ? '🎤 Speak now...' : placeholder}
-        size="md"
+        fontSize="md"
+        lineHeight="1.4"
         border="none"
         bg="transparent"
         flex={1}
         isDisabled={disabled}
         px={2}
+        py={1}
+        rows={1}
+        resize="none"
+        overflow="hidden"
+        minH="28px"
+        maxH="160px"
         _focus={{
           border: 'none',
           boxShadow: 'none',
         }}
       />
-      
+
       {/* Send button */}
       <IconButton
         aria-label="Send"
-        icon={<FiSend />}
-        size="md"
+        icon={<Icon as={PaperAirplaneIcon} boxSize={4} />}
+        size="sm"
         colorScheme="purple"
         borderRadius="full"
         onClick={handleSend}
         isLoading={isLoading}
-        isDisabled={!inputValue.trim() || disabled}
-        minW="40px"
+        isDisabled={!(inputValue + interimTranscript).trim() || disabled}
+        minW="32px"
+        h="32px"
       />
     </HStack>
   );
@@ -514,7 +543,7 @@ export const ChildChatInput: React.FC<ChildChatInputProps> = ({
             variant="ghost"
             colorScheme="gray"
             onClick={() => setShowQuickReplies(!showQuickReplies)}
-            leftIcon={<FiMessageCircle size={12} />}
+            leftIcon={<Icon as={ChatBubbleLeftRightIcon} boxSize={3} />}
           >
             {showQuickReplies ? 'Hide' : 'Show'} quick replies
           </Button>
@@ -552,12 +581,12 @@ export const ChildChatInput: React.FC<ChildChatInputProps> = ({
                 onTouchStart={handleDragStart}
                 p={1}
               >
-                <FiMove size={12} />
+                <Icon as={Bars3Icon} boxSize={3} />
                 <Text fontSize="2xs" color="gray.500">Drag to move</Text>
               </HStack>
               <IconButton
                 aria-label="Minimize"
-                icon={<FiMinimize2 />}
+                icon={<Icon as={ArrowsPointingInIcon} boxSize={3} />}
                 size="xs"
                 variant="ghost"
                 onClick={() => setIsExpanded(false)}
@@ -577,7 +606,7 @@ export const ChildChatInput: React.FC<ChildChatInputProps> = ({
           <HStack spacing={1}>
             <IconButton
               aria-label="Expand chat input"
-              icon={<FiMaximize2 />}
+              icon={<Icon as={ArrowsPointingOutIcon} boxSize={3} />}
               size="sm"
               colorScheme="purple"
               borderRadius="full"
@@ -586,7 +615,7 @@ export const ChildChatInput: React.FC<ChildChatInputProps> = ({
             {showVoiceInput && (
               <IconButton
                 aria-label="Voice input"
-                icon={isListening ? <FiMicOff /> : <FiMic />}
+                icon={<Icon as={MicrophoneIcon} boxSize={3} />}
                 size="sm"
                 variant={isListening ? 'solid' : 'outline'}
                 colorScheme={isListening ? 'red' : 'purple'}

@@ -2,7 +2,7 @@
  * Child Journal API
  * 
  * CRUD operations for journal entries with:
- * - GooseMind AI evaluation integration
+ * - Companion AI evaluation integration
  * - Planner and Workspace connectivity
  * - Progress tracking and streaks
  * - Content filtering for child safety
@@ -231,7 +231,7 @@ async function handlePost(
     // Update streak
     await updateStreak(userId, entryDate);
 
-    // Log activity for GooseMind learning
+    // Log activity for Companion AI learning
     await logJournalActivity(userId, 'create', entry);
 
     return res.status(201).json({ 
@@ -663,7 +663,7 @@ async function logJournalActivity(
   action: string, 
   entry: JournalEntry
 ): Promise<void> {
-  // Log for GooseMind learning system (child_learning schema)
+  // Log for Companion AI learning system (child_learning schema)
   try {
     await pool.query(
       `INSERT INTO child_learning.activity_log (child_user_id, activity_type, metadata, created_at)

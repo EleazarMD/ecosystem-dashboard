@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80">
+  <!-- Pokeball widget -->
+  <circle cx="40" cy="40" r="34" fill="#ee1515" stroke="#fff" stroke-width="3"/>
+  <path d="M 6 40 A 34 34 0 0 0 74 40 L 6 40 Z" fill="#f0f0f0" stroke="#fff" stroke-width="3"/>
+  <rect x="6" y="37" width="68" height="6" fill="#fff"/>
+  <circle cx="40" cy="40" r="10" fill="#fff" stroke="#333" stroke-width="3"/>
+  <circle cx="40" cy="40" r="5" fill="#f0f0f0" stroke="#333" stroke-width="2"/>
+</svg>

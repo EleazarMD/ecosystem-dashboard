@@ -54,9 +54,11 @@ interface AIGatewayClientContextType {
 // Create context
 const AIGatewayClientContext = createContext<AIGatewayClientContextType | null>(null);
 
-// Default config - use external IP for browser access
+// Default config - health check is proxied through Next.js API route to avoid
+// mixed-content errors when the dashboard is served over HTTPS.
 const DEFAULT_CONFIG = {
-  url: process.env.NEXT_PUBLIC_AI_GATEWAY_URL || 'http://100.108.41.22:8777',
+  healthEndpoint: '/api/ai-gateway/health',
+  url: process.env.NEXT_PUBLIC_AI_GATEWAY_URL || '',
   apiKey: 'ai-gateway-api-key-2024',
   timeout: 30000,
   maxRetries: 3
@@ -81,13 +83,9 @@ export function AIGatewayClientProvider({
     const initializeClient = async () => {
       try {
         setConnectionState(ConnectionState.CONNECTING);
-        
-        // Test connection with health check
-        const response = await fetch(`${config.url}/health`, {
-          headers: {
-            'X-API-Key': config.apiKey
-          }
-        });
+
+        // Use server-side proxy to avoid mixed-content errors on HTTPS
+        const response = await fetch(config.healthEndpoint || '/api/ai-gateway/health');
 
         if (response.ok) {
           setIsConnected(true);
@@ -107,23 +105,22 @@ export function AIGatewayClientProvider({
     };
 
     initializeClient();
-  }, [config.url, config.apiKey]);
+  }, [config.healthEndpoint, config.url]);
 
-  // Send chat completion
+  // Send chat completion (proxied through Next.js API to avoid mixed-content)
   const sendChatCompletion = async (request: ChatCompletionRequest): Promise<ChatCompletionResponse> => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(`${config.url}/api/v1/chat/completions`, {
+      const response = await fetch('/api/ai-gateway/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': config.apiKey
         },
         body: JSON.stringify({
           ...request,
-          serviceId: 'ecosystem-dashboard', // REQUIRED: Routes through AI Inferencing for tracking
+          serviceId: 'ecosystem-dashboard',
         })
       });
 
@@ -142,13 +139,9 @@ export function AIGatewayClientProvider({
     }
   };
 
-  // Get health status
+  // Get health status (proxied through Next.js API)
   const getHealth = async (): Promise<HealthStatus> => {
-    const response = await fetch(`${config.url}/api/v1/health/comprehensive`, {
-      headers: {
-        'X-API-Key': config.apiKey
-      }
-    });
+    const response = await fetch(config.healthEndpoint || '/api/ai-gateway/health');
 
     if (!response.ok) {
       throw new Error(`Health check failed: ${response.status}`);
@@ -156,9 +149,9 @@ export function AIGatewayClientProvider({
 
     const data = await response.json();
     return {
-      status: data.success ? 'healthy' : 'unhealthy',
+      status: data.status === 'healthy' ? 'healthy' : 'unhealthy',
       timestamp: data.timestamp,
-      version: data.data?.gateway?.version || 'unknown'
+      version: data.upstream?.version || 'unknown'
     };
   };
 
