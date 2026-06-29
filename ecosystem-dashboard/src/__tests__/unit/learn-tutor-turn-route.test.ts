@@ -144,7 +144,7 @@ describe('POST /api/learn/tutor/turn', () => {
         choices: [
           {
             message: {
-              content: 'Nice effort! Hint 2 of 3: Now count on 5 more from that starting number.',
+              content: '{"nextAction": "final_answer", "finalMessage": "Nice effort! Hint 2 of 3: Now count on 5 more from that starting number.", "reasoning": "Learner is on attempt 2, provide hint."}',
             },
           },
         ],
@@ -231,14 +231,14 @@ describe('POST /api/learn/tutor/turn', () => {
     expect(state.body.hintsAvailable).toBe(3);
     expect(state.body.tutorMessage).toContain('Hint 2 of 3:');
     expect(state.body.response).toBe(state.body.tutorMessage);
-    expect(state.body.source).toBe('ai_gateway_learn_tutor');
+    expect(state.body.source).toBe('picode_agent_loop');
     expect(state.body.model).toBe(LEARN_TUTOR_MODEL);
     expect(state.body.contract).toBe(LEARN_TUTOR_CONTRACT);
     expect(state.body.harness).toEqual(
       expect.objectContaining({
         requestId: expect.any(String),
         status: 'success',
-        source: 'ai_gateway_learn_tutor',
+        source: 'picode_agent_loop',
         channel: 'ai_gateway',
         audit: expect.objectContaining({
           auditId: expect.any(String),
@@ -265,8 +265,6 @@ describe('POST /api/learn/tutor/turn', () => {
 
     const requestBody = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body || '{}'));
     expect(requestBody.model).toBe(LEARN_TUTOR_MODEL);
-    expect(requestBody.contract).toBe(LEARN_TUTOR_CONTRACT);
-    expect(requestBody.metadata?.contract).toBe(LEARN_TUTOR_CONTRACT);
 
     expect(mockGetContentById).toHaveBeenCalledWith('phase1.math.word_1step.v1');
     expect(mockAnalyzeMessage).toHaveBeenCalledTimes(1);

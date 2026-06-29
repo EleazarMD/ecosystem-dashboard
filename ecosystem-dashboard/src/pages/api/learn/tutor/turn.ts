@@ -18,8 +18,16 @@ import {
   LEARN_TUTOR_CONTRACT,
   LEARN_TUTOR_MODEL,
   buildDeterministicTutorMessage,
-  generateTutorMessageViaOrchestrator,
 } from '@/domains/learning/features/tutor-turn';
+import type { ConversationTurn, MasteryContext, SessionPhase } from '@/domains/learning/shared/agent-loop-types';
+import type { ContextEnvelope, ContextFrame, ContextFocusKind } from '@/domains/learning/shared/context-hub';
+import { getContextHub } from '@/domains/learning/shared/context-hub-service';
+import { KNOWN_ACTIVITY_IDS, activityRegistry } from '@/domains/learning/shared/activity-types';
+import { getPiCodeTransport } from '@/domains/learning/shared/activity-registry';
+import { mergeRosters } from '@/domains/learning/shared/tool-roster';
+import type { CompanionIntent } from '@/domains/learning/shared/agent-transport';
+import { resolveDevelopmentalSummary } from '@/domains/learning/learner/developmental-profile-resolver';
+import { getDreamEngine } from '@/domains/learning/analytics/dream-engine';
 import { normalizeAttemptNumber, readUserId } from '../attempt';
 
 interface TutorTurnRequestBody {
@@ -29,6 +37,20 @@ interface TutorTurnRequestBody {
   response?: unknown;
   attemptNumber?: unknown;
   sessionId?: unknown;
+  context?: unknown;
+  conversationHistory?: unknown;
+  mastery?: unknown;
+  sessionPhase?: unknown;
+  correct?: unknown;
+}
+
+/** Loosely-typed on-screen focus frame the client may send (Context Hub §3). */
+export interface TutorContextFrameInput {
+  kind?: string;
+  activityId?: string;
+  title?: string;
+  summary?: string;
+  entities?: Record<string, string | number | string[]>;
 }
 
 interface TutorTurnInput {
@@ -37,6 +59,11 @@ interface TutorTurnInput {
   message: string;
   attemptNumber: number;
   sessionId?: string;
+  context?: TutorContextFrameInput;
+  conversationHistory?: ConversationTurn[];
+  mastery?: MasteryContext;
+  sessionPhase?: SessionPhase;
+  correct?: boolean;
 }
 
 export { LEARN_TUTOR_CONTRACT, LEARN_TUTOR_MODEL, buildDeterministicTutorMessage };
@@ -177,17 +204,112 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const pcgContext = await safeGetLearningPcgContext(childUserId);
 
-    const tutorResponse = await generateTutorMessageViaOrchestrator({
-      learnerMessage,
-      contentPrompt: contentItem.prompt,
-      hint,
-      hintLevel,
-      hintsAvailable,
-      attemptNumber: input.attemptNumber,
-      safetySystemPrompt: childContext.safetySystemPrompt,
-      pcgContext,
+    // Wire the Context Hub for this turn — set focus to learn-hub, register an
+    // ad-hoc provider from the client-supplied context frame, and set the
+    // learner summary from PCG. The PiCodeTransport reads this when composing
+    // the ContextEnvelope for the agent loop.
+    const hub = getContextHub();
+    hub.setFocus(KNOWN_ACTIVITY_IDS.LEARN_HUB);
+    if (pcgContext) {
+      // Resolve developmental profile from DB + performance
+      let developmental;
+      try {
+        developmental = await resolveDevelopmentalSummary(childUserId, pcgContext.childName, pcgContext.ageGroup);
+      } catch {}
+
+      // Feed dream insights into the Context Hub so the tutor starts
+      // each session already informed by overnight consolidation (Phase 8).
+      const dreamInsights = getDreamEngine().getInsights(childUserId, 3);
+      const recentInsights = dreamInsights
+        .filter((i) => i.actionable)
+        .map((i) => i.insight)
+        .slice(0, 3);
+
+      hub.setLearnerSummary({
+        childName: pcgContext.childName,
+        ageBand: developmental?.ageBand || pcgContext.ageGroup,
+        skillMastery: undefined,
+        recentTopics: pcgContext.interests?.slice(0, 5) || [],
+        personaId: undefined,
+        developmental,
+        recentInsights: recentInsights.length > 0 ? recentInsights : undefined,
+      });
+    }
+
+    // PI Code Convergence (§8.2): Run the agent via PiCodeTransport — the same
+    // cognitive loop used by all child surfaces (chat, home, companion). The
+    // transport reads the Context Hub envelope we just set up and uses the
+    // learn-hub activity roster (which includes ask_socratic, give_hint, etc.).
+    const intent: CompanionIntent = input.correct === true ? 'talk'
+      : input.correct === false ? 'hint'
+      : 'explain-this';
+
+    // Register an ad-hoc provider so the transport sees the content item context
+    hub.registerProvider({
+      activityId: KNOWN_ACTIVITY_IDS.LEARN_HUB,
+      getFrame: (): ContextFrame => ({
+        kind: 'lesson',
+        activityId: KNOWN_ACTIVITY_IDS.LEARN_HUB,
+        title: contentItem.prompt.slice(0, 80),
+        summary: learnerMessage,
+        entities: {
+          contentItemId: contentItem.id,
+          lessonId: contentItem.id,
+          skillCode: contentItem.skillCode,
+          attemptNumber: input.attemptNumber,
+        },
+        payload: {
+          prompt: contentItem.prompt,
+          hintSet,
+          conversationHistory: input.conversationHistory,
+          mastery: input.mastery,
+          sessionPhase: input.sessionPhase,
+          correct: input.correct,
+        },
+      }),
     });
-    const rawTutorMessage = tutorResponse.message;
+
+    const activity = activityRegistry.get(KNOWN_ACTIVITY_IDS.LEARN_HUB);
+    const transport = getPiCodeTransport();
+    const composed = await hub.composeEnvelope().catch(() => null);
+
+    const transportResult = await transport.send({
+      messages: [
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          role: 'user',
+          content: learnerMessage,
+          timestamp: Date.now(),
+          intent,
+        },
+        ...(input.conversationHistory || []).map((turn) => ({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          role: turn.role,
+          content: turn.content,
+          timestamp: turn.timestamp || Date.now(),
+        })),
+      ],
+      intent,
+      context: composed?.envelope || {
+        focus: {
+          kind: 'lesson',
+          activityId: KNOWN_ACTIVITY_IDS.LEARN_HUB,
+          title: contentItem.prompt.slice(0, 80),
+          summary: learnerMessage,
+        },
+        safety: { contentFilter: 'strict', user_type: 'child' },
+        assembledAt: new Date().toISOString(),
+      },
+      persona: activity?.persona,
+      roster: mergeRosters(composed?.roster || activity?.toolRoster || undefined),
+      childUserId: childUserId,
+    });
+
+    const rawTutorMessage = transportResult.content;
+    const orchestratorSource = transportResult.metadata?.source || 'picode_agent_loop';
+    const toolsUsed = transportResult.metadata?.toolsUsed || [];
+    const hopsExecuted = transportResult.metadata?.hops || 0;
+    const budgetExhausted = transportResult.metadata?.budgetExhausted || false;
 
     const outputFilter = await safeFilterContent(childUserId, rawTutorMessage, 'output');
     let finalTutorMessage = rawTutorMessage;
@@ -217,7 +339,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         childMessage: learnerMessage,
         aiResponse: finalTutorMessage,
         characterId: 'learn_tutor',
-        aiModel: tutorResponse.model,
+        aiModel: LEARN_TUTOR_MODEL,
         timestamp: new Date(),
       });
 
@@ -248,16 +370,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         contentItemId: input.contentItemId,
         attemptNumber: input.attemptNumber,
         hintLevel,
-        aiSource: tutorResponse.source,
-        aiModel: tutorResponse.model,
-        aiContract: tutorResponse.contract,
+        aiSource: orchestratorSource,
+        aiModel: LEARN_TUTOR_MODEL,
+        aiContract: LEARN_TUTOR_CONTRACT,
+        toolsUsed,
+        hopsExecuted,
         safetyFlagged,
         safetyBlocked,
       },
     });
 
     const harnessEvents: HarnessPipelineEventInput[] = [];
-    if (tutorResponse.source.includes('fallback')) {
+    if (orchestratorSource !== 'picode_agent_loop') {
       harnessEvents.push({
         domain: harnessRequest.domain,
         type: HARNESS_EVENT_TYPES.AGENT_FALLBACK,
@@ -265,8 +389,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         sessionId: harnessRequest.sessionId,
         payload: {
           requestId: harnessRequest.requestId,
-          source: tutorResponse.source,
-          model: tutorResponse.model,
+          source: orchestratorSource,
+          model: LEARN_TUTOR_MODEL,
         },
       });
     }
@@ -297,7 +421,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         contentItemId: input.contentItemId,
         attemptNumber: input.attemptNumber,
         hintLevel,
-        source: tutorResponse.source,
+        source: orchestratorSource,
+        toolsUsed,
+        hopsExecuted,
       },
     });
 
@@ -307,11 +433,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       policyDecisions,
       safetyInputResult,
       safetyOutputResult,
-      status: tutorResponse.source.includes('fallback') ? 'fallback' : 'success',
+      status: orchestratorSource === 'picode_agent_loop' ? 'success' : 'fallback',
       content: finalTutorMessage,
-      source: tutorResponse.source,
-      model: tutorResponse.model,
-      contract: tutorResponse.contract,
+      source: orchestratorSource,
+      model: LEARN_TUTOR_MODEL,
+      contract: LEARN_TUTOR_CONTRACT,
       events: harnessEvents,
       eventWarnPrefix: '[api/learn/tutor/turn] harness event emission failed:',
     });
@@ -333,9 +459,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         blocked: safetyBlocked,
         concerns: safetyConcerns,
       },
-      source: tutorResponse.source,
-      model: tutorResponse.model,
-      contract: tutorResponse.contract,
+      source: orchestratorSource,
+      model: LEARN_TUTOR_MODEL,
+      contract: LEARN_TUTOR_CONTRACT,
+      trajectory: [],
+      hopsExecuted,
+      toolsUsed,
+      budgetExhausted,
+      conceptCheck: transportResult.conceptCheck,
+      hintCard: transportResult.hintCard,
+      exampleCard: transportResult.exampleCard,
+      celebration: transportResult.celebration,
+      passage: transportResult.passage,
+      personaName: activity?.persona?.name,
       harness: toApiHarnessMetadata(harnessResponse),
     });
   } catch (error) {
@@ -376,7 +512,126 @@ export function validateTutorTurnPayload(body: TutorTurnRequestBody):
       message,
       attemptNumber: normalizeAttemptNumber(body.attemptNumber),
       sessionId: body.sessionId ? String(body.sessionId).trim() : undefined,
+      context: coerceContextFrame(body.context),
+      conversationHistory: coerceConversationHistory(body.conversationHistory),
+      mastery: coerceMastery(body.mastery),
+      sessionPhase: coerceSessionPhase(body.sessionPhase),
+      correct: typeof body.correct === 'boolean' ? body.correct : undefined,
     },
+  };
+}
+
+/**
+ * Defensively coerce a client-supplied context payload into a focus frame.
+ * Accepts either a full ContextEnvelope (with `.focus`) or a bare ContextFrame,
+ * and caps string/collection sizes to keep the prompt bounded.
+ */
+export function coerceContextFrame(raw: unknown): TutorContextFrameInput | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const obj = raw as Record<string, unknown>;
+  const frame = (obj.focus && typeof obj.focus === 'object' ? obj.focus : obj) as Record<string, unknown>;
+
+  const out: TutorContextFrameInput = {};
+  if (typeof frame.kind === 'string') out.kind = frame.kind.slice(0, 40);
+  if (typeof frame.activityId === 'string') out.activityId = frame.activityId.slice(0, 80);
+  if (typeof frame.title === 'string') out.title = frame.title.slice(0, 200);
+  if (typeof frame.summary === 'string') out.summary = frame.summary.slice(0, 1000);
+  if (frame.entities && typeof frame.entities === 'object') {
+    const entities: Record<string, string | number | string[]> = {};
+    for (const [key, value] of Object.entries(frame.entities as Record<string, unknown>).slice(0, 20)) {
+      if (typeof value === 'string') entities[key] = value.slice(0, 200);
+      else if (typeof value === 'number') entities[key] = value;
+      else if (Array.isArray(value)) {
+        entities[key] = value.filter((x): x is string => typeof x === 'string').slice(0, 20);
+      }
+    }
+    out.entities = entities;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * Defensively coerce client-supplied conversation history into typed turns.
+ * Caps to last 20 turns and truncates content to 500 chars each.
+ */
+export function coerceConversationHistory(raw: unknown): ConversationTurn[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const turns: ConversationTurn[] = [];
+  for (const item of raw.slice(-20)) {
+    if (!item || typeof item !== 'object') continue;
+    const obj = item as Record<string, unknown>;
+    const role = obj.role === 'user' || obj.role === 'assistant' ? obj.role : null;
+    if (!role) continue;
+    const content = typeof obj.content === 'string' ? obj.content.slice(0, 500) : '';
+    if (!content) continue;
+    const turn: ConversationTurn = { role, content };
+    if (typeof obj.timestamp === 'number') turn.timestamp = obj.timestamp;
+    if (Array.isArray(obj.toolsUsed)) {
+      turn.toolsUsed = obj.toolsUsed.filter((t): t is string => typeof t === 'string').slice(0, 10);
+    }
+    turns.push(turn);
+  }
+  return turns.length > 0 ? turns : undefined;
+}
+
+/**
+ * Defensively coerce client-supplied mastery signals.
+ */
+export function coerceMastery(raw: unknown): MasteryContext | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const obj = raw as Record<string, unknown>;
+  const mastery: MasteryContext = {};
+  if (obj.skillMastery && typeof obj.skillMastery === 'object') {
+    const sm: Record<string, number> = {};
+    for (const [k, v] of Object.entries(obj.skillMastery as Record<string, unknown>)) {
+      if (typeof v === 'number' && v >= 0 && v <= 1) sm[k] = v;
+    }
+    if (Object.keys(sm).length > 0) mastery.skillMastery = sm;
+  }
+  if (typeof obj.currentSkill === 'string') mastery.currentSkill = obj.currentSkill;
+  if (typeof obj.sessionCorrect === 'number') mastery.sessionCorrect = obj.sessionCorrect;
+  if (typeof obj.sessionAttempts === 'number') mastery.sessionAttempts = obj.sessionAttempts;
+  if (typeof obj.currentStreak === 'number') mastery.currentStreak = obj.currentStreak;
+  return Object.keys(mastery).length > 0 ? mastery : undefined;
+}
+
+/**
+ * Defensively coerce client-supplied session phase string.
+ */
+export function coerceSessionPhase(raw: unknown): SessionPhase | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const valid: SessionPhase[] = ['opening', 'coaching', 'celebrating', 'closing', 'free_chat'];
+  return valid.includes(raw as SessionPhase) ? (raw as SessionPhase) : undefined;
+}
+
+/**
+ * Build a server-side ContextEnvelope from the coerced focus frame. Client focus
+ * (the specific card / Pokémon / quiz on screen) wins; content-item defaults
+ * (contentItemId / attemptNumber) are always merged in so tools can reference them.
+ */
+export function buildTutorContextEnvelope(
+  frame: TutorContextFrameInput | undefined,
+  contentPrompt: string,
+  defaults?: { contentItemId?: string; subject?: string; attemptNumber?: number },
+): ContextEnvelope {
+  const defaultEntities: Record<string, string | number | string[]> = {};
+  if (defaults?.contentItemId) {
+    defaultEntities.contentItemId = defaults.contentItemId;
+    defaultEntities.lessonId = defaults.contentItemId;
+  }
+  if (defaults?.attemptNumber != null) defaultEntities.attemptNumber = defaults.attemptNumber;
+
+  const focus: ContextFrame = {
+    kind: (frame?.kind as ContextFocusKind) || 'lesson',
+    activityId: frame?.activityId || 'learn-hub',
+    title: frame?.title || defaults?.subject || contentPrompt.slice(0, 80),
+    summary: frame?.summary,
+    entities: { ...defaultEntities, ...(frame?.entities || {}) },
+  };
+  return {
+    focus,
+    safety: { contentFilter: 'strict', user_type: 'child' },
+    assembledAt: new Date().toISOString(),
   };
 }
 
