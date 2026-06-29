@@ -1,7 +1,7 @@
 const AI_GATEWAY_URL = process.env.AI_GATEWAY_URL || 'http://localhost:8777';
 const CHILD_SAFETY_API_KEY = process.env.CHILD_SAFETY_API_KEY || 'child-safety-key';
 
-export const LEARN_TUTOR_MODEL = process.env.LEARN_TUTOR_MODEL || process.env.CHILD_AI_MODEL || 'qwen3-8b';
+export const LEARN_TUTOR_MODEL = process.env.LEARN_TUTOR_MODEL || process.env.CHILD_AI_MODEL || 'minimax-m3';
 export const LEARN_TUTOR_CONTRACT = process.env.LEARN_TUTOR_CONTRACT || 'minor-restricted';
 
 export type TutorResponseSource = 'ai_gateway_learn_tutor' | 'fallback_deterministic_learn_tutor';

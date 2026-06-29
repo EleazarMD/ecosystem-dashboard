@@ -27,6 +27,9 @@ jest.mock('@/lib/db/client', () => ({
 import { getServerSession } from 'next-auth';
 import { getLearningPhase1Service } from '@/domains/learning/features/attempt-grading';
 import { getLearningAccessState, recordLearningUsage } from '@/domains/learning/features/access-control';
+import { getMasteryCalculator, _resetMasteryCalculator } from '@/domains/learning/learner/mastery-calculator';
+import { _resetLearnerProfileService } from '@/domains/learning/learner/learner-profile';
+import { _resetEventBus } from '@/domains/learning/shared/event-bus';
 import handler from '../../pages/api/learn/attempt';
 
 type MockState = {
@@ -85,6 +88,9 @@ describe('POST /api/learn/attempt', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    _resetEventBus();
+    _resetMasteryCalculator();
+    _resetLearnerProfileService();
 
     mockGetServerSession.mockResolvedValue({
       user: { id: 'child-auth-user', accountType: 'child' },
@@ -178,5 +184,166 @@ describe('POST /api/learn/attempt', () => {
     expect(state.statusCode).toBe(403);
     expect(state.body.usageLimitReached).toBe(true);
     expect(mockGradeAttempt).not.toHaveBeenCalled();
+  });
+
+  it('tracks in-process mastery via LearnerProfileService and returns oldMastery/newMastery', async () => {
+    _resetEventBus();
+    _resetMasteryCalculator();
+    _resetLearnerProfileService();
+
+    mockGradeAttempt.mockResolvedValue({
+      attemptId: 'attempt-mastery',
+      contentItem: {
+        id: 'phase1.math.add.v1',
+        skillCode: 'math.add',
+        hintSet: ['hint-1'],
+      },
+      normalizedResponse: '4',
+      correct: true,
+      score: 1.0,
+      feedback: 'Great work!',
+      masteryEligible: true,
+    });
+
+    const { req, res, state } = createMockReqRes({
+      body: {
+        childId: 'child-mastery',
+        contentItemId: 'phase1.math.add.v1',
+        response: '4',
+        attemptNumber: 1,
+      },
+    });
+
+    await handler(req, res);
+
+    expect(state.statusCode).toBe(200);
+    expect(state.body.mastery.inProcess).toBeDefined();
+    expect(state.body.mastery.inProcess.oldMastery).toBe(0); // no prior mastery
+    expect(state.body.mastery.inProcess.newMastery).toBeGreaterThan(0);
+    expect(state.body.mastery.inProcess.delta).toBeGreaterThan(0);
+  });
+
+  it('updates mastery cumulatively across multiple attempts', async () => {
+    _resetEventBus();
+    _resetMasteryCalculator();
+    _resetLearnerProfileService();
+
+    mockGradeAttempt.mockResolvedValue({
+      attemptId: 'attempt-1',
+      contentItem: {
+        id: 'phase1.math.add.v1',
+        skillCode: 'math.add',
+        hintSet: ['hint-1'],
+      },
+      normalizedResponse: '4',
+      correct: true,
+      score: 1.0,
+      feedback: 'Great work!',
+      masteryEligible: true,
+    });
+
+    // First attempt (correct)
+    const { req: req1, res: res1, state: state1 } = createMockReqRes({
+      body: {
+        childId: 'child-cumulative',
+        contentItemId: 'phase1.math.add.v1',
+        response: '4',
+        attemptNumber: 1,
+      },
+    });
+    await handler(req1, res1);
+
+    const masteryAfterFirst = state1.body.mastery.inProcess.newMastery;
+    expect(masteryAfterFirst).toBeGreaterThan(0);
+
+    // Second attempt (correct) — mastery should increase further
+    mockGradeAttempt.mockResolvedValue({
+      attemptId: 'attempt-2',
+      contentItem: {
+        id: 'phase1.math.add.v1',
+        skillCode: 'math.add',
+        hintSet: ['hint-1'],
+      },
+      normalizedResponse: '4',
+      correct: true,
+      score: 1.0,
+      feedback: 'Great work!',
+      masteryEligible: true,
+    });
+
+    const { req: req2, res: res2, state: state2 } = createMockReqRes({
+      body: {
+        childId: 'child-cumulative',
+        contentItemId: 'phase1.math.add.v1',
+        response: '4',
+        attemptNumber: 2,
+      },
+    });
+    await handler(req2, res2);
+
+    expect(state2.body.mastery.inProcess.oldMastery).toBeCloseTo(masteryAfterFirst, 5);
+    expect(state2.body.mastery.inProcess.newMastery).toBeGreaterThan(masteryAfterFirst);
+  });
+
+  it('decreases mastery on incorrect answer', async () => {
+    _resetEventBus();
+    _resetMasteryCalculator();
+    _resetLearnerProfileService();
+
+    // First attempt (correct) to establish a baseline
+    mockGradeAttempt.mockResolvedValue({
+      attemptId: 'attempt-1',
+      contentItem: {
+        id: 'phase1.math.add.v1',
+        skillCode: 'math.add',
+        hintSet: ['hint-1'],
+      },
+      normalizedResponse: '4',
+      correct: true,
+      score: 1.0,
+      feedback: 'Great work!',
+      masteryEligible: true,
+    });
+
+    const { req: req1, res: res1 } = createMockReqRes({
+      body: {
+        childId: 'child-decrease',
+        contentItemId: 'phase1.math.add.v1',
+        response: '4',
+        attemptNumber: 1,
+      },
+    });
+    await handler(req1, res1);
+
+    const masteryAfterCorrect = getMasteryCalculator().get('child-decrease', 'math.add');
+    expect(masteryAfterCorrect).toBeGreaterThan(0);
+
+    // Second attempt (incorrect) — mastery should decrease
+    mockGradeAttempt.mockResolvedValue({
+      attemptId: 'attempt-2',
+      contentItem: {
+        id: 'phase1.math.add.v1',
+        skillCode: 'math.add',
+        hintSet: ['hint-1'],
+      },
+      normalizedResponse: '7',
+      correct: false,
+      score: 0,
+      feedback: 'Try again.',
+      masteryEligible: true,
+    });
+
+    const { req: req2, res: res2, state: state2 } = createMockReqRes({
+      body: {
+        childId: 'child-decrease',
+        contentItemId: 'phase1.math.add.v1',
+        response: '7',
+        attemptNumber: 2,
+      },
+    });
+    await handler(req2, res2);
+
+    expect(state2.body.mastery.inProcess.newMastery).toBeLessThan(masteryAfterCorrect);
+    expect(state2.body.mastery.inProcess.delta).toBeLessThan(0);
   });
 });

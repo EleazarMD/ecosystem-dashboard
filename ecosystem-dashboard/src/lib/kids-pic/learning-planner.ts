@@ -182,6 +182,12 @@ function orderedObjectivesFromCodes(
   return out;
 }
 
+export interface LearningStyleAdjustment {
+  pace: 'slow' | 'medium' | 'fast';
+  preferredModality?: 'visual' | 'auditory' | 'kinesthetic' | 'reading' | 'mixed';
+  fatiguePointMinutes?: number;
+}
+
 export interface ComposePlanInput {
   summary: ChildSkillSummary | null;
   /** Parent-assigned skill codes (mandated). Lead the plan and are tagged. */
@@ -189,6 +195,8 @@ export interface ComposePlanInput {
   /** kids-pcg prerequisite-aware sequence; when empty, focus is score-based. */
   nextObjectiveSkillCodes?: string[];
   limit: number;
+  /** Phase 10: learning-style signals that adjust plan pacing and review density. */
+  learningStyle?: LearningStyleAdjustment;
 }
 
 /**
@@ -201,7 +209,17 @@ export interface ComposePlanInput {
  * or assigned skills can still be planned.
  */
 export function composePlan(input: ComposePlanInput): PlannerObjective[] {
-  const { summary, limit } = input;
+  const { summary } = input;
+
+  // Phase 10: adjust plan size based on learning-style pace.
+  // Fast learners get 1 extra objective; slow learners get 1 fewer (minimum 2).
+  let limit = input.limit;
+  if (input.learningStyle?.pace === 'fast') {
+    limit = limit + 1;
+  } else if (input.learningStyle?.pace === 'slow') {
+    limit = Math.max(2, limit - 1);
+  }
+
   if (limit <= 0) {
     return [];
   }

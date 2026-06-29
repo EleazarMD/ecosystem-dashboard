@@ -195,8 +195,8 @@ function ChildCard({ child, onRefresh, onSelect }: { child: ChildAccount; onRefr
               <MenuItem as={NextLink} href={`/admin/family/${child.id}/activity`} icon={<FiActivity />}>
                 Activity Log
               </MenuItem>
-              <MenuItem as={NextLink} href={`/admin/family/${child.id}?tab=goosemind`} icon={<FiStar />}>
-                GooseMind Characters
+              <MenuItem as={NextLink} href={`/admin/family/${child.id}?tab=companion`} icon={<FiStar />}>
+                Companion AI Characters
               </MenuItem>
               <Divider />
               <MenuItem icon={child.status === 'active' ? <FiPause /> : <FiPlay />} onClick={handleSuspend}>

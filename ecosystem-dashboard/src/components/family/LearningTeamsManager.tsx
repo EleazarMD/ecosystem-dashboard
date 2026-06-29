@@ -10,16 +10,16 @@ import {
   Box, VStack, HStack, Heading, Text, Button, IconButton, Badge,
   SimpleGrid, Spinner, useToast, Modal, ModalOverlay, ModalContent,
   ModalHeader, ModalBody, ModalCloseButton, ModalFooter, useDisclosure,
-  Input, Textarea, Select, Checkbox, Divider, Tag, TagLabel, TagCloseButton,
+  Input, Textarea, Select, Checkbox, Divider,
   Avatar, Progress, Alert, AlertIcon, AlertTitle, AlertDescription,
   Popover, PopoverTrigger, PopoverContent, PopoverHeader, PopoverBody,
-  PopoverArrow, PopoverCloseButton, FormControl, FormLabel,
+  PopoverArrow, FormControl, FormLabel,
 } from '@chakra-ui/react';
 import {
-  FiPlus, FiTrash2, FiUsers, FiSettings, FiRefreshCw, FiUserPlus,
-  FiTarget, FiInfo, FiChevronRight, FiZap,
+  FiPlus, FiTrash2, FiUsers, FiRefreshCw, FiUserPlus,
+  FiTarget, FiInfo, FiZap,
 } from 'react-icons/fi';
-import { GlassPanel } from '@/components/ui/GlassPanel';
+import { SimpleGlassPanel } from '@/components/ui/SimpleGlassPanel';
 
 interface Team {
   id: string;
@@ -73,7 +73,6 @@ export default function LearningTeamsManager() {
   const { isOpen: isCreateOpen, onOpen: onCreateOpen, onClose: onCreateClose } = useDisclosure();
   const { isOpen: isActivityOpen, onOpen: onActivityOpen, onClose: onActivityClose } = useDisclosure();
 
-  // Create form state
   const [newTeam, setNewTeam] = useState({
     name: '',
     description: '',
@@ -85,7 +84,6 @@ export default function LearningTeamsManager() {
     teamChallengesEnabled: true,
   });
 
-  // Activity form state
   const [newActivity, setNewActivity] = useState({
     title: '',
     description: '',
@@ -256,7 +254,7 @@ export default function LearningTeamsManager() {
 
       {/* Info Banner */}
       <Alert status="info" borderRadius="md" variant="subtle">
-        <AlertIcon as={FiInfo} />
+        <AlertIcon />
         <Box>
           <AlertTitle fontSize="sm">About Learning Teams</AlertTitle>
           <AlertDescription fontSize="xs">
@@ -267,9 +265,9 @@ export default function LearningTeamsManager() {
 
       {/* Teams Grid */}
       {teams.length === 0 ? (
-        <GlassPanel p={8}>
+        <SimpleGlassPanel p={8}>
           <VStack spacing={4}>
-            <FiUsers size={48} color="var(--chakra-colors-gray-300)" />
+            <Text fontSize="48px">👥</Text>
             <Heading size="sm" color="gray.500">No Teams Yet</Heading>
             <Text fontSize="sm" color="gray.500" textAlign="center" maxW="400px">
               Create your first learning team to start collaborative learning. Teams can include your own children and are limited to 2-3 members.
@@ -278,13 +276,13 @@ export default function LearningTeamsManager() {
               Create First Team
             </Button>
           </VStack>
-        </GlassPanel>
+        </SimpleGlassPanel>
       ) : (
         <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
           {teams.map((team) => {
             const flowInfo = INFO_FLOW_LABELS[team.infoFlowLevel];
             return (
-              <GlassPanel key={team.id} p={5}>
+              <SimpleGlassPanel key={team.id} p={5}>
                 <VStack align="stretch" spacing={3}>
                   {/* Team Header */}
                   <HStack justify="space-between">
@@ -379,16 +377,16 @@ export default function LearningTeamsManager() {
                   {/* Activity Stats */}
                   <HStack justify="space-between" fontSize="xs" color="gray.500">
                     <HStack>
-                      <FiTarget />
-                      <Text>{team.pendingActivities} pending · {team.completedActivities} completed</Text>
+                      <Text>🎯</Text>
+                      <Text>{team.pendingActivities} pending | {team.completedActivities} completed</Text>
                     </HStack>
                     {team.activePaths > 0 && (
                       <HStack>
-                        <FiZap />
+                        <Text>⚡</Text>
                         <Text>{team.activePaths} active paths</Text>
                       </HStack>
                     )}
-                  </VStack>
+                  </HStack>
 
                   {/* Actions */}
                   <Button
@@ -405,7 +403,7 @@ export default function LearningTeamsManager() {
                     Manage Activities
                   </Button>
                 </VStack>
-              </GlassPanel>
+              </SimpleGlassPanel>
             );
           })}
         </SimpleGrid>
@@ -524,7 +522,7 @@ export default function LearningTeamsManager() {
                           <VStack align="start" spacing={0}>
                             <Text fontSize="sm" fontWeight="medium">{act.title}</Text>
                             <Text fontSize="xs" color="gray.500">
-                              {act.activityType} · {act.status}
+                              {act.activityType} | {act.status}
                             </Text>
                           </VStack>
                         </HStack>

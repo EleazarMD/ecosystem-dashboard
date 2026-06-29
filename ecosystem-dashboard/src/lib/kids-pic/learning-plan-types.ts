@@ -3,7 +3,8 @@ export type LearnPlanActivityKind = 'review' | 'practice';
 export type LearnPlanSource =
   | 'kids_pcg_next_objectives'
   | 'skill_progress_plus_catalog'
-  | 'catalog_fallback';
+  | 'catalog_fallback'
+  | 'learning_path';
 
 export interface LearnPlanObjective {
   skillCode: string;
@@ -29,6 +30,12 @@ export interface LearnPlanActivity {
   contentType?: 'problem' | 'question' | 'writing' | 'reasoning';
   /** Rubric criteria for writing/reasoning items. */
   rubricCriteria?: string[];
+  /** When this activity comes from a learning path step, the path id. */
+  pathId?: string;
+  /** When this activity comes from a learning path step, the step number (1-based). */
+  pathStepNumber?: number;
+  /** Path emoji for UI rendering. */
+  pathEmoji?: string;
 }
 
 export interface LearnPlanSpacedReview {

@@ -6,6 +6,7 @@ import { getLearningSessionService, type CreateLearningSessionInput, type Learni
 import { getLearningAccessState } from '@/domains/learning/features/access-control';
 import dbPool from '@/lib/db/client';
 import { readUserId } from './attempt';
+import { getEventBus } from '@/domains/learning/shared/event-bus';
 
 interface CreateSessionRequestBody {
   childId?: unknown;
@@ -46,6 +47,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const created = await getLearningSessionService().createSession(validation.value);
+
+    // Emit session.opened to the Event Bus
+    getEventBus().emit('session.opened', {
+      childId: created.childId,
+      sessionId: created.id,
+      timestamp: Date.now(),
+    });
 
     return res.status(201).json({
       session: created,

@@ -8,6 +8,9 @@ import { SkillProgressService } from '@/domains/learning/entities/skill-graph';
 import { getLearningAccessState, recordLearningUsage } from '@/domains/learning/features/access-control';
 import { captureMisconception } from '@/domains/learning/features/misconception-tracker';
 import { getAssignmentService } from '@/domains/learning/features/assignment-service';
+import { getLearningPathService } from '@/domains/learning/features/path-generation';
+import { getLearnerProfileService } from '@/domains/learning/learner/learner-profile';
+import { getMasteryCalculator } from '@/domains/learning/learner/mastery-calculator';
 import dbPool from '@/lib/db/client';
 import { HARNESS_EVENT_TYPES } from '@/lib/harness/events/types';
 import { emitHarnessEventSafe, runHarnessPipeline, toApiHarnessMetadata } from '@/lib/harness/runtime/pipeline';
@@ -34,6 +37,8 @@ interface AttemptRequestBody {
   contentItemId?: string;
   response?: unknown;
   attemptNumber?: number;
+  pathId?: string;
+  pathStepNumber?: number;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -158,6 +163,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
+    // Auto-complete learning path step on correct answer.
+    let pathStepCompleted = false;
+    let pathCompleted = false;
+    if (gradeResult.correct && body.pathId && body.pathStepNumber) {
+      try {
+        const result = await getLearningPathService(dbPool).completeStep(
+          body.pathId,
+          body.pathStepNumber,
+          { score: gradeResult.score },
+        );
+        pathStepCompleted = true;
+        pathCompleted = result.pathCompleted;
+      } catch (error) {
+        console.warn('[api/learn/attempt] path step completion skipped:', error);
+      }
+    }
+
     const notEligible: MasteryWriteStatus = {
       status: 'skipped',
       detail: 'attempt not eligible for mastery writes',
@@ -196,6 +218,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (access.controlled) {
       await recordLearningUsage(dbPool, userId, 1);
     }
+
+    // Record attempt in the in-process LearnerProfileService for mastery tracking.
+    // This updates the EMA-based MasteryCalculator and the learner profile
+    // (strengths/struggles/difficulty), and emits attempt.graded + mastery.changed
+    // events to the Event Bus with real mastery values.
+    const skillCode = gradeResult.contentItem.skillCode;
+    const oldMastery = getMasteryCalculator().get(childId, skillCode);
+    getLearnerProfileService().recordAttempt(
+      childId,
+      skillCode,
+      gradeResult.correct,
+      attemptNumber,
+    );
+    const newMastery = getMasteryCalculator().get(childId, skillCode);
 
     const harnessEvents: HarnessPipelineEventInput[] = [
       {
@@ -270,10 +306,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       hintsAvailable,
       rubricResult: gradeResult.rubricResult,
       assignmentCompleted,
+      pathStepCompleted,
+      pathCompleted,
       mastery: {
         eligible: gradeResult.masteryEligible,
         postgres: postgresResult,
         kidsPcg: pcgResult,
+        inProcess: {
+          oldMastery,
+          newMastery,
+          delta: newMastery - oldMastery,
+        },
       },
       usage: access.controlled
         ? {

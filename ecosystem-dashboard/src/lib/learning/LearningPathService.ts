@@ -43,6 +43,9 @@ export interface PathStep {
   skillCode?: string;
   targetDifficulty?: number;
   hints: string[];
+  /** Explicit card set definition (JSONB). When present, the CardPlayer
+   * renders these cards instead of auto-generating from step properties. */
+  cardSet?: unknown[];
   isCompleted: boolean;
   completedAt?: Date;
   score?: number;
@@ -70,6 +73,8 @@ export interface PathRecommendation {
     customContentType?: string;
     targetDifficulty?: number;
     hints?: string[];
+    /** Explicit card set — array of card definitions (try/see/explain/play/check). */
+    cardSet?: unknown[];
   }[];
 }
 
@@ -108,12 +113,18 @@ export class LearningPathService {
         skillCode?: string;
         targetDifficulty?: number;
         hints?: string[];
+        cardSet?: unknown[];
       }[];
     }
   ): Promise<ChildLearningPath> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+
+      // Ensure card_set column exists (idempotent)
+      await client.query(
+        `ALTER TABLE child_learning_path_steps ADD COLUMN IF NOT EXISTS card_set JSONB DEFAULT NULL`
+      );
 
       const pathResult = await client.query(
         `INSERT INTO child_learning_paths
@@ -142,8 +153,8 @@ export class LearningPathService {
           await client.query(
             `INSERT INTO child_learning_path_steps
               (path_id, step_number, title, description, step_emoji, content_item_id,
-               custom_prompt, custom_content_type, skill_code, target_difficulty, hints)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+               custom_prompt, custom_content_type, skill_code, target_difficulty, hints, card_set)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
             [
               pathId,
               i + 1,
@@ -156,6 +167,7 @@ export class LearningPathService {
               step.skillCode || null,
               step.targetDifficulty || 1,
               JSON.stringify(step.hints || []),
+              step.cardSet ? JSON.stringify(step.cardSet) : null,
             ]
           );
         }
@@ -248,7 +260,7 @@ export class LearningPathService {
     pathId: string,
     stepNumber: number,
     options?: { score?: number; timeSpentSeconds?: number }
-  ): Promise<{ pathCompleted: boolean; nextStep?: PathStep }> {
+  ): Promise<{ pathCompleted: boolean; nextStep?: PathStep; completedSkillCode?: string }> {
     await this.pool.query(
       `UPDATE child_learning_path_steps
        SET is_completed = true, completed_at = NOW(),
@@ -264,6 +276,12 @@ export class LearningPathService {
     );
     const completedCount = stepsResult.rows.filter((r: any) => r.is_completed).length;
     const totalSteps = stepsResult.rows.length;
+
+    // Extract the completed step's skillCode for mastery write-back
+    const completedStepRow = stepsResult.rows.find(
+      (r: any) => r.step_number === stepNumber,
+    );
+    const completedSkillCode = completedStepRow?.skill_code || undefined;
 
     // Adaptive difficulty: if score < 0.5, decrease difficulty; if > 0.85, increase
     let newDifficulty = 1;
@@ -298,7 +316,7 @@ export class LearningPathService {
     const nextStepRow = stepsResult.rows.find((r: any) => !r.is_completed);
     const nextStep = nextStepRow ? this.mapStep(nextStepRow) : undefined;
 
-    return { pathCompleted, nextStep };
+    return { pathCompleted, nextStep, completedSkillCode };
   }
 
   async getStep(pathId: string, stepNumber: number): Promise<PathStep | null> {
@@ -352,8 +370,26 @@ export class LearningPathService {
       focusDomainName = skillResult.rows[0].domain_name;
     }
 
-    // Generate 5 adaptive steps
-    const steps = this.generatePathSteps(childName, focusDomain || 'mixed', focusDomainName);
+    // ─── ZPD Integration: fetch prerequisite-aware next-objectives from kids-pcg ──
+    // These are skills not yet mastered whose prerequisites ARE mastered — the
+    // Zone of Proximal Development frontier. When available, we build steps from
+    // real skill codes instead of generic hardcoded ones.
+    let zpdSkillCodes: string[] = [];
+    try {
+      zpdSkillCodes = await this.fetchKidsPcgNextObjectives(childUserId, 5);
+    } catch {
+      // best-effort — fall through to hardcoded steps
+    }
+
+    let steps: ReturnType<LearningPathService['generatePathSteps']>;
+    if (zpdSkillCodes.length > 0) {
+      // Build steps from real ZPD skill codes, looking up names from the DB result
+      const skillByName = new Map(skillResult.rows.map((r: any) => [r.code, r]));
+      steps = this.generateZpdPathSteps(childName, zpdSkillCodes, skillByName);
+    } else {
+      // Fallback: generate 5 generic adaptive steps
+      steps = this.generatePathSteps(childName, focusDomain || 'mixed', focusDomainName);
+    }
 
     const path = await this.createPath(childUserId, {
       title: `${childName}'s ${focusDomainName} Adventure`,
@@ -367,6 +403,105 @@ export class LearningPathService {
     });
 
     return (await this.getPath(path.id))!;
+  }
+
+  /** Fetch prerequisite-aware next-objective skill codes from kids-pcg (ZPD frontier). */
+  private async fetchKidsPcgNextObjectives(
+    childUserId: string,
+    limit: number,
+  ): Promise<string[]> {
+    const pcgUrl = process.env.KIDS_PCG_URL || 'http://127.0.0.1:8771';
+    const pcgKey = process.env.KIDS_PCG_READ_KEY || '';
+    const pcgPath = process.env.KIDS_PCG_NEXT_OBJECTIVES_PATH || '';
+    if (!pcgPath || !pcgKey) return [];
+
+    const params = new URLSearchParams({ limit: String(limit) });
+    const targetUrl = `${pcgUrl}${pcgPath}?${params.toString()}`;
+
+    try {
+      const response = await fetch(targetUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-PCG-Key': pcgKey,
+          'X-PCG-Owner-Id': childUserId,
+        },
+      });
+      if (!response.ok) return [];
+
+      const data = await response.json();
+      const list = Array.isArray(data)
+        ? data
+        : data && typeof data === 'object'
+          ? (['objectives', 'next_objectives', 'nextObjectives', 'skills'] as const)
+              .map((key) => (data as Record<string, unknown>)[key])
+              .find((value): value is unknown[] => Array.isArray(value)) || []
+          : [];
+
+      const codes: string[] = [];
+      for (const entry of list) {
+        const code =
+          typeof entry === 'string'
+            ? entry
+            : entry && typeof entry === 'object'
+              ? (entry as Record<string, unknown>)['skillCode'] as string ||
+                (entry as Record<string, unknown>)['skill_code'] as string ||
+                (entry as Record<string, unknown>)['code'] as string
+              : null;
+        if (code) codes.push(code);
+      }
+      return codes;
+    } catch {
+      return [];
+    }
+  }
+
+  /** Build path steps from real ZPD skill codes returned by kids-pcg. */
+  private generateZpdPathSteps(
+    childName: string,
+    skillCodes: string[],
+    skillLookup: Map<string, any>,
+  ): {
+    title: string;
+    description?: string;
+    stepEmoji: string;
+    skillCode?: string;
+    customPrompt?: string;
+    customContentType?: string;
+    targetDifficulty?: number;
+    hints?: string[];
+  }[] {
+    const stepEmojis = ['🌱', '📚', '⚡', '🎨', '🏆'];
+    const contentTypes = ['question', 'problem', 'problem', 'writing', 'reasoning'];
+
+    return skillCodes.map((code, i) => {
+      const skill = skillLookup.get(code);
+      const skillName = skill?.name || code.split('.').pop() || code;
+      const difficulty = Math.min(i + 1, 4);
+
+      return {
+        title: i === 0
+          ? `Welcome, ${childName}!`
+          : i === skillCodes.length - 1
+            ? `${skillName} Master!`
+            : `${skillName} Challenge`,
+        description: i === 0
+          ? `Let's start with a warm-up on ${skillName}.`
+          : `Time to practice ${skillName}.`,
+        stepEmoji: stepEmojis[i] || '⭐',
+        skillCode: code,
+        customPrompt: i === 0
+          ? `What do you already know about ${skillName.toLowerCase()}? List one thing you're curious about!`
+          : `Let's practice ${skillName.toLowerCase()} together!`,
+        customContentType: contentTypes[i] || 'problem',
+        targetDifficulty: difficulty,
+        hints: [
+          'Take it step by step',
+          'Break the problem into smaller parts',
+          'Remember what you learned in the previous step',
+        ],
+      };
+    });
   }
 
   private generatePathSteps(
@@ -475,6 +610,7 @@ export class LearningPathService {
       skillCode: row.skill_code,
       targetDifficulty: row.target_difficulty,
       hints: Array.isArray(row.hints) ? row.hints : JSON.parse(row.hints || '[]'),
+      cardSet: Array.isArray(row.card_set) ? row.card_set : (row.card_set ? JSON.parse(row.card_set) : undefined),
       isCompleted: row.is_completed,
       completedAt: row.completed_at,
       score: row.score !== null ? parseFloat(row.score) : undefined,

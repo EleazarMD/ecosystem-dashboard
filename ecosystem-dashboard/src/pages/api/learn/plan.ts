@@ -10,6 +10,8 @@ import {
   composePlan,
   type PlannerObjective,
 } from '@/domains/learning/features/plan-generation';
+import { getLearningPathService } from '@/domains/learning/features/path-generation';
+import type { PathWithSteps, PathStep } from '@/domains/learning/entities/learning-path';
 import type {
   LearnPlanActivity,
   LearnPlanSource,
@@ -17,6 +19,10 @@ import type {
 } from '@/domains/learning/shared/plan-types';
 import { getSkillsNeedingReview, markMisconceptionAddressed } from '@/domains/learning/features/misconception-tracker';
 import { buildReviewSchedule } from '@/domains/learning/processes/spaced-review';
+import { getParentGoalService } from '@/domains/learning/parent/parent-goal-service';
+import { getDreamEngine } from '@/domains/learning/analytics/dream-engine';
+import { getLearningStyleSignalCollector } from '@/domains/learning/analytics/learning-style-signals';
+import { getAnalyticsCollector } from '@/domains/learning/analytics/analytics-collector';
 import dbPool from '@/lib/db/client';
 import { HARNESS_EVENT_TYPES } from '@/lib/harness/events/types';
 import { emitHarnessEventSafe, runHarnessPipeline, toApiHarnessMetadata } from '@/lib/harness/runtime/pipeline';
@@ -184,6 +190,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       activities: result.activities,
       source: result.source,
       assignmentsApplied: result.assignmentsApplied,
+      parentGoalsApplied: result.parentGoalsApplied,
       spacedReview: result.spacedReview,
       harness: toApiHarnessMetadata(harnessResponse),
     });
@@ -204,6 +211,7 @@ async function buildPlan(input: {
   activities: PlanActivity[];
   source: LearnPlanSource;
   assignmentsApplied: boolean;
+  parentGoalsApplied: boolean;
   spacedReview?: LearnPlanSpacedReview;
 }> {
   let summary: ChildSkillSummary | null = null;
@@ -213,6 +221,12 @@ async function buildPlan(input: {
   } catch (error) {
     console.warn('[api/learn/plan] getChildSkillSummary fallback:', error);
   }
+
+  // Fetch active learning paths and extract the current incomplete step from each.
+  // Path steps lead the plan (they are parent-vetted or adaptive sequences) and
+  // are injected as priority activities before assignments and focus objectives.
+  const pathActivities = await fetchActivePathActivities(input.childId, input.ageBand);
+  const hasPathActivities = pathActivities.length > 0;
 
   // Compose the plan (roadmap 9.1/9.2): parent assignments lead, then a spaced-review
   // warm-up, then focus objectives. Focus prefers kids-pcg's prerequisite-aware
@@ -226,6 +240,12 @@ async function buildPlan(input: {
     }),
     fetchAssignmentSkillCodes(input.childId, input.objectivesLimit),
   ]);
+
+  // Path step skill codes are added to the assignment list so composePlan
+  // de-duplicates them out of the focus pool.
+  const pathSkillCodes = pathActivities
+    .map((a) => a.skillCode)
+    .filter((code) => code && code !== 'path.custom');
   const usedNextObjectives = nextObjectiveCodes.length > 0;
 
   // Phase 3: Re-surface unaddressed misconceptions as priority review objectives.
@@ -239,16 +259,54 @@ async function buildPlan(input: {
     markMisconceptionAddressed(input.childId, skillCode);
   }
 
+  // Parent-set goals steer the plan: their skill codes are injected as
+  // assignmentSkillCodes so they lead the child's plan (Phase 7 §6).
+  const parentGoalCodes = getParentGoalService().getActiveGoalSkillCodes(input.childId);
+
+  // Dream insights steer focus: skills flagged by overnight consolidation
+  // (struggle patterns, breakthroughs) are prepended to nextObjectives so
+  // the plan is informed by consolidated insight (Phase 8).
+  const dreamInsights = getDreamEngine().getInsights(input.childId, 5);
+  const dreamFocusSkills: string[] = [];
+  const skillPattern = /([a-z_]+\.[a-z_]+)/g;
+  for (const insight of dreamInsights) {
+    if (!insight.actionable) continue;
+    const matches = insight.insight.match(skillPattern);
+    if (matches) {
+      for (const m of matches) {
+        if (!dreamFocusSkills.includes(m)) dreamFocusSkills.push(m);
+      }
+    }
+  }
+
+  // Phase 10: feed learning-style signals into the planner so pace adjusts
+  // the number of objectives (fast → +1, slow → -1) and modality is available
+  // for downstream content selection.
+  const styleCollector = getLearningStyleSignalCollector();
+  const snapshots = getAnalyticsCollector().getSnapshots(input.childId, 14);
+  const styleSignals = styleCollector.analyze(input.childId, snapshots, { writeToProfile: true });
+
   const objectives = composePlan({
     summary,
-    assignmentSkillCodes: assignmentCodes,
-    nextObjectiveSkillCodes: [...misconceptionCodes, ...nextObjectiveCodes],
+    assignmentSkillCodes: [...pathSkillCodes, ...assignmentCodes, ...parentGoalCodes],
+    nextObjectiveSkillCodes: [...dreamFocusSkills, ...misconceptionCodes, ...nextObjectiveCodes],
     limit: input.objectivesLimit,
+    learningStyle: styleSignals
+      ? { pace: styleSignals.pace, preferredModality: styleSignals.preferredModality, fatiguePointMinutes: styleSignals.fatiguePointMinutes }
+      : undefined,
   });
 
   const activities: PlanActivity[] = [];
 
+  // Path activities lead — they are the child's current mission.
+  activities.push(...pathActivities);
+
   for (const objective of objectives) {
+    // Skip objectives already covered by a path activity.
+    if (activities.some((a) => a.skillCode === objective.skillCode && a.pathId)) {
+      continue;
+    }
+
     const item = (
       await getLearningPhase1Service().listContent({
         skillCode: objective.skillCode,
@@ -282,9 +340,10 @@ async function buildPlan(input: {
     return {
       childName: summary?.childName || null,
       objectives,
-      activities,
-      source: usedNextObjectives ? 'kids_pcg_next_objectives' : 'skill_progress_plus_catalog',
+      activities: activities.slice(0, input.objectivesLimit),
+      source: hasPathActivities ? 'learning_path' : usedNextObjectives ? 'kids_pcg_next_objectives' : 'skill_progress_plus_catalog',
       assignmentsApplied: objectives.some((objective) => objective.isAssignment === true),
+      parentGoalsApplied: parentGoalCodes.length > 0,
       spacedReview,
     };
   }
@@ -320,7 +379,122 @@ async function buildPlan(input: {
     })),
     source: 'catalog_fallback',
     assignmentsApplied: false,
+    parentGoalsApplied: false,
   };
+}
+
+/**
+ * Fetch active learning paths for a child and convert the current incomplete step
+ * from each into a PlanActivity. Path steps with a contentItemId use it directly;
+ * steps with only a skillCode try to find a matching content item; steps with only
+ * a customPrompt create a synthetic activity. Path activities carry pathId +
+ * pathStepNumber so the attempt route can call completeStep after grading.
+ */
+async function fetchActivePathActivities(
+  childId: string,
+  ageBand: LearnAgeBand | undefined,
+): Promise<PlanActivity[]> {
+  try {
+    const pathService = getLearningPathService(dbPool);
+    const activePaths = await pathService.getActivePaths(childId);
+    if (activePaths.length === 0) {
+      return [];
+    }
+
+    const activities: PlanActivity[] = [];
+
+    for (const path of activePaths) {
+      const currentStep = path.steps.find((s) => !s.isCompleted);
+      if (!currentStep) continue;
+
+      const activity = await pathStepToActivity(path, currentStep, ageBand);
+      if (activity) {
+        activities.push(activity);
+      }
+    }
+
+    return activities;
+  } catch (error) {
+    console.warn('[api/learn/plan] fetchActivePathActivities skipped:', error);
+    return [];
+  }
+}
+
+async function pathStepToActivity(
+  path: PathWithSteps,
+  step: PathStep,
+  ageBand: LearnAgeBand | undefined,
+): Promise<PlanActivity | null> {
+  const pathMeta = {
+    pathId: path.id,
+    pathStepNumber: step.stepNumber,
+    pathEmoji: path.pathEmoji,
+  };
+
+  // Case 1: step has a real contentItemId — use it directly.
+  if (step.contentItemId) {
+    const item = await getLearningPhase1Service().getContentById(step.contentItemId);
+    if (item) {
+      return {
+        type: 'practice',
+        kind: 'practice',
+        skillCode: step.skillCode || item.skillCode,
+        contentItemId: item.id,
+        title: step.title || item.skillCode,
+        prompt: item.prompt,
+        difficulty: step.targetDifficulty || item.difficulty,
+        analyticalTags: item.analyticalTags,
+        hintSet: step.hints.length > 0 ? step.hints : item.hintSet,
+        contentType: item.type,
+        rubricCriteria: item.rubricCriteria,
+        ...pathMeta,
+      };
+    }
+  }
+
+  // Case 2: step has a skillCode — try to find a content item for it.
+  if (step.skillCode) {
+    const items = await getLearningPhase1Service().listContent({
+      skillCode: step.skillCode,
+      ageBand,
+      limit: 1,
+    });
+    if (items.length > 0) {
+      const item = items[0];
+      return {
+        type: 'practice',
+        kind: 'practice',
+        skillCode: step.skillCode,
+        contentItemId: item.id,
+        title: step.title || step.skillCode,
+        prompt: step.customPrompt || item.prompt,
+        difficulty: step.targetDifficulty || item.difficulty,
+        analyticalTags: item.analyticalTags,
+        hintSet: step.hints.length > 0 ? step.hints : item.hintSet,
+        contentType: (step.customContentType as LearnPlanActivity['contentType']) || item.type,
+        rubricCriteria: item.rubricCriteria,
+        ...pathMeta,
+      };
+    }
+  }
+
+  // Case 3: step has only a customPrompt — create a synthetic activity.
+  if (step.customPrompt) {
+    return {
+      type: 'practice',
+      kind: 'practice',
+      skillCode: step.skillCode || 'path.custom',
+      contentItemId: `path-step:${step.id}`,
+      title: step.title,
+      prompt: step.customPrompt,
+      difficulty: step.targetDifficulty || 1,
+      hintSet: step.hints,
+      contentType: (step.customContentType as LearnPlanActivity['contentType']) || 'problem',
+      ...pathMeta,
+    };
+  }
+
+  return null;
 }
 
 function summarizeSpacedReview(summary: ChildSkillSummary | null): LearnPlanSpacedReview | undefined {

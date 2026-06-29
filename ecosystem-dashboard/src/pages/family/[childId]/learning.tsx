@@ -31,7 +31,7 @@ import {
   CardBody,
   Progress,
 } from '@chakra-ui/react';
-import { FiArrowLeft, FiTrendingUp, FiShield, FiTarget, FiHeart, FiCompass, FiEdit3 } from 'react-icons/fi';
+import { FiArrowLeft, FiTrendingUp, FiShield, FiTarget, FiHeart, FiCompass, FiEdit3, FiSliders, FiEye } from 'react-icons/fi';
 import { useRouter } from 'next/router';
 import NextLink from 'next/link';
 import { GetServerSideProps } from 'next';
@@ -42,6 +42,12 @@ import PCGInsightsDashboard from '@/components/family/PCGInsightsDashboard';
 import AISafetyDashboard from '@/components/family/AISafetyDashboard';
 import SkillProgressDashboard from '@/components/family/SkillProgressDashboard';
 import ParentAssignmentManager from '@/components/family/ParentAssignmentManager';
+import ParentGoalManager from '@/components/family/ParentGoalManager';
+import LearningConfigCard from '@/components/family/LearningConfigCard';
+import AIContentReviewQueue from '@/components/family/AIContentReviewQueue';
+import DreamDigestCard from '@/components/family/DreamDigestCard';
+import PokemonLabProgressCard from '@/components/family/PokemonLabProgressCard';
+import GoalScorecardCard from '@/components/family/GoalScorecardCard';
 import { useSemanticToken } from '@/hooks/useSemanticToken';
 import { query } from '@/lib/db';
 import { buildFamilyLearningSnapshot } from '@/domains/learning/shared/family-presenter';
@@ -112,6 +118,12 @@ export default function ChildLearningPage({ child, childProfileId, attemptSummar
 
             <LearningActivityCard summary={attemptSummary} childName={child.name} />
 
+            <DreamDigestCard childId={child.id} childName={child.name} />
+
+            <PokemonLabProgressCard childId={child.id} />
+
+            <GoalScorecardCard childId={child.id} ageBand={childProfileId ? 'middle' : 'middle'} />
+
             {/* Tabbed Dashboard */}
             <Tabs colorScheme="purple" variant="enclosed">
               <TabList flexWrap="wrap" gap={{ base: 2, md: 3 }}>
@@ -137,6 +149,24 @@ export default function ChildLearningPage({ child, childProfileId, attemptSummar
                   <HStack spacing={2} justify="center">
                     <Icon as={FiShield} />
                     <Text fontSize="sm">AI Safety</Text>
+                  </HStack>
+                </Tab>
+                <Tab minH={{ base: '44px', md: '48px' }} px={{ base: 3, md: 4 }} flex={{ base: '1 1 auto', md: '1 1 0' }}>
+                  <HStack spacing={2} justify="center">
+                    <Icon as={FiTarget} />
+                    <Text fontSize="sm">Goals</Text>
+                  </HStack>
+                </Tab>
+                <Tab minH={{ base: '44px', md: '48px' }} px={{ base: 3, md: 4 }} flex={{ base: '1 1 auto', md: '1 1 0' }}>
+                  <HStack spacing={2} justify="center">
+                    <Icon as={FiSliders} />
+                    <Text fontSize="sm">Learning Config</Text>
+                  </HStack>
+                </Tab>
+                <Tab minH={{ base: '44px', md: '48px' }} px={{ base: 3, md: 4 }} flex={{ base: '1 1 auto', md: '1 1 0' }}>
+                  <HStack spacing={2} justify="center">
+                    <Icon as={FiEye} />
+                    <Text fontSize="sm">AI Review</Text>
                   </HStack>
                 </Tab>
               </TabList>
@@ -165,6 +195,21 @@ export default function ChildLearningPage({ child, childProfileId, attemptSummar
                     childId={childProfileId} 
                     childName={child.name}
                   />
+                </TabPanel>
+                <TabPanel px={0} pt={{ base: 4, md: 5 }}>
+                  <ParentGoalManager
+                    childId={child.id}
+                    childName={child.name}
+                  />
+                </TabPanel>
+                <TabPanel px={0} pt={{ base: 4, md: 5 }}>
+                  <LearningConfigCard
+                    childId={child.id}
+                    childName={child.name}
+                  />
+                </TabPanel>
+                <TabPanel px={0} pt={{ base: 4, md: 5 }}>
+                  <AIContentReviewQueue />
                 </TabPanel>
               </TabPanels>
             </Tabs>

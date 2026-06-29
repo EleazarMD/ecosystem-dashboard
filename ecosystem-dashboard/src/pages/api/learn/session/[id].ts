@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 
 import { authOptions } from '../../auth/[...nextauth]';
 import { getLearningSessionService, type LearningSessionStatus, type UpdateLearningSessionInput } from '@/domains/learning/processes/session-loop';
+import { getEventBus } from '@/domains/learning/shared/event-bus';
 
 interface UpdateSessionRequestBody {
   status?: unknown;
@@ -39,6 +40,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const updated = await getLearningSessionService().updateSession(id, validation.value);
     if (!updated) {
       return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Emit session.closed when the session reaches a terminal status
+    if (updated.status === 'completed' || updated.status === 'abandoned') {
+      getEventBus().emit('session.closed', {
+        childId: updated.childId,
+        sessionId: updated.id,
+        timestamp: Date.now(),
+        stats: {
+          correctCount: 0,
+          totalAttempts: 0,
+          bestStreak: 0,
+          durationSeconds: updated.durationSeconds ?? 0,
+          skillsPracticed: [],
+        },
+      });
     }
 
     return res.status(200).json({

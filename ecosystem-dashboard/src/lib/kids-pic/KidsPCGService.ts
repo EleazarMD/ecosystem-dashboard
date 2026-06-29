@@ -522,7 +522,7 @@ export class KidsPCGService {
 
   async logActivity(entry: Omit<ActivityLogEntry, 'id' | 'occurredAt'>): Promise<ActivityLogEntry> {
     const result = await this.pool.query(
-      `INSERT INTO child_activity_log 
+      `INSERT INTO child_pcg_activity_log 
        (child_id, activity_type, activity_category, source_type, source_id, title, description, metadata, duration_seconds, engagement_score)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
@@ -545,7 +545,7 @@ export class KidsPCGService {
 
   async getRecentActivities(childId: string, limit: number = 20): Promise<ActivityLogEntry[]> {
     const result = await this.pool.query(
-      'SELECT * FROM child_activity_log WHERE child_id = $1 ORDER BY occurred_at DESC LIMIT $2',
+      'SELECT * FROM child_pcg_activity_log WHERE child_id = $1 ORDER BY occurred_at DESC LIMIT $2',
       [childId, limit]
     );
     return result.rows.map(row => this.mapActivityLog(row));
