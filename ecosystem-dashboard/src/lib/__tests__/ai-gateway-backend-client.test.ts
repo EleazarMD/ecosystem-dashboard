@@ -1,4 +1,7 @@
 /**
+ * @jest-environment jsdom
+ */
+/**
  * Unit Tests for AI Gateway Backend Client
  * Tests the native integration without any middleware or bridges
  */

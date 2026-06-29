@@ -1,4 +1,7 @@
 /**
+ * @jest-environment jsdom
+ */
+/**
  * Unit Tests for Knowledge Graph Orchestration
  * 
  * Tests for response normalization, validation, and circuit breaker functionality

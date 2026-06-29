@@ -1,4 +1,7 @@
 /**
+ * @jest-environment jsdom
+ */
+/**
  * ULTRA-MINIMAL TEST - No hooks, no context, just a box
  */
 

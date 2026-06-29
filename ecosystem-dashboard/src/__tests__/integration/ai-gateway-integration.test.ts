@@ -1,4 +1,7 @@
 /**
+ * @jest-environment jsdom
+ */
+/**
  * Integration Tests for AI Gateway Backend Integration
  * Tests end-to-end functionality with real WebSocket and API calls
  */

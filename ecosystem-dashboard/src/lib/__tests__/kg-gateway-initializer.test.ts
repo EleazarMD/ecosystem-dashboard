@@ -1,4 +1,7 @@
 /**
+ * @jest-environment jsdom
+ */
+/**
  * Unit tests for Knowledge Graph Gateway Initializer
  * 
  * Tests the KG Gateway initializer's ability to detect AI Gateway availability

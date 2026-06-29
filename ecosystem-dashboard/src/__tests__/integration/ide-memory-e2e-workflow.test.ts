@@ -1,4 +1,7 @@
 /**
+ * @jest-environment jsdom
+ */
+/**
  * IDE Memory Intelligence End-to-End Workflow Test
  * 
  * Tests the complete workflow from memory analysis through AI Truth Engine

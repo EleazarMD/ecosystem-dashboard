@@ -1,4 +1,7 @@
 /**
+ * @jest-environment jsdom
+ */
+/**
  * Integration Tests for Enhanced Provider Card Component
  * Tests real-time provider management with AI Gateway Backend
  */
