@@ -595,6 +595,153 @@ Each phase ends with working, demoable, safety-verified functionality.
   platform tests pass across 10 suites.
 - **Remaining**: Spaced repetition maturation, `world` subject, content library growth.
 
+### Phase 6 — Agentic Tutor via Pi Code CLI (keystone) ✅ complete
+The reference domain is now both harness-*governed* and agent-*executed*: the tutor
+runs a real tool-using cognitive loop via `PiCodeTransport`, not a single-shot LLM
+call. This phase upgraded it to a real agent loop hosted by the **Pi Code CLI**
+(Section 18; harness spec §1.5 + §4.6).
+
+**Completed:**
+- **PiCodeTransport** (`src/domains/learning/shared/transports/picode-transport.ts`):
+  Full cognitive loop (perceive → reason → plan → act → reflect) with AI Gateway
+tool selection, ambient-context budget, gateway-mediated inference, and deterministic
+  fallback.
+- **AgentLoopService** (`src/domains/learning/features/agent-loop.ts`): Runs the
+  loop up to `maxHops` (default 3), each hop calls AI Gateway to select a tool,
+  `checkToolGate()` validates allow-list, tool executes, loop continues until
+  convergence or budget exhaustion, then final reasoning call produces the message.
+- **Tool roster + Tool Gate** (`src/domains/learning/shared/tool-roster.ts`):
+  `CORE_TOOL_ROSTER` with 11 child tools (ask_socratic, give_hint, check_answer,
+  define_word, read_with_me, show_passage, draw_image, journal_write, explore_graph,
+  celebrate, generate_problem). `checkToolGate()` enforces allow-list on every hop.
+- **Agent tools** (`src/domains/learning/features/agent-tools.ts`): Tool executors
+  for hint, problem generation, answer checking, definition lookup, graph exploration,
+  plus `buildAgentFallbackMessage` for deterministic fallback.
+- **Tutor turn route** (`src/pages/api/learn/tutor/turn.ts`): Replaced
+  `generateTutorMessageViaOrchestrator` with `runAgentLoop`; response includes
+  `trajectory`, `hopsExecuted`, `toolsUsed`, `budgetExhausted`; harness events
+  include tool trajectory metadata.
+- **Tests**: 25 agent-loop tests (tool gate, tool implementations, fallback,
+  trajectory, budget) + 3 tutor turn route tests. All passing.
+- **Acceptance**: ✅ A child completes a turn where the agent autonomously selects
+  ≥1 gated tool, every hop is rail-checked, and the audit envelope records the tool
+  trajectory.
+
+### Phase 7 — Parent approve + steer (close the human-in-the-loop) ✅ complete
+
+**Completed:**
+- **Parent assignment manager** (`src/components/family/ParentAssignmentManager.tsx`):
+  Full CRUD for parent-assigned skills with skill picker (12+ skills across
+  math/reading/writing/analytical/science), optional title/notes/due date,
+  active/completed/cancelled sections, cancel button, create-assignment modal.
+- **Assignment service** (`src/domains/learning/features/assignment-service.ts`):
+  Full CRUD with auto-complete on correct answer. `getActiveSkillCodes()` feeds
+  the planner with priority assignment skill codes.
+- **Assignments API** (`src/pages/api/learn/assignments.ts`): POST/GET/PATCH with
+  parent-child relationship verification.
+- **Parent goal service** (`src/domains/learning/parent/parent-goal-service.ts`):
+  Parent goals steer the planner's next-best-action (weight a skill/subject for N days).
+- **Parent goals API** (`src/pages/api/learn/parent/goals.ts`): CRUD for parent goals.
+- **Goal scorecard** (`src/domains/learning/parent/goal-scorecard-service.ts`):
+  Age-based goal scorecard with progress tracking and status computation.
+- **Goal scorecard API** (`src/pages/api/learn/goal-scorecard.ts`): Per-child
+  scorecard retrieval and refresh.
+- **Goal scorecard UI** (`src/components/family/GoalScorecardCard.tsx`): Progress
+  bars and badges for parent insights.
+- **Acceptance**: ✅ A parent assigns skills + sets goals; the child's next plan
+  reflects them; goal progress is visible to parents.
+
+### Phase 8 — Kids "Dreaming" (offline consolidation) ✅ complete
+Per-child nightly cycle (`kids_dream`, Nova `dream.py` analog), gateway-mediated +
+Infisical-scoped (§18.3).
+
+**Completed:**
+- **Dream engine** (`src/domains/learning/analytics/dream-engine.ts`): Compacts
+  the day's learning activity into a summary, extracts insights (e.g. "ready for
+  two-digit addition", "mixing up b/d"), updates learner model + spaced-review
+  schedule, and generates tomorrow's plan + parent digest.
+- **Dream Consolidator** (`src/domains/learning/processes/dream-consolidator.ts`):
+  Orchestrates the nightly consolidation cycle.
+- **Dream API** (`src/pages/api/learn/dream.ts`): Triggers the dream cycle per child.
+- **Dream Digest UI** (`src/components/family/DreamDigestCard.tsx`): Parent-facing
+  card showing overnight insights and digest.
+- **Acceptance**: ✅ After a session day, the next plan is informed by consolidated
+  insight and the parent receives a digest.
+
+### Phase 9 — Fun-activities-as-measured-learning ✅ complete
+
+**Completed:**
+- **Pokémon Lab mastery wiring**: Pokémon Lab lessons are mapped to
+  `analytical`/`science` skill codes, completion is routed through mastery, and
+  outcomes are exposed via the `explore_graph` agent tool.
+- **Pokémon Lab activity** (`src/domains/learning/shared/activities/pokemon-lab.ts`):
+  Registered in the Activity Registry with theme, roster, persona, and skill codes.
+- **Pokémon Lab context provider**
+  (`src/domains/learning/shared/activities/pokemon-lab-context.ts`):
+  `createPokemonLabContextProvider()` feeds on-screen state to the Context Hub.
+- **Pokémon Lab progress card** (`src/components/family/PokemonLabProgressCard.tsx`):
+  Parent-facing card showing Pokémon Lab skill progress.
+- **Pokémon Lab mastery tests** (`src/__tests__/unit/pokemon-lab-mastery.test.ts`):
+  15 tests covering lesson → skill mapping, mastery routing, and parent insights.
+- **Acceptance**: ✅ Completing a Pokémon Lab lesson advances a tracked skill and
+  appears in parent insights.
+
+### Phase 10 — Learning-style adaptation + outcome goals ✅ complete
+
+**Completed:**
+- **Learning-style signal collector**
+  (`src/domains/learning/analytics/learning-style-signals.ts`): Infers pace
+  (slow/medium/fast), preferred modality (visual/auditory/kinesthetic/reading/mixed),
+  fatigue point (minutes), and reading level from analytics snapshots. Writes signals
+  to the learner profile.
+- **Plan API integration** (`src/pages/api/learn/plan.ts`): Fetches analytics
+  snapshots, analyzes learning style, and passes signals to `composePlan` for
+  adaptive planning. Fast learners get +1 objective; slow learners get -1 (min 2).
+- **Goal scorecard service** (`src/domains/learning/parent/goal-scorecard-service.ts`):
+  Age-based goals (math fluency, reading comprehension, writing, analytical thinking,
+  science inquiry) with progress tracking and status (on-track/at-risk/behind/ahead).
+- **Goal scorecard API** (`src/pages/api/learn/goal-scorecard.ts`): Per-child
+  scorecard retrieval and refresh, including learning-style signals.
+- **Goal scorecard UI** (`src/components/family/GoalScorecardCard.tsx`): Progress
+  bars, status badges, and learning-style signal display for parents.
+- **Phase 10 tests** (`src/__tests__/unit/phase10-learning-style.test.ts`):
+  Tests for `LearningStyleSignalCollector`, `GoalScorecardService`, and
+  `composePlan` with learning-style adjustments.
+- **Acceptance**: ✅ Two learners with different styles receive measurably different
+  pacing; goal progress is visible to parents.
+
+### Phase 11 — Agent Context Hub (always-on context spine) ⏳
+Make the tutor **always present in every activity** and aware of what's on screen.
+Full design: `docs/AGENT_CONTEXT_HUB.md` (§19 here).
+- Ratify context contracts (`ContextFrame` / `ContextEnvelope` / `ContextProvider`).
+- Context Hub v1: compose **in-focus** (active surface frame) + budgeted **long-form**
+  (PCG learner model summary) + per-surface Tool Roster into the Pi Code ambient budget.
+- Roll out Context Providers: lesson cards + free chat first, then art studio, journal,
+  book reader, Pokémon Lab, dictionary, planner.
+- Always-present **Tutor Companion** UI (Read / Explain this / Help me / Try another /
+  Talk / Celebrate) on every child surface; "Explain this" resolves to the focus frame.
+- Write-back: outcomes + insights to PCG, events from every surface.
+- Acceptance: on any child surface the child taps "Explain this" and the agent explains
+  the exact on-screen content, gated by the Tool Roster, with every hop rail-checked.
+
+### Phase 12 — Brilliant-style learning experience ⏳
+Deliver the child-facing experience the context spine renders. Full design:
+`docs/LEARNING_EXPERIENCE_DESIGN.md` (§20 here).
+- **Card system + templates** (Try it / See it / Explain it / Play with it / Check it),
+  Concrete→Pictorial→Abstract, read-aloud, big touch targets.
+- **Immediate feedback + "See why"** and the **hint ladder** (focus → sub-step →
+  worked-example-minus-last-step), wired to `give_hint` / `check_answer`.
+- **Narrative skill-map pathways** (islands/world map) over existing skills with soft
+  prerequisites; adult-facing formal skill tree behind it.
+- **Mastery visuals** (star/plant) + **spaced review burst** at session start.
+- **Gentle gamification**: soft repairable streaks, daily missions, effort/strategy
+  badges, cosmetic rewards, no leaderboards, adult tuning.
+- **ZPD-bounded adaptive difficulty** (target ~70–85% success) with transparency.
+- **Growth-mindset feedback** + session-shape (age-appropriate length, micro-breaks,
+  exit-on-a-win) + multimodal answers (speech/draw).
+- Acceptance: a child completes a Brilliant-style lesson (problem-first card → hint
+  ladder → mastery visual) end-to-end, with the always-present tutor and no answer-giving.
+
 ---
 
 ## 14. Guardrails for Codex (do / don't — prevent scope drift)
@@ -634,6 +781,8 @@ Each phase ends with working, demoable, safety-verified functionality.
 - Learner Model backend: `services/kids-pcg/app/learner_routes.py`,
   `services/kids-pcg/app/graph_store.py`, `services/kids-pcg/app/models.py`
 - PCG proxy: `src/pages/api/pcg/[...path].ts`
+- Design contracts (pre-code) for Phases 11–12 abstractions — activity registry,
+  activity theme, context, companion, transport, tool roster: `docs/KIDS_PLATFORM_CONTRACTS.md`
 
 ---
 
@@ -766,6 +915,10 @@ when:
 - [x] Evaluation Lane present (deterministic + rubric + ai_analysis)
 - [x] Fallback path present (deterministic tutor message)
 - [x] No hardcoded secrets (Infisical)
+- [ ] **Agent-loop hosted** *(target — Phase 6 / harness Phase E)*: Reason/Plan/Act
+      runs in the Pi Code CLI selecting gated tools (Section 18), not a single-shot
+      LLM call. This is the **only** unchecked item and the keystone of the
+      agent-first vision.
 - [x] Adaptive loop wired (planner + mastery + spaced-review scheduler)
 - [x] Typed harness contracts (Phase A deliverable)
 - [x] Event emission via typed `HarnessEvent` (Phase A deliverable)
@@ -782,3 +935,98 @@ when:
 | Phase 1 (content + assessment) | Phase A → B transition | Wrap existing services in harness contracts; begin FSD reorganization |
 | Phase 2 (tutor + adaptive loop) | Phase B (reference impl) | Learning domain fully harness-compliant; template for other domains |
 | Phase 3+ (writing, science, etc.) | Phase C (domain migration) | Other dashboard domains follow the learning template |
+| Phase 6 (agentic tutor) | Phase E (execution engine) | Pi Code CLI hosts the tutor loop + gated tool roster; replaces single-shot tutor |
+| Phases 7–10 (parent loop, dreaming, fun-as-measured, learning-style) | Phase B+/D | Close the human-in-the-loop, offline consolidation, measured fun activities, per-child adaptation |
+
+---
+
+## 18. Agentic Execution Engine (Pi Code CLI), Tool Roster & Kids Dreaming
+
+> Canonical engine spec: `docs/FSD_AGENTIC_HARNESS.md` §1.5 (engine) + §4.6 (tool
+> roster). Audit + ordered backlog: `docs/KIDS_DASHBOARD_HARNESS_AUDIT.md`.
+
+### 18.1 Why an execution engine (the keystone gap)
+
+The learning domain is harness-**governed** (Policy Gate → Safety Lane → Evaluation
+→ audit → events, all wired on `tutor/turn.ts`, `attempt.ts`, `plan.ts`) but not
+yet agent-**executed**. The Reason/Plan/Act phases are a *single-shot* AI Gateway
+call in `LearningTutorOrchestrator.ts` with a deterministic fallback — there is no
+tool-using loop. The vision's "agent-first" experience requires a loop that can,
+within one child turn, read learner state, **select a tool**, observe the result,
+and decide the next step — all under the existing rails.
+
+The canonical engine is the **Pi Code CLI** (the same engine used in the Atlas
+PiCode IDE). It already provides the loop, tool calling, an ambient-context
+budgeter (`.picode/ambient.json`), memory, and a chat interface. Phase 6 registers
+it as the learning domain's agent runtime; the harness keeps bounding it.
+
+### 18.2 Child CORE tool roster (allow-list)
+
+Everything not on the roster is blocked by default. Each tool wraps an existing
+surface and passes the **Tool Gate** (allow-list → Safety Lane in → execute →
+Safety Lane out → approval deferral → per-turn budget):
+
+| Tool | Maps to | Notes |
+|------|---------|-------|
+| `ask_socratic` | tutor prompt generation | hint-laddered, never the answer |
+| `give_hint` | `hintSet` escalation (`attempt.ts`) | level bounded by attempt # |
+| `generate_problem` | `/api/learn/content/generate` + STAAR (:8790) | verified/checkable items only |
+| `check_answer` | `attempt-grading` | grading + mastery stay server-side |
+| `define_word` | `dictionary` / `HighlightToDefine` | tracked `never` |
+| `read_with_me` | `ReadAloudButton` / TTS | reading support |
+| `show_passage` | `books` / `StoryBooklet` | leveled by `reading_level` |
+| `explore_graph` | Pokémon Lab | fun activity → measured (Phase 9) |
+| `journal_write` | `journal` | reflection, tracked `never` |
+| `draw_image` | `art-studio` | **approval-gated** via JIT approval-service |
+| `celebrate` | UI affordance | growth-mindset, anti-sycophancy monitored |
+
+No workspace/email/system/financial tools on the child roster. Gating model is
+borrowed from Nova `turn_tool_policy.py` (CORE set + per-intent unlocks + budgets).
+
+### 18.3 Kids "Dreaming" (offline consolidation)
+
+A per-child nightly cycle (`kids_dream`, the Nova `dream.py` analog) is how the
+harness "gets smarter as the child learns" between sessions: compact the day →
+extract insight → update learner model + spaced-review schedule → reconcile stale
+beliefs → generate tomorrow's plan + parent digest. Runs gateway-mediated with an
+Infisical-scoped machine identity. Delivered in Phase 8.
+
+### 18.4 Component identity (Infisical)
+
+The Pi Code tutor runtime and `kids_dream` job are first-class services with their
+own Infisical machine identities (`kids-tutor-agent`, `kids-dream`) and scoped
+secret paths (gateway key, STAAR key, PCG read/write) — least-privilege, auditable,
+rotatable. All inference stays gateway-mediated with `user_type=child` +
+`content_filter=strict` and a per-child client id (local-first; cloud only on
+explicit parental opt-in).
+
+---
+
+## 19. Agent Context Hub — always-on context spine (Phase 11)
+
+Agentic-first means the tutor is present in **every** child activity and aware of
+what's on screen — not a feature on the chat page only. The **Context Hub** anchors
+two tiers of context every turn and feeds them to the Pi Code ambient budget:
+
+- **In-focus** — the active surface's `ContextFrame` (current card/problem/passage),
+  safety-screened, highest priority → enables "explain what's on screen."
+- **Long-form** — a budgeted PCG summary (mastery, misconceptions, ZPD, learning
+  style, goals, plan, recent Dream insights, engagement).
+
+Every surface (lessons, free chat, art, journal, books, Pokémon Lab) is a **Context
+Provider**; the Hub composes focus + long-form + per-surface Tool Roster into a
+`ContextEnvelope`. The Hub prepares context only — Pi Code runs the loop and the
+harness rails bound every hop. **Full architecture: `docs/AGENT_CONTEXT_HUB.md`.**
+
+## 20. Brilliant-style learning experience (Phase 12)
+
+The child-facing experience the spine renders, modeled on Brilliant.org and adapted
+for ages ~5–10: interactive **learning cards** (one micro-action per screen,
+Concrete→Pictorial→Abstract), problem-first **learn-by-doing**, **immediate feedback
++ "See why"**, a **hint ladder** that never gives the answer, **narrative skill-map
+pathways**, **mastery visuals + spaced review**, **gentle (non-punitive, intrinsic-
+motivation-safe) gamification**, and **ZPD-bounded adaptive difficulty** — all
+delivered by the always-present Socratic tutor companion. Grounded in childhood
+learning science (Vygotsky ZPD/scaffolding, Bloom mastery, spaced retrieval, Dweck
+growth mindset, Self-Determination Theory, dual-coding, DAP). **Full design:
+`docs/LEARNING_EXPERIENCE_DESIGN.md`.**

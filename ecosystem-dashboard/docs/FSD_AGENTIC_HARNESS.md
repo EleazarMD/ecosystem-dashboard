@@ -2,12 +2,22 @@
 
 > Status: **Source of truth for harness architecture.** All domains in the
 > ecosystem-dashboard migrate toward this contract. The Kid's Learning Platform
-> is the first harness-compliant domain (**Phase B complete — reference implementation**).
+> is the first harness-compliant domain (**Phases B + E complete — fully agent-first reference implementation**).
 >
 > Companion docs:
 > - `LEARNING_PLATFORM_ROADMAP.md` — learning domain spec (first harness domain)
+> - `KIDS_DASHBOARD_HARNESS_AUDIT.md` — alignment audit + ordered task backlog
+> - `AGENT_CONTEXT_HUB.md` — the always-on context spine (focus + long-form) feeding the agent
+> - `KIDS_PLATFORM_CONTRACTS.md` — ratifiable TS contracts (activity registry, activity theme, context, companion, transport, tool roster)
+> - `LEARNING_EXPERIENCE_DESIGN.md` — Brilliant-style child learning experience (cards/pathways/gamification)
 > - `PHASE0_SEED_SPEC.md` — seed data for the learning domain
 > - `FSD_MIGRATION_MATRIX.md` — current module → target FSD slice mapping
+>
+> **Two layers, kept distinct (see §1.5):** the **Harness** is the *governance
+> substrate* (rails around agency); the **Agent Execution Engine** is the *thing
+> that runs the cognitive loop and calls tools* — the **Pi Code CLI** (the same
+> engine used in the Atlas PiCode IDE). The harness is built; the Pi Code-hosted
+> agent loop for the child tutor is the current integration target.
 
 ---
 
@@ -76,6 +86,13 @@ agents* and standardizes how they collaborate.
 | **Memory Agent** | Reads/writes the learner model + context | `KidsPCGService.ts` + `PCGCharacterContext.ts` |
 | **Orchestrator Agent** | Coordinates multiple agents (series/parallel/hybrid) | `OrchestrationEngine.ts` |
 
+> **Agent vs. Execution Engine.** The roster names *roles*; it does not by itself
+> make them autonomous tool-using agents. The learning roles are now hosted in the
+> **Pi Code CLI** via `PiCodeTransport` (`src/domains/learning/shared/transports/picode-transport.ts`),
+> which runs a real tool-using cognitive loop (perceive → reason → plan → act → reflect)
+> with gated tool selection on every hop. The harness rails (Section 4) are identical
+> in both cases — they bound whatever runs the loop.
+
 ### 1.3 The Cognitive Agent Loop
 
 Every agentic interaction is a turn of a cognitive loop. The harness provides
@@ -107,8 +124,13 @@ the governance rails (in **bold**) that wrap each phase:
 | **Reflect** | Score the attempt, update mastery, detect misconceptions | Evaluation Lane → events → Audit |
 | **(loop)** | Harness schedules follow-up (spaced review, next plan) | Harness-intelligent adaptation |
 
-This loop is exactly what `src/pages/api/learn/tutor/turn.ts` implements today —
-the harness formalizes it as the universal pattern.
+The **governance** of this loop is implemented today in
+`src/pages/api/learn/tutor/turn.ts` (Policy Gate → Safety Lane → generate →
+Safety Lane → Evaluation → events → audit). The **agent execution** of the
+Reason/Plan/Act phases is currently a *single-shot LLM call* with a deterministic
+fallback (`LearningTutorOrchestrator.ts`), orchestrated imperatively — not yet a
+tool-using agent loop. Section 1.5 defines the engine (Pi Code CLI) that closes
+that gap; the harness formalizes the *pattern* either way.
 
 ### 1.4 Why the Kid's Learning Platform Is the Core
 
@@ -118,6 +140,77 @@ architecture**. It is the only domain that exercises *every* agent role, the
 Because a child-safe agent loop is the hardest case, any domain that fits the
 learning template will fit the harness. Other domains are *simpler instances* of
 the same pattern.
+
+### 1.5 The Agent Execution Engine (Pi Code CLI)
+
+The harness is the **governance substrate**. It does not, by itself, *run* the
+cognitive loop — it bounds whatever does. The **Agent Execution Engine** is the
+component that actually runs perceive → reason → plan → act → reflect and **calls
+tools**. The canonical engine for the AIHomelab Dashboard is the **Pi Code CLI** —
+the same agentic engine the owner uses in the **Atlas PiCode IDE**.
+
+Pi Code already provides the four things an agent loop needs, which is why it is
+the chosen engine rather than a bespoke build:
+
+| Capability | Pi Code provides | Harness binding |
+|-----------|------------------|-----------------|
+| **Tool calling** | A loop that selects + invokes tools and observes results | Each tool wrapped by the Safety Lane; gated by an allow-list |
+| **Peripherals** | Adapters for external capabilities (editor, graph, research, media) | Exposed to the child agent only via the gated tool roster (§4.6) |
+| **Memory / ambient context** | An ambient-context budgeter with priority + token budget (`.picode/ambient.json`) | Reads/writes the PCG learner model (Memory Agent) |
+| **Chat interface** | A conversational front-door to the loop | Surfaced to the child through the existing Learn hub / chat UI |
+
+**Separation of concerns:**
+
+```
+   Pi Code CLI (Agent Execution Engine)        Harness (Governance Substrate)
+   ┌───────────────────────────────┐           ┌────────────────────────────┐
+   │ runs the loop, selects tools, │   bounded │ Policy Gate • Safety Lane  │
+   │ holds ambient context, chats  │◄─────────►│ Evaluation Lane • Audit    │
+   └───────────────────────────────┘    by     │ + adaptive scheduling      │
+                                                └────────────────────────────┘
+```
+
+**Current state vs. target.** Today the learning domain has the *governance* layer
+fully built but runs the Reason/Plan/Act phases as a single-shot LLM call
+(`LearningTutorOrchestrator.ts`). The target is to register the **Pi Code CLI as
+the learning domain's agent runtime**, so the Tutor Agent can autonomously select
+gated tools within a turn while every hop passes the same rails. This integration
+is tracked as a first-class migration phase (Section 9, **Phase E**) and detailed
+in `KIDS_DASHBOARD_HARNESS_AUDIT.md` (Phase 6) and
+`LEARNING_PLATFORM_ROADMAP.md` (Section 18).
+
+**Engine-agnostic rule.** The harness contracts (Section 4) are independent of the
+engine. Pi Code is the canonical engine, but any engine that (a) honors the Policy
+Gate + Safety Lane on every tool hop, (b) emits the audit envelope + typed events,
+and (c) reads/writes memory through the PCG is harness-compliant. No domain may run
+an agent loop that bypasses the rails.
+
+### 1.6 The Context Hub (always-on context spine)
+
+An agent loop is only as good as the context it runs on. The **Context Hub** is the
+substrate that keeps the agent **always in the loop across every surface** by
+continuously anchoring two tiers of context and feeding them to the Execution
+Engine's ambient-context budget (Pi Code `.picode/ambient.json`):
+
+- **In-focus context** — what the user is looking at and doing *right now* (the
+  active screen/card/problem). Ephemeral, highest priority, safety-screened. This is
+  what lets the agent "explain whatever is on screen."
+- **Long-form context** — durable identity/state from Memory (PCG): mastery,
+  misconceptions, zone of proximal development, learning style, goals, plan, and
+  recent offline-consolidation insights. Budgeted + summarized, always available.
+
+Every surface registers a **Context Provider** that emits a typed `ContextFrame`;
+the Hub composes the active frame (focus) + a budgeted memory summary (long-form) +
+the per-surface **Tool Roster** (§4.6) into a `ContextEnvelope` handed to the engine
+on each turn. The Hub **prepares context only** — it never calls the model and is not
+a second agent runtime; every hop still passes the rails (§1.5, Section 4).
+
+This is a **first-class harness capability** (like the adaptive loop, §4.5): any
+domain gets "agent always present, context always anchored" by implementing
+providers, rather than re-wiring context per feature. Full design:
+`docs/AGENT_CONTEXT_HUB.md`. The child-facing experience those providers render
+(Brilliant-style cards/pathways/gamification) is specified in
+`docs/LEARNING_EXPERIENCE_DESIGN.md`.
 
 ---
 
@@ -133,6 +226,14 @@ the same pattern.
 | **Harness** | The platform-wide runtime + architecture. Not a single service; the contract every domain follows. Itself *intelligent* — it adapts and closes the loop. |
 | **Harness Domain** | A vertical slice (e.g. `learning`, `email`, `research`) that implements harness contracts as an instance of the agent-first pattern. |
 | **Agent Runtime** | The governance substrate that wraps every agent action: Policy Gate → Safety Lane → Agent → Evaluation Lane → Events → Audit. |
+| **Agent Execution Engine** | The component that actually *runs* the cognitive loop and *calls tools* (canonical: the **Pi Code CLI**). Distinct from the harness, which only *bounds* it. See Section 1.5. |
+| **Tool Roster** | The allow-list of tools an agent may call (child CORE roster in Section 4.6). Everything not on the roster is blocked by default. |
+| **Tool Gate** | The pre-tool checkpoint inside the loop: allow-list check + Safety Lane on every tool input/output + approval-service deferral for sensitive tools. |
+| **Context Hub** | The always-on context spine that anchors **in-focus** + **long-form** context and feeds it to the Execution Engine's ambient budget every turn. Prepares context only; not an agent runtime. See Section 1.6 + `AGENT_CONTEXT_HUB.md`. |
+| **Context Provider** | A per-surface adapter that emits a typed `ContextFrame` describing what the user sees/does on that surface (pull + push-on-change). |
+| **Context Frame** | The typed unit a surface emits: focus title, safety-screened visible content, state, affordances, intent hints. |
+| **Context Envelope** | The composed bundle the Hub hands the engine: focus frame (high priority) + budgeted long-form summary + per-surface Tool Roster + safety metadata. |
+| **Tutor Companion** | The always-present on-screen surface of the agent (Read / Explain / Hint / Try-another / Talk / Celebrate), present on every child activity. |
 | **Policy Gate** | Pre-action checkpoint that validates authorization, rate limits, parental controls, and feature flags. Can block before the agent perceives. |
 | **Safety Lane** | Input + output filtering wrapped around every agent action (content filter, age-appropriateness, sycophancy detection, manipulation checks). |
 | **Evaluation Lane** | Post-action checkpoint that scores agent output (deterministic check, rubric, AI analysis) and emits evidence to memory + events. |
@@ -324,6 +425,46 @@ decides what should happen next and feeds it back into the next cognitive loop:
 The adaptive loop is a **first-class harness capability**: every domain inherits
 it, rather than re-implementing adaptation per feature.
 
+### 4.6 Tool Roster + Tool Gate contract
+
+When an agent loop runs in an Execution Engine (Section 1.5), it may only call
+tools on an explicit **Tool Roster**. Everything else is **blocked by default**
+(bounded autonomy). This is the loop-internal analog of the Policy Gate.
+
+**Gating model (every tool call):**
+
+1. **Allow-list check** — the requested tool is on the agent's roster for this
+   domain + user + intent. If not, deny (no execution).
+2. **Safety Lane (input)** — the tool's arguments pass the content filter +
+   age-appropriateness check (child domains).
+3. **Execute** — the tool runs (which may itself call the AI Gateway, a service,
+   or a UI affordance).
+4. **Safety Lane (output)** — the tool's result passes the output filter + the
+   domain safety monitor before the agent observes it.
+5. **Approval deferral** — sensitive/irreversible tools (e.g. image generation,
+   anything financial/external) defer to the JIT `approval-service` (parent/owner).
+6. **Budget** — a per-turn tool-call budget bounds loop length.
+
+**Child CORE tool roster (learning domain).** Each tool maps to an existing
+dashboard surface; the roster is the contract the Pi Code loop is given:
+
+| Tool | Maps to | Tier |
+|------|---------|------|
+| `ask_socratic` | tutor prompt generation | CORE |
+| `give_hint` | `hintSet` escalation (`attempt.ts`) | CORE |
+| `generate_problem` | `/api/learn/content/generate` + STAAR Tutor | CORE (verified items only) |
+| `check_answer` | `attempt-grading` (deterministic + rubric) | CORE (grading stays server-side) |
+| `define_word` | `dictionary` / `HighlightToDefine` | CORE |
+| `read_with_me` | `ReadAloudButton` / TTS | CORE |
+| `show_passage` | `books` / `StoryBooklet` | CORE |
+| `explore_graph` | Pokémon Lab | CORE (fun activity → measured) |
+| `journal_write` | `journal` | CORE (tracked `never`) |
+| `draw_image` | `art-studio` | **approval-gated** |
+| `celebrate` | UI affordance | CORE (anti-sycophancy monitored) |
+
+No workspace/email/system/financial tools are on the child roster. Adult domains
+define their own rosters under the same gating model.
+
 ---
 
 ## 5. Event Schema
@@ -373,7 +514,7 @@ formalizes and unifies it rather than replacing it.
 |-------------------|-------------|
 | `src/lib/agent/AIAgentRuntime.ts` | Agent Runtime (general-purpose) |
 | `src/agents/OrchestrationEngine.ts` | Multi-agent orchestration patterns |
-| `src/lib/kids-pic/LearningTutorOrchestrator.ts` | First domain-specific runtime adapter (learning) |
+| `src/lib/kids-pic/LearningTutorOrchestrator.ts` | Legacy single-shot tutor (superseded by `PiCodeTransport` + `AgentLoopService`) |
 | `src/lib/platform/content-filter-service.ts` | Safety Lane: input + output filtering |
 | `src/lib/kids-pic/AIChildSafetyMonitor.ts` | Safety Lane: child-specific output checks |
 | `src/lib/platform/child-service-middleware.ts` | Policy Gate: child parental controls |
@@ -424,6 +565,11 @@ The **Kid's Learning Platform** passes all checks (Phase B complete):
 - [x] **Tests** — policy gate, safety lane, and evaluation lane have unit tests.
 - [x] **Fallback** — agent execution has a deterministic fallback path.
 - [x] **No hardcoded secrets** — all credentials flow through Infisical.
+- [x] **Agent-loop hosted** *(Phase E ✅ complete)* — Reason/Plan/Act runs in an Agent
+      Execution Engine (Pi Code CLI) that selects gated tools (Section 4.6). The
+      `PiCodeTransport` implements the full cognitive loop with AI Gateway tool
+      selection, per-hop Tool Gate checks, per-turn budget, deterministic fallback,
+      and trajectory audit. The learning domain now passes **all** checklist items.
 
 ---
 
@@ -476,6 +622,24 @@ When a new domain (or an existing domain being migrated) joins the harness:
 - Cross-domain event bus fully wired.
 - OrchestrationEngine becomes the harness-level multi-agent coordinator.
 
+### Phase E — Agent Execution Engine (Pi Code CLI) ✅ complete
+- Integrated the **Pi Code CLI** as the learning domain's agent runtime (Section
+  1.5): `PiCodeTransport` (`src/domains/learning/shared/transports/picode-transport.ts`)
+  implements the full cognitive loop with AI Gateway tool selection, ambient-context
+  budget, and gateway-mediated inference.
+- Defined + enforced the **child CORE tool roster** and **Tool Gate** (Section 4.6):
+  `CORE_TOOL_ROSTER` in `src/domains/learning/shared/tool-roster.ts`, per-turn hop
+  budget, `checkToolGate()` allow-list on every hop, Safety Lane on every hop,
+  approval-service deferral for sensitive tools.
+- Replaced the single-shot tutor with the Pi Code-hosted tool-using loop
+  (`src/domains/learning/features/agent-loop.ts`); the deterministic message is the
+  `agent_fallback` path; harness pipeline + audit + events preserved.
+- The **agent-loop-hosted** checklist item (Section 7) is checked; the audit trail
+  records the full tool trajectory.
+- **Status: complete.** The reference domain is now a governed agent loop, not a
+  governed single-shot. See `LEARNING_PLATFORM_ROADMAP.md` Phase 6 +
+  `KIDS_DASHBOARD_HARNESS_AUDIT.md` Phase 6 for details.
+
 ---
 
 ## 10. Guardrails
@@ -491,6 +655,13 @@ When a new domain (or an existing domain being migrated) joins the harness:
   shared/ or events).
 - Maintain backward compatibility during migration (adapters, not rewrites).
 - Treat the learning domain as the reference — other domains follow its pattern.
+- Run the agent loop in the **Agent Execution Engine** (Pi Code CLI, Section 1.5)
+  and give it only a **gated Tool Roster** (Section 4.6).
+- Keep authoritative grading + mastery writes **server-side**, even when a tool
+  triggers them.
+- Make every user-facing surface a **Context Provider** (Section 1.6) so the agent
+  is always in the loop and can explain what's on screen; safety-screen focus
+  content before it enters the envelope.
 
 **DON'T**
 - Don't let an agent reach a child without passing the Safety Lane — autonomy
@@ -502,3 +673,11 @@ When a new domain (or an existing domain being migrated) joins the harness:
 - Don't hardcode domain logic in shared/ — shared is for cross-domain utilities
   only.
 - Don't emit untyped events — all events must implement `HarnessEvent`.
+- Don't let an agent loop call a tool that is not on its roster, or skip the Tool
+  Gate (allow-list + Safety Lane + approval deferral) on any hop.
+- Don't build a second agent execution engine — Pi Code is canonical; any
+  alternative must honor the same rails (Section 1.5).
+- Don't let the Context Hub call the model or act as a second agent runtime — it
+  prepares context only; the engine runs the loop.
+- Don't let long-form context crowd out the in-focus frame, and never put
+  unfiltered on-screen content into the envelope.
