@@ -41,10 +41,13 @@ const PROMPT_SUGGESTIONS: PromptSuggestion[] = [
 
 const ART_STYLES: ArtStyle[] = [
   { id: 'cartoon', emoji: '🎨', label: 'Cartoon', description: 'Fun and colorful' },
+  { id: 'anime', emoji: '✨', label: 'Anime', description: 'Japanese animation style' },
   { id: 'watercolor', emoji: '🖌️', label: 'Watercolor', description: 'Soft and dreamy' },
   { id: 'pixel', emoji: '👾', label: 'Pixel Art', description: 'Retro game style' },
   { id: 'storybook', emoji: '📚', label: 'Storybook', description: 'Like a fairy tale' },
   { id: '3d', emoji: '🎮', label: '3D Render', description: 'Modern and shiny' },
+  { id: 'crayon', emoji: '🖍️', label: 'Crayon', description: 'Like a kid drew it' },
+  { id: 'claymation', emoji: '🧱', label: 'Claymation', description: 'Clay stop-motion style' },
 ];
 
 const ART_SIZES: ArtSize[] = [
@@ -56,7 +59,7 @@ const ART_SIZES: ArtSize[] = [
 
 export function ArtStudioPage() {
   const toast = useToast();
-  const { setIsOpen, setContext } = useRightPanel();
+  const { setContext } = useRightPanel();
   const { logActivity, updateProgress, addKnowledge } = useKidsPCG();
   const { isOpen: isDeleteConfirmOpen, onOpen: onDeleteConfirmOpen, onClose: onDeleteConfirmClose } = useDisclosure();
   const [imageToDelete, setImageToDelete] = useState<ArtImage | null>(null);
@@ -104,10 +107,9 @@ export function ArtStudioPage() {
     };
   }, [prompt, selectedStyle, selectedSize, viewMode, images.length, currentImage?.id]);
 
-  // Set right panel context on mount
+  // Set right panel context on mount — let ChildDashboardLayout manage open/close
   useEffect(() => {
     setContext('child-art');
-    setIsOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

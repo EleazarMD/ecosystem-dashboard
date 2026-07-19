@@ -16,12 +16,14 @@ export type PanelContext =
   | 'email-insights'
   | 'email-intelligence-dashboard'
   | 'calendar'
+  | 'calendar-intelligence-dashboard'
   | 'approvals'
   | 'news-studio'
   | 'monitoring'
   | 'ml-training'
   | 'child-home'
   | 'child-chat'
+  | 'child-research'
   | 'child-art'
   | 'child-workspace'
   | 'child-email'
@@ -37,10 +39,9 @@ export type PanelContext =
   | 'admin-quotas'
   | 'admin-security'
   | 'admin-family'
-  | 'openclaw-chat'
   | 'default';
 
-interface PanelConfig {
+export interface PanelConfig {
   width: number;
   tabs: Array<{
     id: string;
@@ -50,7 +51,7 @@ interface PanelConfig {
   defaultTab: string;
 }
 
-const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
+export const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
   'dashboard': {
     width: 400, // Standardized to match Podcast Studio
     tabs: [
@@ -235,9 +236,9 @@ const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
     defaultTab: 'ai-settings',
   },
   // Child Portal Contexts - tabs must match ChildRightPanelButtons and panel components
-  // Width set to 280px (max 20% of typical iPad landscape width ~1024px = ~205px, but we use 280 as base)
+  // Width 336px (base 280 * 1.2 for 20% wider companion chat)
   'child-home': {
-    width: 280,
+    width: 336,
     tabs: [
       { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'daily-guide', label: 'Today', icon: 'FiStar' },
@@ -247,7 +248,7 @@ const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
     defaultTab: 'chat',
   },
   'child-chat': {
-    width: 280,
+    width: 336,
     tabs: [
       { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'characters', label: 'Characters', icon: 'FiUser' },
@@ -256,8 +257,19 @@ const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
     ],
     defaultTab: 'chat',
   },
+  'child-research': {
+    width: 336,
+    tabs: [
+      { id: 'notes', label: 'Notes', icon: 'FiFileText' },
+      { id: 'sources', label: 'Sources', icon: 'FiBookmark' },
+      { id: 'ideas', label: 'Ideas', icon: 'FiLightbulb' },
+      { id: 'export', label: 'Export', icon: 'FiDownload' },
+      { id: 'history', label: 'History', icon: 'FiClock' },
+    ],
+    defaultTab: 'notes',
+  },
   'child-art': {
-    width: 280,
+    width: 336,
     tabs: [
       { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'image-settings', label: 'Style', icon: 'FiImage' },
@@ -266,7 +278,7 @@ const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
     defaultTab: 'chat',
   },
   'child-workspace': {
-    width: 280,
+    width: 336,
     tabs: [
       { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'builder', label: 'AI Builder', icon: 'FiCpu' },
@@ -277,7 +289,7 @@ const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
     defaultTab: 'chat',
   },
   'child-email': {
-    width: 280,
+    width: 336,
     tabs: [
       { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'templates', label: 'Templates', icon: 'FiFileText' },
@@ -286,7 +298,7 @@ const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
     defaultTab: 'chat',
   },
   'child-planner': {
-    width: 280,
+    width: 336,
     tabs: [
       { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'goals', label: 'Goals', icon: 'FiTarget' },
@@ -296,7 +308,7 @@ const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
     defaultTab: 'chat',
   },
   'child-books': {
-    width: 280,
+    width: 336,
     tabs: [
       { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'vocabulary', label: 'Words', icon: 'FiEdit' },
@@ -306,7 +318,7 @@ const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
     defaultTab: 'chat',
   },
   'child-dictionary': {
-    width: 280,
+    width: 336,
     tabs: [
       { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'create-note', label: 'Create Note', icon: 'FiEdit' },
@@ -316,7 +328,7 @@ const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
     defaultTab: 'chat',
   },
   'child-journal': {
-    width: 280,
+    width: 336,
     tabs: [
       { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'writing-tips', label: 'Tips', icon: 'FiEdit' },
@@ -326,7 +338,7 @@ const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
     defaultTab: 'chat',
   },
   'child-learn': {
-    width: 280,
+    width: 336,
     tabs: [
       { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'progress', label: 'Progress', icon: 'FiTrendingUp' },
@@ -335,7 +347,7 @@ const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
     defaultTab: 'chat',
   },
   'child-pokemon-lab': {
-    width: 280,
+    width: 386, // 322 * 1.2 = 20% wider
     tabs: [
       { id: 'chat', label: 'Chat', icon: 'FiMessageCircle' },
       { id: 'concepts', label: 'Concepts', icon: 'FiBookOpen' },
@@ -396,15 +408,6 @@ const PANEL_CONFIGS: Record<PanelContext, PanelConfig> = {
     ],
     defaultTab: 'child-overview',
   },
-  'openclaw-chat': {
-    width: 320,
-    tabs: [
-      { id: 'agents', label: 'Agents', icon: 'FiUser' },
-      { id: 'sessions', label: 'Sessions', icon: 'FiMessageCircle' },
-      { id: 'context', label: 'Context', icon: 'FiActivity' },
-    ],
-    defaultTab: 'agents',
-  },
 };
 
 interface RightPanelContextType {
@@ -416,6 +419,7 @@ interface RightPanelContextType {
   setContext: (context: PanelContext) => void;
   config: PanelConfig;
   width: number;
+  hasCustomWidth: boolean;
   setWidth: (width: number) => void;
   customData: any;
   setCustomData: (data: any) => void;
@@ -425,6 +429,7 @@ const RightPanelContext = createContext<RightPanelContextType | undefined>(undef
 
 export function RightPanelProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  // Closed by default; ChildDashboardLayout opens it for activity/studio pages.
   const [_isOpen, _setIsOpen] = useState(false);
   const [context, setContext] = useState<PanelContext>('default');
   const [activeTab, setActiveTab] = useState('ai-settings');
@@ -436,14 +441,18 @@ export function RightPanelProvider({ children }: { children: React.ReactNode }) 
     _setCustomData(data);
   }, []);
 
-  // Logged wrapper for setIsOpen to track all calls (dev-only to avoid console spam in production)
+  // Ref to track current _isOpen for dev logging without changing callback identity
+  const isOpenRef = React.useRef(_isOpen);
+  isOpenRef.current = _isOpen;
+
+  // Stable setIsOpen — identity never changes, preventing effect cascade re-runs
   const setIsOpen = React.useCallback((value: boolean | ((prev: boolean) => boolean)) => {
     if (process.env.NODE_ENV === 'development') {
-      const newValue = typeof value === 'function' ? value(_isOpen) : value;
-      console.log(`📍 [RightPanel] setIsOpen called: ${_isOpen} → ${newValue}`);
+      const newValue = typeof value === 'function' ? value(isOpenRef.current) : value;
+      console.log(`📍 [RightPanel] setIsOpen called: ${isOpenRef.current} → ${newValue}`);
     }
     _setIsOpen(value);
-  }, [_isOpen]);
+  }, []);
 
   const isOpen = _isOpen;
 
@@ -485,8 +494,8 @@ export function RightPanelProvider({ children }: { children: React.ReactNode }) 
       newContext = 'monitoring';
     } else if (path === '/child/home') {
       newContext = 'child-home';
-    } else if (path === '/child/chat') {
-      newContext = 'child-chat';
+    } else if (path === '/child/research') {
+      newContext = 'child-research';
     } else if (path === '/child/art-studio') {
       newContext = 'child-art';
     } else if (path === '/child/workspace') {
@@ -503,7 +512,7 @@ export function RightPanelProvider({ children }: { children: React.ReactNode }) 
       newContext = 'child-journal';
     } else if (path === '/child/pokemon-lab') {
       newContext = 'child-pokemon-lab';
-    } else if (path === '/child/learn' || path === '/child/learning-path' || path === '/child/teams') {
+    } else if (path === '/child/learn' || path === '/child/learning-path' || path === '/child/teams' || path === '/child/math-lab' || path === '/child/reading-lab' || path === '/child/science-lab') {
       newContext = 'child-learn';
     } else if (path === '/admin' || path === '/admin/index') {
       newContext = 'admin-dashboard';
@@ -517,8 +526,6 @@ export function RightPanelProvider({ children }: { children: React.ReactNode }) 
       newContext = 'admin-security';
     } else if (path === '/admin/family') {
       newContext = 'admin-family';
-    } else if (path === '/openclaw-chat') {
-      newContext = 'openclaw-chat';
     }
 
     // Only update if context actually changed
@@ -543,8 +550,8 @@ export function RightPanelProvider({ children }: { children: React.ReactNode }) 
   const config = PANEL_CONFIGS[context] || PANEL_CONFIGS['default'];
   const width = customWidth || config.width;
 
-  // Create context value directly (no memoization to ensure updates propagate)
-  const contextValue = {
+  // Memoized context value — prevents unnecessary consumer re-renders
+  const contextValue = React.useMemo(() => ({
     isOpen,
     setIsOpen,
     activeTab,
@@ -553,10 +560,11 @@ export function RightPanelProvider({ children }: { children: React.ReactNode }) 
     setContext,
     config,
     width,
+    hasCustomWidth: customWidth !== null,
     setWidth: setCustomWidth,
     customData,
     setCustomData,
-  };
+  }), [isOpen, setIsOpen, activeTab, setActiveTab, context, setContext, config, width, customWidth, setCustomData, customData]);
 
   return (
     <RightPanelContext.Provider value={contextValue}>
