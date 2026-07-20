@@ -53,6 +53,7 @@ interface ICloudStatus {
     connected: boolean;
     error?: string;
     provider: string;
+    accountEmail?: string;
     imapHost: string;
     imapPort: number;
     smtpHost: string;
@@ -486,6 +487,11 @@ export function ICloudSetupCard({ childId, childName }: ICloudSetupCardProps) {
                   <Text fontWeight="medium" fontSize="sm">Email</Text>
                   <Badge colorScheme="green" size="sm">Connected</Badge>
                 </HStack>
+                {status.email.accountEmail && (
+                  <Text fontSize="sm" color="gray.500">
+                    Account: {status.email.accountEmail}
+                  </Text>
+                )}
                 <Text fontSize="sm" color="gray.500">
                   IMAP: {status.email.imapHost}:{status.email.imapPort}
                 </Text>
