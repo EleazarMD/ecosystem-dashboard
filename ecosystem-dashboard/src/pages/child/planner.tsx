@@ -10,11 +10,12 @@
  * - Notion-inspired workspace integration
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   KNOWN_ACTIVITY_IDS,
   useActivityContext,
   createPlannerContextProvider,
+  getContextHub,
 } from '@/domains/learning/shared/activity-registry';
 import {
   Box,
@@ -80,6 +81,7 @@ import { useChildTheme } from '@/components/child/ChildThemeProvider';
 import { BackgroundContextMenu, getBackgroundStyles, BackgroundMode } from '@/components/child/BackgroundContextMenu';
 import { useRightPanel } from '@/contexts/RightPanelContext';
 import { StudentProgressProvider, useStudentProgress } from '@/contexts/StudentProgressContext';
+import { ChildCalendarView } from '@/components/child/ChildCalendarView';
 
 // Types
 interface PlannerItem {
@@ -138,6 +140,15 @@ const formatDate = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+// Normalize any date string (ISO, timestamp, or YYYY-MM-DD) to YYYY-MM-DD
+const normalizeDate = (raw: string): string => {
+  if (!raw) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  return formatDate(d);
+};
+
 const formatDisplayDate = (dateStr: string) => {
   const date = new Date(dateStr + 'T00:00:00');
   return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -157,7 +168,15 @@ function PlannerPageContent() {
   const { colors, childExtras } = useChildTheme();
 
   // Register Planner context provider with the Context Hub
-  const plannerStateRef = useRef({ childName: '' });
+  const plannerStateRef = useRef({
+    childName: '',
+    view: 'day' as 'day' | 'week' | 'tasks',
+    selectedDate: formatDate(new Date()),
+    taskCount: 0,
+    dueTaskTitle: '',
+    dueTaskOverdue: false,
+  });
+  const plannerContextHub = useMemo(() => getContextHub(), []);
   useActivityContext(KNOWN_ACTIVITY_IDS.PLANNER, () => createPlannerContextProvider(plannerStateRef));
   const { setContext, setIsOpen } = useRightPanel();
   const { progress } = useStudentProgress();
@@ -189,7 +208,26 @@ function PlannerPageContent() {
     priority: 'medium',
     completed: false,
   });
-  
+
+  // Sync live planner state into the Context Hub whenever it changes
+  useEffect(() => {
+    const today = formatDate(new Date());
+    const pendingItems = items.filter((i) => !i.completed);
+    const nextDue = pendingItems
+      .filter((i) => i.date >= today)
+      .sort((a, b) => (a.date > b.date ? 1 : -1))[0];
+
+    plannerStateRef.current = {
+      ...plannerStateRef.current,
+      view: activeView === 'calendar' ? 'day' : activeView === 'list' ? 'tasks' : 'day',
+      selectedDate,
+      taskCount: items.length,
+      dueTaskTitle: nextDue?.title || '',
+      dueTaskOverdue: nextDue ? nextDue.date < today : false,
+    };
+    plannerContextHub.notifyFrameUpdate(KNOWN_ACTIVITY_IDS.PLANNER);
+  }, [items, selectedDate, activeView, plannerContextHub]);
+
   // Theme
   const backgroundImages = childExtras?.decorations?.backgroundImages;
   const backgroundImage = backgroundImages?.default;
@@ -221,7 +259,7 @@ function PlannerPageContent() {
       const res = await fetch('/api/child/planner');
       if (res.ok) {
         const data = await res.json();
-        setItems(data.items || []);
+        setItems((data.items || []).map((item: PlannerItem) => ({ ...item, date: normalizeDate(item.date) })));
       }
     } catch (error) {
       console.error('Failed to fetch planner items:', error);
@@ -260,10 +298,11 @@ function PlannerPageContent() {
 
       if (res.ok) {
         const savedItem = await res.json();
+        const normalized = { ...savedItem, date: normalizeDate(savedItem.date) };
         if (editingItem) {
-          setItems(prev => prev.map(i => i.id === editingItem.id ? savedItem : i));
+          setItems(prev => prev.map(i => i.id === editingItem.id ? normalized : i));
         } else {
-          setItems(prev => [...prev, savedItem]);
+          setItems(prev => [...prev, normalized]);
         }
       } else {
         // Fallback for when API doesn't exist yet
@@ -630,7 +669,15 @@ function PlannerPageContent() {
                       Add
                     </Button>
                   </HStack>
-                  
+
+                  {/* iCloud Calendar Events for selected date */}
+                  <Box mb={3}>
+                    <ChildCalendarView selectedDate={selectedDate} />
+                  </Box>
+
+                  {/* Planner Tasks */}
+                  <Text fontSize="xs" fontWeight="medium" color="gray.500" mb={2}>MY TASKS</Text>
+
                   {selectedDateItems.length === 0 ? (
                     <Text color="gray.500" textAlign="center" py={4}>
                       Nothing planned for this day! 🎉
