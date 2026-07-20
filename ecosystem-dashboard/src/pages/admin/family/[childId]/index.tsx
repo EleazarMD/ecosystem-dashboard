@@ -57,6 +57,8 @@ import {
   FiUnlock,
   FiCalendar,
   FiStar,
+  FiBook,
+  FiCloud,
 } from 'react-icons/fi';
 import { useRouter } from 'next/router';
 import NextLink from 'next/link';
@@ -64,6 +66,8 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import { GlassPanel } from '@/components/ui/GlassPanel';
 import { useSemanticToken } from '@/hooks/useSemanticToken';
 import { ChildLearningDashboard } from '@/components/admin/ChildLearningDashboard';
+import LearningConfigCard from '@/components/family/LearningConfigCard';
+import { ICloudSetupCard } from '@/components/admin/ICloudSetupCard';
 import { useRightPanel } from '@/contexts/RightPanelContext';
 
 interface ChildDetails {
@@ -343,9 +347,11 @@ function ChildDetailPage() {
           <Tabs colorScheme="blue">
             <TabList>
               <Tab><HStack><FiStar /><Text>Companion AI</Text></HStack></Tab>
+              <Tab><HStack><FiBook /><Text>Learning</Text></HStack></Tab>
               <Tab><HStack><FiShield /><Text>Controls</Text></HStack></Tab>
               <Tab><HStack><FiActivity /><Text>Activity</Text></HStack></Tab>
               <Tab><HStack><FiCalendar /><Text>Schedule</Text></HStack></Tab>
+              <Tab><HStack><FiCloud /><Text>iCloud</Text></HStack></Tab>
             </TabList>
 
             <TabPanels>
@@ -356,6 +362,26 @@ function ChildDetailPage() {
                   childName={child.name}
                   childAge={age}
                 />
+              </TabPanel>
+
+              {/* Learning Settings Tab */}
+              <TabPanel px={0}>
+                <VStack spacing={6} align="stretch">
+                  <LearningConfigCard
+                    childId={childId as string}
+                    childName={child.name}
+                  />
+                  <Box mt={4}>
+                    <Button
+                      as={NextLink}
+                      href={`/admin/family/${childId}/learning`}
+                      variant="outline"
+                      leftIcon={<FiBook />}
+                    >
+                      View Full Learning Dashboard
+                    </Button>
+                  </Box>
+                </VStack>
               </TabPanel>
 
               {/* Controls Summary Tab */}
@@ -556,6 +582,13 @@ function ChildDetailPage() {
                     </HStack>
                   </VStack>
                 </GlassPanel>
+              </TabPanel>
+              {/* iCloud Setup Tab */}
+              <TabPanel px={0}>
+                <ICloudSetupCard
+                  childId={childId as string}
+                  childName={child.name}
+                />
               </TabPanel>
             </TabPanels>
           </Tabs>
