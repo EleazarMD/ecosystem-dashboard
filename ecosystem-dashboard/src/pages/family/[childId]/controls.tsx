@@ -291,7 +291,7 @@ function ControlsEditorPage() {
           </HStack>
 
           {/* Master Switch */}
-          <GlassPanel variant="light" p={5}>
+          <GlassPanel variant="light" bg="white" borderWidth="1px" borderColor="gray.300" boxShadow="md" p={5}>
             <HStack justify="space-between">
               <HStack spacing={3}>
                 <Icon as={FiLock} boxSize={6} color={controls.isActive ? 'green.500' : 'gray.400'} />
@@ -313,7 +313,7 @@ function ControlsEditorPage() {
 
           <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6}>
             {/* Content Filtering */}
-            <GlassPanel variant="light" p={5}>
+            <GlassPanel variant="light" bg="white" borderWidth="1px" borderColor="gray.300" boxShadow="md" p={5}>
               <VStack align="stretch" spacing={4}>
                 <HStack>
                   <Icon as={FiShield} color="blue.500" />
@@ -442,7 +442,7 @@ function ControlsEditorPage() {
             </GlassPanel>
 
             {/* Time Limits */}
-            <GlassPanel variant="light" p={5}>
+            <GlassPanel variant="light" bg="white" borderWidth="1px" borderColor="gray.300" boxShadow="md" p={5}>
               <VStack align="stretch" spacing={4}>
                 <HStack>
                   <Icon as={FiClock} color="purple.500" />
@@ -534,7 +534,7 @@ function ControlsEditorPage() {
             </GlassPanel>
 
             {/* Service Access */}
-            <GlassPanel variant="light" p={5}>
+            <GlassPanel variant="light" bg="white" borderWidth="1px" borderColor="gray.300" boxShadow="md" p={5}>
               <VStack align="stretch" spacing={4}>
                 <HStack>
                   <Icon as={FiCheckCircle} color="green.500" />
@@ -574,7 +574,7 @@ function ControlsEditorPage() {
             </GlassPanel>
 
             {/* Approval Requirements */}
-            <GlassPanel variant="light" p={5}>
+            <GlassPanel variant="light" bg="white" borderWidth="1px" borderColor="gray.300" boxShadow="md" p={5}>
               <VStack align="stretch" spacing={4}>
                 <HStack>
                   <Icon as={FiAlertTriangle} color="orange.500" />
@@ -617,7 +617,7 @@ function ControlsEditorPage() {
             </GlassPanel>
 
             {/* Monitoring & Notifications */}
-            <GlassPanel variant="light" p={5}>
+            <GlassPanel variant="light" bg="white" borderWidth="1px" borderColor="gray.300" boxShadow="md" p={5}>
               <VStack align="stretch" spacing={4}>
                 <HStack>
                   <Icon as={FiEye} color="cyan.500" />
@@ -650,7 +650,7 @@ function ControlsEditorPage() {
             </GlassPanel>
 
             {/* Notifications */}
-            <GlassPanel variant="light" p={5}>
+            <GlassPanel variant="light" bg="white" borderWidth="1px" borderColor="gray.300" boxShadow="md" p={5}>
               <VStack align="stretch" spacing={4}>
                 <HStack>
                   <Icon as={FiBell} color="yellow.500" />

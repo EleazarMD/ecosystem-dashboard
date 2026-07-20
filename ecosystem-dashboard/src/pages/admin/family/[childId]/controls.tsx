@@ -425,7 +425,7 @@ function ParentalControlsPage() {
           )}
 
           {/* Content Filtering */}
-          <GlassPanel variant="light" p={6}>
+          <GlassPanel variant="light" bg="white" borderWidth="1px" borderColor="gray.300" boxShadow="md" p={6}>
             <VStack align="stretch" spacing={5}>
               <HStack>
                 <Icon as={FiShield} color="blue.500" boxSize={5} />
@@ -495,7 +495,7 @@ function ParentalControlsPage() {
           </GlassPanel>
 
           {/* Time Limits */}
-          <GlassPanel variant="light" p={6}>
+          <GlassPanel variant="light" bg="white" borderWidth="1px" borderColor="gray.300" boxShadow="md" p={6}>
             <VStack align="stretch" spacing={5}>
               <HStack>
                 <Icon as={FiClock} color="purple.500" boxSize={5} />
@@ -589,7 +589,7 @@ function ParentalControlsPage() {
           </GlassPanel>
 
           {/* Service Access */}
-          <GlassPanel variant="light" p={6}>
+          <GlassPanel variant="light" bg="white" borderWidth="1px" borderColor="gray.300" boxShadow="md" p={6}>
             <VStack align="stretch" spacing={5}>
               <HStack>
                 <Icon as={FiLock} color="green.500" boxSize={5} />
@@ -628,7 +628,7 @@ function ParentalControlsPage() {
           </GlassPanel>
 
           {/* Approval Requirements */}
-          <GlassPanel variant="light" p={6}>
+          <GlassPanel variant="light" bg="white" borderWidth="1px" borderColor="gray.300" boxShadow="md" p={6}>
             <VStack align="stretch" spacing={5}>
               <HStack>
                 <Icon as={FiUnlock} color="orange.500" boxSize={5} />
@@ -689,7 +689,7 @@ function ParentalControlsPage() {
           </GlassPanel>
 
           {/* Monitoring Settings */}
-          <GlassPanel variant="light" p={6}>
+          <GlassPanel variant="light" bg="white" borderWidth="1px" borderColor="gray.300" boxShadow="md" p={6}>
             <VStack align="stretch" spacing={5}>
               <HStack>
                 <Icon as={FiShield} color="teal.500" boxSize={5} />
@@ -750,7 +750,7 @@ function ParentalControlsPage() {
           </GlassPanel>
 
           {/* Theme Customization Section */}
-          <GlassPanel p={6}>
+          <GlassPanel bg="white" borderWidth="1px" borderColor="gray.300" boxShadow="md" p={6}>
             <VStack align="stretch" spacing={4}>
               <HStack>
                 <Icon as={FiImage} color="purple.500" boxSize={5} />
