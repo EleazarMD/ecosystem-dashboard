@@ -42,7 +42,6 @@ import {
   FiTrash2,
   FiRefreshCw,
 } from 'react-icons/fi';
-import { GlassPanel } from '@/components/ui/GlassPanel';
 
 interface ICloudSetupCardProps {
   childId: string;
@@ -253,27 +252,40 @@ export function ICloudSetupCard({ childId, childName }: ICloudSetupCardProps) {
 
   if (loading) {
     return (
-      <GlassPanel variant="light" p={6}>
+      <Box bg="white" borderWidth="1px" borderColor="gray.300" borderRadius="xl" boxShadow="md" p={6}>
         <VStack spacing={3}>
           <Spinner size="lg" />
           <Text color="gray.500">Checking iCloud status for {childName}...</Text>
         </VStack>
-      </GlassPanel>
+      </Box>
     );
   }
 
   return (
     <VStack spacing={4} align="stretch">
       {/* Status Cards */}
-      <SimpleGridStatus
-        emailConnected={emailConnected}
-        calendarConnected={calendarConnected}
-        status={status}
-      />
+      <Box
+        display="grid"
+        gridTemplateColumns={{ base: '1fr', md: '1fr 1fr' }}
+        gap={4}
+      >
+        <StatusCard
+          icon={<FiMail />}
+          title="iCloud Email"
+          connected={emailConnected}
+          error={status?.email?.error}
+        />
+        <StatusCard
+          icon={<FiCalendar />}
+          title="iCloud Calendar"
+          connected={calendarConnected}
+          error={status?.calendar?.lastSyncStatus === 'failed' ? 'Last sync failed' : undefined}
+        />
+      </Box>
 
       {/* Provisioning Form (shown when not fully connected) */}
       {!anyConnected && (
-        <GlassPanel variant="light" p={5}>
+        <Box bg="white" borderWidth="1px" borderColor="gray.300" borderRadius="xl" boxShadow="md" p={5}>
           <VStack align="stretch" spacing={4}>
             <HStack>
               <Text fontSize="lg" fontWeight="semibold">Connect {childName}'s iCloud</Text>
@@ -367,12 +379,12 @@ export function ICloudSetupCard({ childId, childName }: ICloudSetupCardProps) {
               Connect iCloud
             </Button>
           </VStack>
-        </GlassPanel>
+        </Box>
       )}
 
       {/* Management Panel (shown when connected) */}
       {anyConnected && (
-        <GlassPanel variant="light" p={5}>
+        <Box bg="white" borderWidth="1px" borderColor="gray.300" borderRadius="xl" boxShadow="md" p={5}>
           <VStack align="stretch" spacing={4}>
             <HStack justify="space-between">
               <Text fontSize="lg" fontWeight="semibold">iCloud Management</Text>
@@ -422,33 +434,46 @@ export function ICloudSetupCard({ childId, childName }: ICloudSetupCardProps) {
                   </Text>
                 )}
                 {status.calendar.calendars.length > 0 && (
-                  <VStack align="start" spacing={1} mt={1} w="full">
-                    <Text fontSize="xs" color="gray.400">Synced Calendars — toggle child visibility:</Text>
-                    {status.calendar.calendars.map((cal) => (
-                      <HStack key={cal.id} spacing={3} w="full" justify="space-between" py={1}>
-                        <HStack spacing={2}>
-                          <Box
-                            w={3}
-                            h={3}
-                            borderRadius="full"
-                            bg={cal.color || '#3B82F6'}
-                          />
-                          <Text fontSize="sm">{cal.name}</Text>
+                  <Box
+                    mt={2}
+                    w="full"
+                    borderWidth="1px"
+                    borderColor="gray.200"
+                    borderRadius="md"
+                    bg="gray.50"
+                    p={3}
+                  >
+                    <Text fontSize="sm" fontWeight="medium" mb={2} color="gray.700">
+                      Synced Calendars — toggle child visibility:
+                    </Text>
+                    <VStack align="stretch" spacing={2}>
+                      {status.calendar.calendars.map((cal) => (
+                        <HStack key={cal.id} spacing={3} w="full" justify="space-between">
+                          <HStack spacing={2}>
+                            <Box
+                              w={3}
+                              h={3}
+                              borderRadius="full"
+                              bg={cal.color || '#3B82F6'}
+                              flexShrink={0}
+                            />
+                            <Text fontSize="sm" color="gray.800">{cal.name}</Text>
+                          </HStack>
+                          <HStack spacing={2}>
+                            <Text fontSize="xs" fontWeight="medium" color={cal.visible ? 'green.600' : 'gray.500'}>
+                              {cal.visible ? 'Visible' : 'Hidden'}
+                            </Text>
+                            <Switch
+                              size="md"
+                              colorScheme="green"
+                              isChecked={cal.visible ?? true}
+                              onChange={(e) => toggleCalendarVisibility(cal.id, e.target.checked)}
+                            />
+                          </HStack>
                         </HStack>
-                        <HStack spacing={2}>
-                          <Text fontSize="2xs" color={cal.visible ? 'green.500' : 'gray.400'}>
-                            {cal.visible ? 'Visible' : 'Hidden'}
-                          </Text>
-                          <Switch
-                            size="sm"
-                            colorScheme="green"
-                            isChecked={cal.visible ?? true}
-                            onChange={(e) => toggleCalendarVisibility(cal.id, e.target.checked)}
-                          />
-                        </HStack>
-                      </HStack>
-                    ))}
-                  </VStack>
+                      ))}
+                    </VStack>
+                  </Box>
                 )}
               </VStack>
             )}
@@ -511,80 +536,49 @@ export function ICloudSetupCard({ childId, childName }: ICloudSetupCardProps) {
               </VStack>
             </Collapse>
           </VStack>
-        </GlassPanel>
+        </Box>
       )}
     </VStack>
   );
 }
 
-// ─── Status Grid Component ─────────────────────────────────────────────────
+// ─── Status Card Component ─────────────────────────────────────────────────
 
-function SimpleGridStatus({
-  emailConnected,
-  calendarConnected,
-  status,
+function StatusCard({
+  icon,
+  title,
+  connected,
+  error,
 }: {
-  emailConnected: boolean;
-  calendarConnected: boolean;
-  status: ICloudStatus | null;
+  icon: React.ReactNode;
+  title: string;
+  connected: boolean;
+  error?: string;
 }) {
   return (
-    <Box
-      display="grid"
-      gridTemplateColumns={{ base: '1fr', md: '1fr 1fr' }}
-      gap={4}
-    >
-      {/* Email Status */}
-      <GlassPanel variant="light" p={4}>
-        <HStack justify="space-between">
-          <HStack spacing={2}>
-            <FiMail />
-            <Text fontWeight="medium" fontSize="sm">iCloud Email</Text>
-          </HStack>
-          {emailConnected ? (
-            <HStack spacing={1}>
-              <FiCheckCircle color="green" />
-              <Badge colorScheme="green" size="sm">Connected</Badge>
-            </HStack>
-          ) : (
-            <HStack spacing={1}>
-              <FiXCircle color="gray" />
-              <Badge colorScheme="gray" size="sm">Not Connected</Badge>
-            </HStack>
-          )}
+    <Box bg="white" borderWidth="1px" borderColor="gray.300" borderRadius="lg" boxShadow="sm" p={4}>
+      <HStack justify="space-between">
+        <HStack spacing={2}>
+          {icon}
+          <Text fontWeight="medium" fontSize="sm">{title}</Text>
         </HStack>
-        {status?.email?.error && (
-          <Text fontSize="xs" color="red.500" mt={2}>
-            {status.email.error}
-          </Text>
-        )}
-      </GlassPanel>
-
-      {/* Calendar Status */}
-      <GlassPanel variant="light" p={4}>
-        <HStack justify="space-between">
-          <HStack spacing={2}>
-            <FiCalendar />
-            <Text fontWeight="medium" fontSize="sm">iCloud Calendar</Text>
+        {connected ? (
+          <HStack spacing={1}>
+            <FiCheckCircle color="green" />
+            <Badge colorScheme="green" size="sm">Connected</Badge>
           </HStack>
-          {calendarConnected ? (
-            <HStack spacing={1}>
-              <FiCheckCircle color="green" />
-              <Badge colorScheme="green" size="sm">Connected</Badge>
-            </HStack>
-          ) : (
-            <HStack spacing={1}>
-              <FiXCircle color="gray" />
-              <Badge colorScheme="gray" size="sm">Not Connected</Badge>
-            </HStack>
-          )}
-        </HStack>
-        {status?.calendar?.lastSyncStatus === 'failed' && (
-          <Text fontSize="xs" color="red.500" mt={2}>
-            Last sync failed
-          </Text>
+        ) : (
+          <HStack spacing={1}>
+            <FiXCircle color="gray" />
+            <Badge colorScheme="gray" size="sm">Not Connected</Badge>
+          </HStack>
         )}
-      </GlassPanel>
+      </HStack>
+      {error && (
+        <Text fontSize="xs" color="red.500" mt={2}>
+          {error}
+        </Text>
+      )}
     </Box>
   );
 }
