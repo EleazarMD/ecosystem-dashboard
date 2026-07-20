@@ -55,10 +55,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return handleGetStatus(childId, res);
     case 'POST':
       return handleProvision(childId, guardianId, req.body, res);
+    case 'PUT':
+      return handleUpdate(childId, req.body, res);
     case 'DELETE':
       return handleDisconnect(childId, req.body, res);
     default:
-      res.setHeader('Allow', ['GET', 'POST', 'DELETE']);
+      res.setHeader('Allow', ['GET', 'POST', 'PUT', 'DELETE']);
       return res.status(405).json({ error: `Method ${req.method} not allowed` });
   }
 }
@@ -72,6 +74,26 @@ async function handleGetStatus(childId: string, res: NextApiResponse) {
     // Check calendar sync accounts
     const calendarAccounts = await getSyncAccounts(childId);
     const appleCalendarAccount = calendarAccounts.find(a => a.provider === 'apple_calendar');
+
+    // Get actual synced calendars for this child with visibility
+    let syncedCalendars: any[] = [];
+    try {
+      const calsResult = await dbPool.query(
+        `SELECT id, name, color, visibility, sync_enabled
+         FROM calendar.calendars
+         WHERE owner_id = $1 AND calendar_type = 'synced_apple' AND NOT archived
+         ORDER BY name`,
+        [childId],
+      );
+      syncedCalendars = calsResult.rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        color: row.color,
+        selected: row.sync_enabled,
+        visible: row.visibility === 'family' || row.visibility === 'public',
+        visibility: row.visibility,
+      }));
+    } catch { /* table may not exist or no rows */ }
 
     // Check CIG email enrollment
     let emailConnected = false;
@@ -114,7 +136,7 @@ async function handleGetStatus(childId: string, res: NextApiResponse) {
         accountEmail: appleCalendarAccount?.account_email,
         lastSyncAt: appleCalendarAccount?.last_sync_at,
         lastSyncStatus: appleCalendarAccount?.last_sync_status,
-        calendars: appleCalendarAccount?.discovered_calendars ?? [],
+        calendars: syncedCalendars.length > 0 ? syncedCalendars : (appleCalendarAccount?.discovered_calendars ?? []),
       },
     });
   } catch (error) {
@@ -278,6 +300,54 @@ async function handleProvision(
       : 'iCloud setup completed with some errors',
     results,
   });
+}
+
+// ============================================================================
+// PUT — Update iCloud settings (e.g. calendar visibility)
+// ============================================================================
+
+async function handleUpdate(
+  childId: string,
+  body: { action?: string; calendarId?: string; visible?: boolean },
+  res: NextApiResponse,
+) {
+  const { action = 'calendar-visibility', calendarId, visible } = body;
+
+  if (action === 'calendar-visibility') {
+    if (!calendarId || visible === undefined) {
+      return res.status(400).json({ error: 'calendarId and visible are required' });
+    }
+
+    try {
+      // Ensure the calendar belongs to the child
+      const calResult = await dbPool.query(
+        `SELECT id FROM calendar.calendars WHERE id = $1 AND owner_id = $2`,
+        [calendarId, childId],
+      );
+
+      if (calResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Calendar not found for this child' });
+      }
+
+      const visibility = visible ? 'family' : 'private';
+      await dbPool.query(
+        `UPDATE calendar.calendars SET visibility = $1, updated_at = NOW() WHERE id = $2`,
+        [visibility, calendarId],
+      );
+
+      return res.status(200).json({
+        success: true,
+        calendarId,
+        visible,
+        visibility,
+      });
+    } catch (error) {
+      console.error('[Child iCloud] Update visibility error:', error);
+      return res.status(500).json({ error: 'Failed to update calendar visibility' });
+    }
+  }
+
+  return res.status(400).json({ error: 'Unknown update action' });
 }
 
 // ============================================================================

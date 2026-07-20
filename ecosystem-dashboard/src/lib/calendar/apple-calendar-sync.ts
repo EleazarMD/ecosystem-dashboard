@@ -586,9 +586,9 @@ export class AppleCalendarSyncService {
     for (const cal of discoveredCalendars) {
       await pool.query(
         `INSERT INTO calendar.calendars (
-          owner_id, name, calendar_type, sync_enabled, sync_source,
+          owner_id, name, calendar_type, visibility, sync_enabled, sync_source,
           sync_account_id, sync_calendar_id, color
-        ) VALUES ($1, $2, 'synced_apple', true, 'apple_calendar', $3, $4, $5)
+        ) VALUES ($1, $2, 'synced_apple', 'family', true, 'apple_calendar', $3, $4, $5)
         ON CONFLICT DO NOTHING`,
         [params.owner_id, cal.name, result.rows[0].id, cal.id, cal.color || '#3B82F6']
       );

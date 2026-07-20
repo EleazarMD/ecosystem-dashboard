@@ -112,6 +112,7 @@ async function handleGetEvents(userId: string, req: NextApiRequest, res: NextApi
        WHERE c.owner_id = $1
          AND NOT e.archived
          AND NOT c.archived
+         AND c.visibility IN ('family', 'public')
          AND e.start_time >= $2
          AND e.start_time <= $3
          AND e.status != 'cancelled'

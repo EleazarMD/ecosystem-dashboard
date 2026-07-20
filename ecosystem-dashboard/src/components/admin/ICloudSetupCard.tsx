@@ -65,7 +65,7 @@ interface ICloudStatus {
     accountEmail?: string;
     lastSyncAt?: string;
     lastSyncStatus?: string;
-    calendars: Array<{ id: string; name: string; color?: string; selected: boolean }>;
+    calendars: Array<{ id: string; name: string; color?: string; selected: boolean; visible?: boolean; visibility?: string }>;
   };
 }
 
@@ -104,6 +104,52 @@ export function ICloudSetupCard({ childId, childName }: ICloudSetupCardProps) {
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
+
+  const toggleCalendarVisibility = async (calendarId: string, visible: boolean) => {
+    // Optimistic update
+    setStatus((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        calendar: {
+          ...prev.calendar,
+          calendars: prev.calendar.calendars.map((cal) =>
+            cal.id === calendarId ? { ...cal, visible, visibility: visible ? 'family' : 'private' } : cal,
+          ),
+        },
+      };
+    });
+
+    try {
+      const res = await fetch(`/api/admin/children/${childId}/icloud`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'calendar-visibility',
+          calendarId,
+          visible,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to update visibility');
+      }
+
+      toast({
+        title: visible ? 'Calendar visible to child' : 'Calendar hidden from child',
+        status: 'success',
+        duration: 2000,
+      });
+    } catch {
+      // Revert on error
+      await fetchStatus();
+      toast({
+        title: 'Could not update visibility',
+        status: 'error',
+        duration: 3000,
+      });
+    }
+  };
 
   const handleProvision = async () => {
     if (!icloudEmail || !appPassword) {
@@ -376,17 +422,30 @@ export function ICloudSetupCard({ childId, childName }: ICloudSetupCardProps) {
                   </Text>
                 )}
                 {status.calendar.calendars.length > 0 && (
-                  <VStack align="start" spacing={1} mt={1}>
-                    <Text fontSize="xs" color="gray.400">Synced Calendars:</Text>
+                  <VStack align="start" spacing={1} mt={1} w="full">
+                    <Text fontSize="xs" color="gray.400">Synced Calendars — toggle child visibility:</Text>
                     {status.calendar.calendars.map((cal) => (
-                      <HStack key={cal.id} spacing={2}>
-                        <Box
-                          w={3}
-                          h={3}
-                          borderRadius="full"
-                          bg={cal.color || '#3B82F6'}
-                        />
-                        <Text fontSize="sm">{cal.name}</Text>
+                      <HStack key={cal.id} spacing={3} w="full" justify="space-between" py={1}>
+                        <HStack spacing={2}>
+                          <Box
+                            w={3}
+                            h={3}
+                            borderRadius="full"
+                            bg={cal.color || '#3B82F6'}
+                          />
+                          <Text fontSize="sm">{cal.name}</Text>
+                        </HStack>
+                        <HStack spacing={2}>
+                          <Text fontSize="2xs" color={cal.visible ? 'green.500' : 'gray.400'}>
+                            {cal.visible ? 'Visible' : 'Hidden'}
+                          </Text>
+                          <Switch
+                            size="sm"
+                            colorScheme="green"
+                            isChecked={cal.visible ?? true}
+                            onChange={(e) => toggleCalendarVisibility(cal.id, e.target.checked)}
+                          />
+                        </HStack>
                       </HStack>
                     ))}
                   </VStack>
