@@ -26,7 +26,7 @@ import {
   Badge,
   Divider,
 } from '@chakra-ui/react';
-import { FiArrowLeft, FiClock, FiMail, FiSend, FiEdit2, FiCheck } from 'react-icons/fi';
+import { FiArrowLeft, FiClock, FiMail, FiSend, FiEdit2, FiCheck, FiInbox } from 'react-icons/fi';
 import { GetServerSideProps } from 'next';
 import { getServerSession } from 'next-auth';
 import { useRouter } from 'next/router';
@@ -35,6 +35,7 @@ import ChildDashboardLayout from '@/components/layout/ChildDashboardLayout';
 import { useChildTheme } from '@/components/child/ChildThemeProvider';
 import { BackgroundContextMenu, getBackgroundStyles, BackgroundMode } from '@/components/child/BackgroundContextMenu';
 import { useRightPanel } from '@/contexts/RightPanelContext';
+import { ChildInbox } from '@/components/child/ChildInbox';
 
 const EMAIL_TEMPLATES = [
   { emoji: '👩‍🏫', text: 'Write to my teacher', recipient: 'my teacher' },
@@ -68,6 +69,7 @@ function EmailPageContent() {
   const [loading, setLoading] = useState(false);
   const [usageMinutes, setUsageMinutes] = useState(0);
   const [limitMinutes, setLimitMinutes] = useState(120);
+  const [viewMode, setViewMode] = useState<'inbox' | 'write'>('inbox');
 
   const backgroundImages = childExtras?.decorations?.backgroundImages;
   const backgroundImage = backgroundImages?.email || backgroundImages?.default;
@@ -233,6 +235,38 @@ function EmailPageContent() {
               </HStack>
             </HStack>
 
+            {/* View Toggle */}
+            <HStack spacing={2} bg="white" borderRadius="full" p={1} boxShadow="md">
+              <Button
+                size="sm"
+                variant={viewMode === 'inbox' ? 'solid' : 'ghost'}
+                colorScheme={viewMode === 'inbox' ? 'green' : 'gray'}
+                borderRadius="full"
+                leftIcon={<FiInbox />}
+                onClick={() => setViewMode('inbox')}
+              >
+                Inbox
+              </Button>
+              <Button
+                size="sm"
+                variant={viewMode === 'write' ? 'solid' : 'ghost'}
+                colorScheme={viewMode === 'write' ? 'green' : 'gray'}
+                borderRadius="full"
+                leftIcon={<FiEdit2 />}
+                onClick={() => setViewMode('write')}
+              >
+                Write
+              </Button>
+            </HStack>
+
+            {/* Inbox View */}
+            {viewMode === 'inbox' && (
+              <ChildInbox />
+            )}
+
+            {/* Write View */}
+            {viewMode === 'write' && (
+              <>
             {/* Quick Templates */}
             <Box bg="white" borderRadius="2xl" p={4} boxShadow="lg">
               <Text fontWeight="bold" mb={3}>Quick Start ✨</Text>
@@ -390,6 +424,8 @@ function EmailPageContent() {
                 )}
               </Box>
             </SimpleGrid>
+            </>
+            )}
           </VStack>
         </Container>
         </Box>
