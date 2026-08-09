@@ -5,6 +5,9 @@ const APPROVAL_SERVICE_URL =
 const PI_WORKSPACE_URL =
   process.env.PI_WORKSPACE_URL || 'http://127.0.0.1:8762';
 
+const PCG_URL =
+  process.env.PCG_URL || 'http://127.0.0.1:8765';
+
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
@@ -37,8 +40,23 @@ const nextConfig = {
         { source: '/api/notifications/:path*',   destination: `${APPROVAL_SERVICE_URL}/api/notifications/:path*` },
         // Proxy Pi Workspace socket.io traffic
         { source: '/socket.io/:path*',           destination: `${PI_WORKSPACE_URL}/socket.io/:path*` },
+        // Proxy PCG (Personal Context Graph) API
+        { source: '/api/pcg/:path*',             destination: `${PCG_URL}/api/:path*` },
+        { source: '/api/kg/:path*',              destination: `${PCG_URL}/api/kg/:path*` },
+        { source: '/api/liam/:path*',            destination: `${PCG_URL}/api/liam/:path*` },
       ],
     };
+  },
+
+  async headers() {
+    return [
+      {
+        source: '/audio/tts-cache/:file*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=2592000, immutable' },
+        ],
+      },
+    ];
   },
 
   webpack: (config, { isServer }) => {
