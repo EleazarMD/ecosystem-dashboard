@@ -236,13 +236,13 @@ function InterventionsTab() {
 
   const fetchInterventions = useCallback(async () => {
     setLoading(true);
-    // IDE workflow memory is local — this would need a PiCode API bridge.
-    // For now, show the PCG workflow run history as a proxy.
+    // Uses the PCG intervention bridge endpoint that receives records
+    // from the IDE's IWorkflowMemoryService via fire-and-forget sync.
     try {
-      const res = await fetch(`${PCG_API}/workflow-run`);
+      const res = await fetch(`${PCG_API}/interventions?limit=50`);
       if (!res.ok) throw new Error();
       const data = await res.json();
-      setInterventions(Array.isArray(data) ? data : data.runs ?? []);
+      setInterventions(data.interventions ?? []);
     } catch {
       setInterventions([]);
     } finally {
@@ -265,20 +265,21 @@ function InterventionsTab() {
       <Alert status="info" variant="left-accent">
         <AlertIcon />
         <Box>
-          <Text fontSize="sm">The Intervention Ledger is stored locally in the IDE via IWorkflowMemoryService.</Text>
-          <Text fontSize="xs" color="gray.500">A PiCode API bridge is needed to surface interventions here. Workflow runs from PCG are shown below as a proxy.</Text>
+          <Text fontSize="sm">Interventions are synced from the IDE via the PCG intervention bridge.</Text>
+          <Text fontSize="xs" color="gray.500">The IDE remains the SSOT — this is a best-effort projection for cross-surface visibility.</Text>
         </Box>
       </Alert>
       <TableContainer>
         <Table size="sm">
-          <Thead><Tr><Th>Run ID</Th><Th>Workflow</Th><Th>Status</Th><Th>Started</Th></Tr></Thead>
+          <Thead><Tr><Th>Tag</Th><Th>Workflow</Th><Th>Origin</Th><Th>Model</Th><Th>Created</Th></Tr></Thead>
           <Tbody>
             {interventions.map((r: any, i: number) => (
               <Tr key={i}>
-                <Td><Code fontSize="xs">{r.run_id ?? r.id}</Code></Td>
-                <Td>{r.workflow_name ?? r.workflow ?? '—'}</Td>
-                <Td><Badge fontSize="xs" colorScheme={r.status === 'completed' ? 'green' : r.status === 'failed' ? 'red' : 'blue'}>{r.status}</Badge></Td>
-                <Td fontSize="xs">{r.started_at ? new Date(r.started_at).toLocaleString() : '—'}</Td>
+                <Td><Badge fontSize="xs" colorScheme="red">{r.tag ?? '—'}</Badge></Td>
+                <Td><Code fontSize="xs">{r.workflow_id ?? r.workflowId ?? '—'}</Code></Td>
+                <Td><Badge fontSize="xs">{r.origin ?? 'user_override'}</Badge></Td>
+                <Td fontSize="xs">{r.model_id ?? r.modelId ?? '—'}</Td>
+                <Td fontSize="xs">{r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</Td>
               </Tr>
             ))}
           </Tbody>
