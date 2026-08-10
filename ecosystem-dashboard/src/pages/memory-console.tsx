@@ -26,14 +26,23 @@ import {
   FiDatabase, FiBrain, FiActivity, FiSearch, FiLayers,
 } from 'react-icons/fi';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+
+// Known users for the user selector (from PCG _USER_BOLT_URIS)
+const KNOWN_USERS = [
+  { id: 'dfd9379f-a9cd-4241-99e7-140f5e89e3cd', name: 'Eleazar' },
+  { id: '096f1fe3-16b3-4642-a1d9-2a11bf3843dd', name: 'Claudia' },
+  { id: 'bcb80071-81a4-4e4e-aff2-fe96d6702b08', name: 'Luca' },
+  { id: '40c2f03c-60b7-4344-b215-dbbcf565f9a5', name: 'Sofia' },
+];
+const DEFAULT_USER_ID = KNOWN_USERS[0].id;
 import { GlassPanel } from '@/components/ui/GlassPanel';
 
-const PCG_API = '/api/pcg';
+const PCG_API = "/api/pcg";
 const KG_API = '/api/kg';
 
 // ─── Overview Tab ───────────────────────────────────────────────────
 
-function OverviewTab() {
+function OverviewTab({ userId = DEFAULT_USER_ID }: { userId?: string }) {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const toast = useToast();
@@ -41,7 +50,7 @@ function OverviewTab() {
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${KG_API}/stats`);
+      const res = await fetch(`/api/kg/stats`);
       const data = await res.json();
       setStats(data);
     } catch (e) {
@@ -80,7 +89,7 @@ function OverviewTab() {
         <Button leftIcon={<FiRefreshCw />} onClick={fetchStats} size="sm">Refresh</Button>
         <Button colorScheme="blue" size="sm" onClick={async () => {
           try {
-            await fetch(`${KG_API}/communities/build`, { method: 'POST' });
+            await fetch(`/api/kg/communities/build`, { method: 'POST' });
             toast({ title: 'Community detection triggered', status: 'success', duration: 3000 });
             setTimeout(fetchStats, 5000);
           } catch {
@@ -108,7 +117,7 @@ function StatCard({ label, value, icon: Icon }: any) {
 
 // ─── Preferences Tab ────────────────────────────────────────────────
 
-function PreferencesTab() {
+function PreferencesTab({ userId = DEFAULT_USER_ID }: { userId?: string }) {
   const [prefs, setPrefs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const toast = useToast();
@@ -116,7 +125,7 @@ function PreferencesTab() {
   const fetchPrefs = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${PCG_API}/preferences`, {
+      const res = await fetch(`${PCG_API}/pic/preferences?userId=${userId}`, {
         headers: { 'X-PIC-Read-Key': process.env.NEXT_PUBLIC_PIC_READ_KEY || '' },
       });
       if (!res.ok) throw new Error();
@@ -167,14 +176,14 @@ function PreferencesTab() {
 
 // ─── Observations Tab ───────────────────────────────────────────────
 
-function ObservationsTab() {
+function ObservationsTab({ userId = DEFAULT_USER_ID }: { userId?: string }) {
   const [obs, setObs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchObs = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${PCG_API}/learn`, {
+      const res = await fetch(`${PCG_API}/pic/learn?userId=${userId}`, {
         headers: { 'X-PIC-Read-Key': process.env.NEXT_PUBLIC_PIC_READ_KEY || '' },
       });
       if (!res.ok) throw new Error();
@@ -230,7 +239,7 @@ function ObservationsTab() {
 
 // ─── Interventions Tab ──────────────────────────────────────────────
 
-function InterventionsTab() {
+function InterventionsTab({ userId = DEFAULT_USER_ID }: { userId?: string }) {
   const [interventions, setInterventions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -239,7 +248,7 @@ function InterventionsTab() {
     // Uses the PCG intervention bridge endpoint that receives records
     // from the IDE's IWorkflowMemoryService via fire-and-forget sync.
     try {
-      const res = await fetch(`${PCG_API}/interventions?limit=50`);
+      const res = await fetch(`${PCG_API}/pcg/interventions?limit=50&userId=${userId}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
       setInterventions(data.interventions ?? []);
@@ -291,7 +300,7 @@ function InterventionsTab() {
 
 // ─── Consolidation Tab ──────────────────────────────────────────────
 
-function ConsolidationTab() {
+function ConsolidationTab({ userId = DEFAULT_USER_ID }: { userId?: string }) {
   const [insights, setInsights] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState(false);
@@ -300,7 +309,7 @@ function ConsolidationTab() {
   const fetchInsights = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${PCG_API}/insights/recent?limit=20`);
+      const res = await fetch(`${PCG_API}/pcg/insights/recent?limit=20&userId=${userId}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
       setInsights(Array.isArray(data) ? data : data.insights ?? []);
@@ -316,7 +325,7 @@ function ConsolidationTab() {
   const triggerConsolidation = async () => {
     setTriggering(true);
     try {
-      const res = await fetch(`${PCG_API}/consolidate`, { method: 'POST' });
+      const res = await fetch(`${PCG_API}/pcg/consolidate?userId=${userId}`, { method: 'POST' });
       if (res.ok) {
         toast({ title: 'Consolidation triggered', status: 'success', duration: 3000 });
         setTimeout(fetchInsights, 5000);
@@ -371,7 +380,7 @@ function ConsolidationTab() {
 
 // ─── Retrieval Debug Tab ────────────────────────────────────────────
 
-function RetrievalDebugTab() {
+function RetrievalDebugTab({ userId = DEFAULT_USER_ID }: { userId?: string }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any>(null);
   const [searching, setSearching] = useState(false);
@@ -380,7 +389,7 @@ function RetrievalDebugTab() {
     if (!query.trim()) return;
     setSearching(true);
     try {
-      const res = await fetch(`${KG_API}/search`, {
+      const res = await fetch(`/api/kg/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, limit: 10 }),
@@ -435,6 +444,9 @@ function RetrievalDebugTab() {
 // ─── Main Page ──────────────────────────────────────────────────────
 
 export default function MemoryConsolePage() {
+  const [userId, setUserId] = useState(DEFAULT_USER_ID);
+  const userName = KNOWN_USERS.find(u => u.id === userId)?.name || userId.slice(0, 8);
+
   return (
     <DashboardLayout>
       <Container maxW="container.xl" py={6}>
@@ -443,9 +455,23 @@ export default function MemoryConsolePage() {
             <FiBrain size={28} />
             <Heading size="lg">Memory Console</Heading>
             <Badge colorScheme="blue" fontSize="sm">PCG :8765</Badge>
+            <Spacer />
+            <HStack>
+              <Text fontSize="sm" color="gray.500">User:</Text>
+              <Select
+                size="sm"
+                width="150px"
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
+              >
+                {KNOWN_USERS.map(u => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </Select>
+            </HStack>
           </HStack>
           <Text color="gray.500" fontSize="sm">
-            Unified agentic memory management — graph, preferences, observations, interventions, consolidation, and retrieval debugging.
+            Unified agentic memory management for {userName} — graph, preferences, observations, interventions, consolidation, and retrieval debugging.
           </Text>
           <Divider />
           <Tabs variant="enclosed" colorScheme="blue">
@@ -459,13 +485,13 @@ export default function MemoryConsolePage() {
               <Tab><HStack><FiSearch /><Text>Retrieval Debug</Text></HStack></Tab>
             </TabList>
             <TabPanels>
-              <TabPanel><OverviewTab /></TabPanel>
+              <TabPanel><OverviewTab userId={userId} /></TabPanel>
               <TabPanel><Text color="gray.500">Use the full <Code>knowledge-graph-unified</Code> page for graph visualization.</Text></TabPanel>
-              <TabPanel><PreferencesTab /></TabPanel>
-              <TabPanel><ObservationsTab /></TabPanel>
-              <TabPanel><InterventionsTab /></TabPanel>
-              <TabPanel><ConsolidationTab /></TabPanel>
-              <TabPanel><RetrievalDebugTab /></TabPanel>
+              <TabPanel><PreferencesTab userId={userId} /></TabPanel>
+              <TabPanel><ObservationsTab userId={userId} /></TabPanel>
+              <TabPanel><InterventionsTab userId={userId} /></TabPanel>
+              <TabPanel><ConsolidationTab userId={userId} /></TabPanel>
+              <TabPanel><RetrievalDebugTab userId={userId} /></TabPanel>
             </TabPanels>
           </Tabs>
         </VStack>

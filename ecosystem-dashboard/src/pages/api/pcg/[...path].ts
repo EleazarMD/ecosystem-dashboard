@@ -1,17 +1,20 @@
 /**
- * PCG API Proxy
- * 
- * Proxies requests from the dashboard to the Personal Context Graph service.
- * This avoids CORS issues and provides a consistent API surface.
+ * PCG API Proxy — routes dashboard requests to the main Personal Context
+ * Graph service (:8765) with PIC auth headers + X-User-Id for per-user
+ * routing.
+ *
+ * The dashboard calls /api/pcg/<path> and /api/kg/<path>.
+ * These map to PCG's /api/pcg/<path> and /api/kg/<path> respectively.
+ * For /api/pic/<path> endpoints (identity, preferences, goals, observations),
+ * the dashboard should call /api/pcg/pic/<path> which maps to /api/pic/<path>.
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-const KIDS_PCG_BASE_URL = process.env.KIDS_PCG_URL || 'http://127.0.0.1:8771';
-const KIDS_PCG_API_PREFIX = process.env.KIDS_PCG_API_PREFIX || '/api/pcg';
-const KIDS_PCG_READ_KEY = process.env.KIDS_PCG_READ_KEY || '';
-const KIDS_PCG_ADMIN_KEY = process.env.KIDS_PCG_ADMIN_KEY || '';
-const KIDS_PCG_DEFAULT_OWNER_ID = process.env.KIDS_PCG_DEFAULT_OWNER_ID || '';
+const PCG_BASE_URL = process.env.PCG_URL || 'http://localhost:8765';
+const PIC_READ_KEY = process.env.PIC_READ_KEY || 'pic-read-O-1b4i12nR9gr3kzookTYGZ7NTA_nhSF';
+const PIC_ADMIN_KEY = process.env.PIC_ADMIN_KEY || 'pic-admin-nee9oPtIqFwRUaj5vm96A8LEwMkYtUFU';
+const DEFAULT_USER_ID = process.env.DEFAULT_USER_ID || 'dfd9379f-a9cd-4241-99e7-140f5e89e3cd';
 
 export default async function handler(
   req: NextApiRequest,
@@ -20,49 +23,64 @@ export default async function handler(
   const { path } = req.query;
   const pathString = Array.isArray(path) ? path.join('/') : path || '';
 
-  const ownerHeader = req.headers['x-pcg-owner-id'];
-  const ownerId =
-    (Array.isArray(ownerHeader) ? ownerHeader[0] : ownerHeader) ||
-    KIDS_PCG_DEFAULT_OWNER_ID;
-
-  if (!ownerId) {
-    return res.status(400).json({
-      error: 'Missing owner id (x-pcg-owner-id) and KIDS_PCG_DEFAULT_OWNER_ID is not set',
-    });
-  }
+  // Extract user_id from header or query, fall back to default
+  const userId = (req.headers['x-user-id'] as string) ||
+    (req.query.userId as string) ||
+    DEFAULT_USER_ID;
 
   const query = { ...req.query };
   delete query.path;
+  delete query.userId;
   const queryString = new URLSearchParams(query as Record<string, string>).toString();
-  const targetUrl = `${KIDS_PCG_BASE_URL}${KIDS_PCG_API_PREFIX}/${pathString}${queryString ? `?${queryString}` : ''}`;
+
+  // The dashboard path is /api/pcg/<path> — map to PCG's /api/<path>
+  // Special case: /api/pcg/pic/<path> → /api/pic/<path> (for identity/preferences/etc)
+  // Special case: /api/pcg/pcg/<path> → /api/pcg/<path> (for exomind/insights/etc)
+  // Special case: /api/pcg/kg/<path> → /api/kg/<path> (for graph stats)
+  let pcgPath: string;
+  if (pathString.startsWith('pic/')) {
+    pcgPath = `/api/${pathString}`;
+  } else if (pathString.startsWith('pcg/')) {
+    pcgPath = `/api/${pathString}`;
+  } else if (pathString.startsWith('kg/')) {
+    pcgPath = `/api/${pathString}`;
+  } else {
+    // Default: treat as /api/pcg/<path>
+    pcgPath = `/api/pcg/${pathString}`;
+  }
+
+  const targetUrl = `${PCG_BASE_URL}${pcgPath}${queryString ? `?${queryString}` : ''}`;
 
   const isWriteOperation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method || 'GET');
-  const pcgKey = isWriteOperation ? KIDS_PCG_ADMIN_KEY : KIDS_PCG_READ_KEY;
+  const isKgRoute = pathString.startsWith('kg/');
 
-  if (!pcgKey) {
-    return res.status(500).json({
-      error: `Missing ${isWriteOperation ? 'KIDS_PCG_ADMIN_KEY' : 'KIDS_PCG_READ_KEY'} in server environment`,
-    });
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (!isKgRoute) {
+    headers['X-PIC-Read-Key'] = PIC_READ_KEY;
+    headers['X-User-Id'] = userId;
+    if (isWriteOperation) {
+      headers['X-PIC-Admin-Key'] = PIC_ADMIN_KEY;
+    }
   }
 
   try {
     const response = await fetch(targetUrl, {
       method: req.method,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-PCG-Key': pcgKey,
-        'X-PCG-Owner-Id': ownerId,
-        ...(req.headers['user-agent'] && { 'User-Agent': req.headers['user-agent'] as string }),
-      },
-      ...(req.body && { body: JSON.stringify(req.body) }),
+      headers,
+      ...(req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0 && { body: JSON.stringify(req.body) }),
     });
 
     const contentType = response.headers.get('content-type') || '';
-    const data = contentType.includes('application/json')
-      ? await response.json()
-      : { raw: await response.text() };
-
-    res.status(response.status).json(data);
+    if (contentType.includes('application/json')) {
+      const data = await response.json();
+      res.status(response.status).json(data);
+    } else {
+      const text = await response.text();
+      res.status(response.status).send(text);
+    }
   } catch (error) {
     console.error('PCG proxy error:', error);
     res.status(500).json({
