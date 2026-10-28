@@ -12,12 +12,19 @@
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { requireLessonAdult, requireLessonAdmin, canAssignChild } from '@/lib/platform/lesson-access';
 import { agentRegistry, type ModelProviderConfig, type TaskBinding } from '@/lib/kids-pic/AgentRegistry';
 import type { AgentId, TaskType } from '@/lib/kids-pic/LessonLifecycleService';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { method, query, body } = req;
   const action = (query.action as string) || (method === 'GET' ? 'list' : '');
+
+  const auth = await requireLessonAdult(req, res);
+  if (!auth) return;
+  if (method === 'POST' && !auth.isAdmin) {
+    return res.status(403).json({ error: 'Admin account required' });
+  }
 
   try {
     // ── GET: list providers and bindings ───────────────────────────────────

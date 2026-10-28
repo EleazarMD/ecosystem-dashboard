@@ -24,6 +24,7 @@
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { Pool } from 'pg';
+import { requireLessonAdult, requireLessonAdmin, canAssignChild } from '@/lib/platform/lesson-access';
 import {
   LessonLifecycleService,
   CreateLessonInput,
@@ -45,6 +46,9 @@ const service = new LessonLifecycleService(pool);
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { method, query, body } = req;
+
+  const auth = await requireLessonAdult(req, res);
+  if (!auth) return;
 
   try {
     // ── POST /api/learn/lessons → create lesson ──────────────────────────
@@ -129,7 +133,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // ── POST /api/learn/lessons/:id/publish ──────────────────────────────
     if (method === 'POST' && query.action === 'publish') {
-      const published = await service.publishLesson(lessonId, body.publishedBy);
+      if (!auth.isAdmin) return res.status(403).json({ error: 'Admin account required' });
+      const published = await service.publishLesson(lessonId, auth.userId);
       if (!published) return res.status(400).json({ error: 'Lesson must be in approved state to publish' });
       return res.status(200).json(published);
     }
@@ -230,14 +235,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // ── POST /api/learn/lessons/:id/assign → assign to child ─────────────
     if (method === 'POST' && query.action === 'assign') {
-      if (!body.childUserId || !body.assignedBy) {
-        return res.status(400).json({ error: 'childUserId and assignedBy are required' });
+      if (!body.childUserId) {
+        return res.status(400).json({ error: 'childUserId is required' });
       }
+      if (!(await canAssignChild(auth, body.childUserId))) {
+        return res.status(403).json({ error: 'Not allowed to assign to this child' });
+      }
+      const assignedBy = auth.userId;
 
       const assignment = await service.assignLessonToChild(
         lessonId,
         body.childUserId,
-        body.assignedBy,
+        assignedBy,
         body.dueDate,
         body.priority
       );

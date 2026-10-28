@@ -12,6 +12,7 @@
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { Pool } from 'pg';
+import { requireLessonAdult, requireLessonAdmin, canAssignChild } from '@/lib/platform/lesson-access';
 import { AgentDispatchOrchestrator } from '@/lib/kids-pic/AgentDispatchOrchestrator';
 import type { LessonDesignSpec } from '@/lib/kids-pic/LessonLifecycleService';
 
@@ -24,6 +25,9 @@ const orchestrator = new AgentDispatchOrchestrator(pool);
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { method, query, body } = req;
   const action = query.action as string;
+
+  const auth = await requireLessonAdult(req, res);
+  if (!auth) return;
 
   try {
     // ── GET routes ─────────────────────────────────────────────────────────
@@ -94,9 +98,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (action === 'publish') {
+      if (!auth.isAdmin) return res.status(403).json({ error: 'Admin account required' });
       if (!body.lessonId) return res.status(400).json({ error: 'lessonId is required' });
-      if (!body.publishedBy) return res.status(400).json({ error: 'publishedBy is required' });
-      const lesson = await orchestrator.publishLesson(body.lessonId, body.publishedBy);
+      const lesson = await orchestrator.publishLesson(body.lessonId, auth.userId);
       if (!lesson) return res.status(400).json({ error: 'Failed to publish lesson' });
       return res.status(200).json(lesson);
     }

@@ -14,6 +14,7 @@ import { LessonLifecycleService } from '@/lib/kids-pic/LessonLifecycleService';
 import { AgentDispatchOrchestrator } from '@/lib/kids-pic/AgentDispatchOrchestrator';
 import { executeTask } from '@/lib/kids-pic/AgentExecutionAdapters';
 
+import { requireLessonAdult } from '@/lib/platform/lesson-access';
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
@@ -25,6 +26,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  const auth = await requireLessonAdult(req, res);
+  if (!auth) return;
 
   const { taskId } = req.body;
   if (!taskId) {

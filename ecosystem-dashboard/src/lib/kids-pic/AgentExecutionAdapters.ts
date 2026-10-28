@@ -18,7 +18,9 @@ import { AGENT_LABELS, type AgentId, type TaskType, type LessonDesignSpec } from
 
 const AI_GATEWAY_URL = process.env.AI_GATEWAY_URL || 'http://localhost:8777';
 const AI_GATEWAY_API_KEY = process.env.AI_GATEWAY_API_KEY || 'ai-gateway-api-key-2024';
-const CHILD_SAFETY_API_KEY = process.env.CHILD_SAFETY_API_KEY || 'child-safety-key';
+// Child-safe gateway calls need the rotated child-safety key (Infisical
+// /kids-dashboard). No source default — a missing key fails closed below.
+const CHILD_SAFETY_API_KEY = process.env.CHILD_SAFETY_API_KEY || '';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -120,6 +122,11 @@ async function callGateway(params: GatewayCallParams): Promise<{
 
   if (!model) {
     throw new Error(`No model configured for agent ${agentId} (task: ${params.taskType})`);
+  }
+
+  if (!authKey) {
+    throw new Error(
+      `No gateway API key for ${isChildSafe ? 'child-safe' : 'authoring'} call (task: ${params.taskType}) — set CHILD_SAFETY_API_KEY`);
   }
 
   const body: Record<string, any> = {
@@ -528,7 +535,7 @@ const adapters: Partial<Record<TaskType, { agentId: AgentId; execute: AdapterFn 
   },
 
   generate_audio: {
-    agentId: 'minimax-m3', // LOCKED: must use child-safe TTS model (registry enforces)
+    agentId: 'glm-5.2', // LOCKED: must use child-safe TTS model (registry enforces)
     execute: async (input: TaskInput): Promise<TaskOutput> => {
       const { system, user } = buildGenerateAudioPrompt(input);
       const result = await callGateway({

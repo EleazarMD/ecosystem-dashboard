@@ -8,6 +8,7 @@
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { Pool } from 'pg';
+import { requireLessonAdult } from '@/lib/platform/lesson-access';
 import { LessonLifecycleService } from '@/lib/kids-pic/LessonLifecycleService';
 
 const pool = new Pool({
@@ -18,6 +19,9 @@ const service = new LessonLifecycleService(pool);
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { method, query, body } = req;
+
+  const auth = await requireLessonAdult(req, res);
+  if (!auth) return;
   const taskId = query.taskId as string;
 
   if (!taskId) {

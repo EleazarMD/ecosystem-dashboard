@@ -36,11 +36,12 @@ import {
   type CreateStepInput,
 } from './LessonLifecycleService';
 import { agentRegistry } from './AgentRegistry';
+import { getVisionModelId } from '@/lib/vision/vision-model-config';
+import { getChildChatModel } from '@/lib/llm-model-config';
 
 // ─── Gateway model mapping ──────────────────────────────────────────────────
 
 const AI_GATEWAY_URL = process.env.AI_GATEWAY_URL || 'http://localhost:8777';
-const CHILD_SAFETY_API_KEY = process.env.CHILD_SAFETY_API_KEY || 'child-safety-key';
 
 /**
  * Maps logical agent IDs to actual AI Gateway model IDs.
@@ -52,32 +53,44 @@ export const AGENT_MODEL_MAP: Record<AgentId, {
   isChildSafe: boolean;
 }> = {
   'claude-opus': {
-    gatewayModel: 'claude-opus-4-7',
+    gatewayModel: 'claude-opus-5',
     endpoint: `${AI_GATEWAY_URL}/api/v1/chat/completions`,
     isChildSafe: false, // used for lesson authoring, not child-facing
   },
   'gpt-5.5': {
-    gatewayModel: 'gpt-5.5',
+    gatewayModel: 'gpt-5.6-terra',
     endpoint: `${AI_GATEWAY_URL}/api/v1/chat/completions`,
     isChildSafe: false,
   },
   'gemini-image-pro': {
-    gatewayModel: 'gemini-2-5-pro',
+    gatewayModel: 'gemini-3.1-pro-preview',
     endpoint: `${AI_GATEWAY_URL}/api/v1/chat/completions`,
     isChildSafe: false,
   },
   'nano-banana': {
-    gatewayModel: 'gemini-2-5-flash',
+    gatewayModel: 'gemini-3.1-flash-lite-preview',
     endpoint: `${AI_GATEWAY_URL}/api/v1/chat/completions`,
     isChildSafe: false,
   },
-  'minimax-m3': {
-    gatewayModel: 'minimax-m3',
+  'glm-5.2': {
+    gatewayModel: 'glm-5.3-flash',
     endpoint: `${AI_GATEWAY_URL}/api/v1/chat/completions`,
-    isChildSafe: true, // child-facing model
+    isChildSafe: true,
+  },
+  'minimax-m3': {
+    gatewayModel: 'glm-5.3-flash', // legacy alias routes to glm-5.2
+    endpoint: `${AI_GATEWAY_URL}/api/v1/chat/completions`,
+    isChildSafe: true,
   },
   'local-llm': {
-    gatewayModel: process.env.CHILD_AI_MODEL || 'minimax-m3',
+    gatewayModel: getChildChatModel(),
+    endpoint: `${AI_GATEWAY_URL}/api/v1/chat/completions`,
+    isChildSafe: true,
+  },
+  'qwen-vlm': {
+    // Resolved through vision-model-config — swap the deployed VLM via env
+    // or gateway routing rules without touching this map.
+    gatewayModel: getVisionModelId(),
     endpoint: `${AI_GATEWAY_URL}/api/v1/chat/completions`,
     isChildSafe: true,
   },
@@ -195,7 +208,7 @@ export const DEFAULT_STEP_TEMPLATES: StepTemplate[] = [
     title: 'Great Work!',
     description: 'Celebrate completion and show badge',
     stepEmoji: '🎉',
-    contentAgent: 'minimax-m3',
+    contentAgent: 'glm-5.2',
     visualAgent: 'nano-banana',
     taskTypes: ['write_content', 'generate_image'],
   },
@@ -204,7 +217,7 @@ export const DEFAULT_STEP_TEMPLATES: StepTemplate[] = [
     title: 'Recap',
     description: 'Summarize what was learned',
     stepEmoji: '📋',
-    contentAgent: 'minimax-m3',
+    contentAgent: 'glm-5.2',
     taskTypes: ['write_content'],
   },
 ];

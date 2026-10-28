@@ -9,13 +9,14 @@
  *   gpt-5.5          → generate_problem, create_assessment
  *   gemini-image-pro → generate_image (high-quality illustrations)
  *   nano-banana      → generate_image (icons, decorations)
- *   minimax-m3       → write_content (child-facing prompts), generate_audio
+ *   glm-5.2          → write_content (child-facing prompts), generate_audio
  *   human            → manual_review, manual_edit
  *
  * The service is DB-backed (PostgreSQL) with in-memory fallback for pilot mode.
  */
 
 import type { Pool } from 'pg';
+import { getVisionModelLabel } from '@/lib/vision/vision-model-config';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -33,8 +34,10 @@ export type AgentId =
   | 'gpt-5.5'
   | 'gemini-image-pro'
   | 'nano-banana'
-  | 'minimax-m3'
+  | 'glm-5.2'
+  | 'minimax-m3' // legacy alias for glm-5.2
   | 'local-llm'
+  | 'qwen-vlm'
   | 'human';
 
 export type TaskType =
@@ -48,7 +51,8 @@ export type TaskType =
   | 'review_safety'
   | 'assemble'
   | 'manual_review'
-  | 'manual_edit';
+  | 'manual_edit'
+  | 'analyze_screen';
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
 
@@ -284,18 +288,24 @@ export const AGENT_CAPABILITIES: Record<AgentId, TaskType[]> = {
   'gpt-5.5': ['generate_problem', 'create_assessment', 'write_content', 'review_content'],
   'gemini-image-pro': ['generate_image'],
   'nano-banana': ['generate_image'],
-  'minimax-m3': ['write_content', 'generate_audio', 'create_assessment'],
+  'glm-5.2': ['write_content', 'generate_audio', 'create_assessment'],
+  'minimax-m3': ['write_content', 'generate_audio', 'create_assessment'], // legacy alias
   'local-llm': ['write_content', 'generate_problem', 'review_safety'],
+  'qwen-vlm': ['analyze_screen'],
   'human': ['manual_review', 'manual_edit', 'review_content', 'review_safety'],
 };
 
 export const AGENT_LABELS: Record<AgentId, string> = {
   'claude-opus': 'Claude Opus',
-  'gpt-5.5': 'GPT 5.5',
-  'gemini-image-pro': 'Gemini Image Pro',
-  'nano-banana': 'Nano Banana',
-  'minimax-m3': 'MiniMax M3',
+  'gpt-5.5': 'GPT 5.6 Terra',
+  'gemini-image-pro': 'Gemini 3.1 Pro',
+  'nano-banana': 'Gemini 3.1 Flash Lite',
+  'glm-5.2': 'GLM 5.3 Flash',
+  'minimax-m3': 'GLM 5.3 Flash (legacy)',
   'local-llm': 'Local LLM',
+  // Vision label resolves through vision-model-config — stays accurate when
+  // the deployed VLM changes.
+  'qwen-vlm': getVisionModelLabel(),
   'human': 'Human Reviewer',
 };
 

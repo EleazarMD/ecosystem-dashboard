@@ -8,8 +8,8 @@
  *
  * Non-negotiable (locked) assignments:
  *   - generate_image (high-quality) → must use a vision-capable image model (Gemini Image Pro / Nano Banana)
- *   - generate_audio → must use a child-safe TTS-capable model (MiniMax M3 / local-llm)
- *   - review_safety → must use a safety-trained model (local-llm / minimax-m3)
+ *   - generate_audio → must use a child-safe TTS-capable model (GLM 5.2 / local-llm)
+ *   - review_safety → must use a safety-trained model (local-llm / glm-5.2)
  *
  * Everything else is negotiable — any capable LLM can be swapped in at runtime
  * via the registry, env vars, or API config.
@@ -22,6 +22,8 @@ import {
   type AgentId,
   type TaskType,
 } from './LessonLifecycleService';
+import { getVisionModelId, getVisionModelLabel } from '@/lib/vision/vision-model-config';
+import { getChildChatModel } from '@/lib/llm-model-config';
 
 // ─── Model provider config ──────────────────────────────────────────────────
 
@@ -30,7 +32,7 @@ export interface ModelProviderConfig {
   agentId: AgentId;
   /** Human-readable label */
   label: string;
-  /** AI Gateway model ID (e.g. 'claude-opus-4-7', 'gpt-5.5') */
+  /** AI Gateway model ID (e.g. 'claude-opus-5', 'gpt-5.6-terra') */
   gatewayModel: string;
   /** Gateway endpoint URL */
   endpoint: string;
@@ -79,7 +81,7 @@ class AgentRegistryImpl {
     this.registerProvider({
       agentId: 'claude-opus',
       label: 'Claude Opus',
-      gatewayModel: 'claude-opus-4-7',
+      gatewayModel: 'claude-opus-5',
       endpoint: this.gatewayEndpoint(),
       isChildSafe: false,
       specializations: ['reasoning', 'pedagogy', 'narrative', 'long_context', 'structured_output'],
@@ -89,8 +91,8 @@ class AgentRegistryImpl {
 
     this.registerProvider({
       agentId: 'gpt-5.5',
-      label: 'GPT 5.5',
-      gatewayModel: 'gpt-5.5',
+      label: 'GPT 5.6 Terra',
+      gatewayModel: 'gpt-5.6-terra',
       endpoint: this.gatewayEndpoint(),
       isChildSafe: false,
       specializations: ['problem_generation', 'math', 'assessments', 'code', 'structured_output'],
@@ -100,8 +102,8 @@ class AgentRegistryImpl {
 
     this.registerProvider({
       agentId: 'gemini-image-pro',
-      label: 'Gemini Image Pro',
-      gatewayModel: 'gemini-2-5-pro',
+      label: 'Gemini 3.1 Pro',
+      gatewayModel: 'gemini-3.1-pro-preview',
       endpoint: this.gatewayEndpoint(),
       isChildSafe: false,
       specializations: ['image_generation', 'visual_reasoning', 'diagrams', 'multimodal'],
@@ -111,8 +113,8 @@ class AgentRegistryImpl {
 
     this.registerProvider({
       agentId: 'nano-banana',
-      label: 'Nano Banana',
-      gatewayModel: 'gemini-2-5-flash',
+      label: 'Gemini 3.1 Flash Lite',
+      gatewayModel: 'gemini-3.1-flash-lite-preview',
       endpoint: this.gatewayEndpoint(),
       isChildSafe: false,
       specializations: ['image_generation', 'icons', 'fast_inference', 'lightweight'],
@@ -121,24 +123,49 @@ class AgentRegistryImpl {
     });
 
     this.registerProvider({
-      agentId: 'minimax-m3',
-      label: 'MiniMax M3',
-      gatewayModel: 'minimax-m3',
+      agentId: 'glm-5.2',
+      label: 'GLM 5.3 Flash',
+      gatewayModel: 'glm-5.3-flash',
       endpoint: this.gatewayEndpoint(),
       isChildSafe: true,
       specializations: ['child_facing', 'narration', 'interactive_content', 'safety_review'],
-      costTier: 2,
+      costTier: 1,
+      enabled: true,
+    });
+
+    // Legacy alias for backward compatibility
+    this.registerProvider({
+      agentId: 'minimax-m3',
+      label: 'GLM 5.3 Flash (legacy alias)',
+      gatewayModel: 'glm-5.3-flash',
+      endpoint: this.gatewayEndpoint(),
+      isChildSafe: true,
+      specializations: ['child_facing', 'narration', 'interactive_content', 'safety_review'],
+      costTier: 1,
       enabled: true,
     });
 
     this.registerProvider({
       agentId: 'local-llm',
       label: 'Local LLM',
-      gatewayModel: process.env.CHILD_AI_MODEL || 'minimax-m3',
+      gatewayModel: getChildChatModel(),
       endpoint: this.gatewayEndpoint(),
       isChildSafe: true,
       specializations: ['safety_review', 'child_facing', 'low_latency', 'offline'],
       costTier: 1,
+      enabled: true,
+    });
+
+    // Vision provider — model identity is resolved through vision-model-config
+    // so the deployed VLM can be swapped without touching the registry.
+    this.registerProvider({
+      agentId: 'qwen-vlm',
+      label: getVisionModelLabel(),
+      gatewayModel: getVisionModelId(),
+      endpoint: this.gatewayEndpoint(),
+      isChildSafe: true,
+      specializations: ['vision_analysis', 'screen_capture', 'multimodal', 'dashboard_monitoring'],
+      costTier: 2,
       enabled: true,
     });
 
@@ -213,7 +240,7 @@ class AgentRegistryImpl {
 
     this.bindTask({
       taskType: 'generate_audio',
-      agentId: 'minimax-m3',
+      agentId: 'glm-5.2',
       negotiable: false,
       lockReason: 'Audio narration must use a child-safe TTS-capable model.',
       fallbackAgentId: 'local-llm',
@@ -226,7 +253,7 @@ class AgentRegistryImpl {
       agentId: 'local-llm',
       negotiable: false,
       lockReason: 'Safety review must use a safety-trained model with child-safe filtering.',
-      fallbackAgentId: 'minimax-m3',
+      fallbackAgentId: 'glm-5.2',
       temperature: 0.2,
       maxTokens: 500,
     });
@@ -257,6 +284,19 @@ class AgentRegistryImpl {
       negotiable: true,
       fallbackAgentId: 'gpt-5.5',
       temperature: 0.3,
+      maxTokens: 500,
+    });
+
+    // Screen analysis — locked to the active vision provider. The concrete
+    // model behind it is resolved via vision-model-config + gateway routing
+    // (currently Qwen3-VL-30B-A3B on DGX-spark vLLM).
+    this.bindTask({
+      taskType: 'analyze_screen',
+      agentId: 'qwen-vlm',
+      negotiable: false,
+      lockReason: `Screen analysis requires a vision-language model. The active vision model (${getVisionModelLabel()}) is the designated provider.`,
+      fallbackAgentId: 'local-llm',
+      temperature: 0.2,
       maxTokens: 500,
     });
   }
