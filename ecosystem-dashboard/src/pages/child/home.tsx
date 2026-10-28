@@ -45,6 +45,8 @@ import { useRightPanel } from '@/contexts/RightPanelContext';
 import { useKidsPCG } from '@/hooks/useKidsPCG';
 import { SkillDashboard } from '@/components/child/SkillDashboard';
 import { ActivityTile } from '@/components/child/premium';
+import TeksBadgesCard from '@/components/child/TeksBadgesCard';
+import AssignedLessonsCard from '@/components/child/AssignedLessonsCard';
 
 interface ChildHomeData {
   name: string;
@@ -74,7 +76,7 @@ interface ChildHomeData {
         cardStyle: string; 
         backgroundImages?: { home?: string; chat?: string; email?: string; default?: string };
       };
-      serviceIcons: { chat: string; art: string; writing: string; email: string; planner?: string; clock?: string; books?: string; camera?: string };
+      serviceIcons: { chat: string; art: string; writing: string; email: string; planner?: string; clock?: string; books?: string; camera?: string; research?: string; dictionary?: string; journal?: string };
       welcomeMessages: string[];
       widgets?: string[];
     };
@@ -99,6 +101,39 @@ const getChildServices = (theme?: ChildHomeData['theme']) => {
       description: "Today's plan",
       category: 'learning' as const,
       badge: 'HOT',
+    },
+    {
+      id: 'math-lab',
+      label: 'Math Lab',
+      icon: '🧮',
+      isImage: false,
+      path: '/child/math-lab',
+      color: '#3182CE',
+      description: 'Numbers & logic',
+      category: 'learning' as const,
+      badge: 'NEW',
+    },
+    {
+      id: 'reading-lab',
+      label: 'Reading Lab',
+      icon: '📖',
+      isImage: false,
+      path: '/child/reading-lab',
+      color: '#805AD5',
+      description: 'Comprehension',
+      category: 'learning' as const,
+      badge: 'NEW',
+    },
+    {
+      id: 'science-lab',
+      label: 'Science Lab',
+      icon: '🔬',
+      isImage: false,
+      path: '/child/science-lab',
+      color: '#38A169',
+      description: 'Discover & explore',
+      category: 'learning' as const,
+      badge: 'NEW',
     },
     {
       id: 'learning-path',
@@ -133,12 +168,12 @@ const getChildServices = (theme?: ChildHomeData['theme']) => {
     },
     {
       id: 'personal-ai',
-      label: 'Chat',
-      icon: icons?.chat || '💬',
-      isImage: isImageIcon(icons?.chat),
-      path: '/child/chat',
+      label: 'Research',
+      icon: icons?.research || '🔍',
+      isImage: isImageIcon(icons?.research),
+      path: '/child/research',
       color: theme?.colors?.primary || '#667eea',
-      description: 'Talk with AI',
+      description: 'Research & explore',
       category: 'creative' as const,
     },
     {
@@ -455,10 +490,12 @@ export default function ChildHomePage() {
   const cardBgSolid = isPusheenTheme
     ? 'rgba(255, 255, 255, 0.95)'
     : isMinecraftTheme
-    ? 'rgba(245, 222, 179, 0.95)'
+    ? '#D6D6D6'
     : (themeColors?.backgroundSecondary || 'white');
-  const cardBorderRadius = isMinecraftTheme ? '4px' : '2xl';
-  const cardShadow = isMinecraftTheme ? '4px 4px 0px #5D8C3E' : 'sm';
+  const cardBorderRadius = isMinecraftTheme ? '2px' : '2xl';
+  const cardShadow = isMinecraftTheme
+    ? 'inset -3px -3px 0px rgba(0,0,0,0.28), inset 3px 3px 0px rgba(255,255,255,0.45), 4px 4px 0px rgba(0,0,0,0.3)'
+    : 'sm';
 
   // Derive level/XP from PCG progress (every activity = 10 XP, 100 XP per level)
   const { level, xp, xpToNext } = useMemo(() => {
@@ -629,6 +666,12 @@ export default function ChildHomePage() {
 
             {/* Brilliant-style Skill Dashboard */}
             <SkillDashboard {...dashboardProps} />
+
+            {/* Lessons the family assigned (published, from the lesson pipeline) */}
+            <AssignedLessonsCard />
+
+            {/* TEKS badges from paper worksheet practice */}
+            <TeksBadgesCard />
 
           </VStack>
         </Container>

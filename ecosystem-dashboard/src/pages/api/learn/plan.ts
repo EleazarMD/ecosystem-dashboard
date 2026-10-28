@@ -20,16 +20,19 @@ import type {
 import { getSkillsNeedingReview, markMisconceptionAddressed } from '@/domains/learning/features/misconception-tracker';
 import { buildReviewSchedule } from '@/domains/learning/processes/spaced-review';
 import { getParentGoalService } from '@/domains/learning/parent/parent-goal-service';
+import { expandSkillCodes } from '@/domains/learning/shared/skill-taxonomy';
 import { getDreamEngine } from '@/domains/learning/analytics/dream-engine';
 import { getLearningStyleSignalCollector } from '@/domains/learning/analytics/learning-style-signals';
 import { getAnalyticsCollector } from '@/domains/learning/analytics/analytics-collector';
+import { initLearningPlatform } from '@/domains/learning/shared/platform-bootstrap';
+import { getMasteryCalculator } from '@/domains/learning/learner/mastery-calculator';
 import dbPool from '@/lib/db/client';
 import { HARNESS_EVENT_TYPES } from '@/lib/harness/events/types';
 import { emitHarnessEventSafe, runHarnessPipeline, toApiHarnessMetadata } from '@/lib/harness/runtime/pipeline';
 import type { HarnessPipelineEventInput } from '@/lib/harness/runtime/pipeline';
 import type { HarnessAgentRequest } from '@/lib/harness/types';
 import { readUserId } from './attempt';
-import type { LearnAgeBand } from '@/domains/learning/shared/phase1-content';
+import type { LearnAgeBand } from '@/lib/kids-pic/age-bands';
 import type { ChildSkillSummary } from '@/domains/learning/entities/skill-graph';
 
 const skillProgressService = new SkillProgressService(dbPool);
@@ -47,10 +50,11 @@ const LEARN_PLAN_SOURCE = 'deterministic_learn_plan';
 
 type PlanActivity = LearnPlanActivity & {
   type: 'practice';
-  kind: 'review' | 'practice';
+  kind: 'review' | 'practice' | 'no_help_check';
 };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  await initLearningPlatform().catch(() => {});
   const session = await getServerSession(req, res, authOptions);
   if (!session?.user) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -286,9 +290,18 @@ async function buildPlan(input: {
   const snapshots = getAnalyticsCollector().getSnapshots(input.childId, 14);
   const styleSignals = styleCollector.analyze(input.childId, snapshots, { writeToProfile: true });
 
+  // Resolve coarse parent-facing / legacy codes (goals, assignments) to
+  // content-backed leaf skills so steering actually reaches practice content.
+  // Path step codes are already content/leaf codes and pass through unchanged.
+  const assignmentSkillCodes = expandSkillCodes([
+    ...pathSkillCodes,
+    ...assignmentCodes,
+    ...parentGoalCodes,
+  ]);
+
   const objectives = composePlan({
     summary,
-    assignmentSkillCodes: [...pathSkillCodes, ...assignmentCodes, ...parentGoalCodes],
+    assignmentSkillCodes,
     nextObjectiveSkillCodes: [...dreamFocusSkills, ...misconceptionCodes, ...nextObjectiveCodes],
     limit: input.objectivesLimit,
     learningStyle: styleSignals
@@ -296,9 +309,20 @@ async function buildPlan(input: {
       : undefined,
   });
 
+  // No-help retention checks lead the plan — a mastered skill with an overdue
+  // check must be re-verified hint-free before anything else, otherwise mastery
+  // is provisional. Cap at 1 per plan so it doesn't overwhelm the session.
+  const noHelpCheckActivities = await fetchNoHelpCheckActivities(
+    input.childId,
+    input.ageBand,
+  );
+
   const activities: PlanActivity[] = [];
 
-  // Path activities lead — they are the child's current mission.
+  // No-help checks first (highest priority — retention verification).
+  activities.push(...noHelpCheckActivities);
+
+  // Path activities lead the rest — they are the child's current mission.
   activities.push(...pathActivities);
 
   for (const objective of objectives) {
@@ -336,7 +360,8 @@ async function buildPlan(input: {
   }
 
   if (activities.length > 0) {
-    const spacedReview = summarizeSpacedReview(summary);
+    const noHelpCheckCount = noHelpCheckActivities.length;
+    const spacedReview = summarizeSpacedReview(summary, noHelpCheckCount);
     return {
       childName: summary?.childName || null,
       objectives,
@@ -497,25 +522,88 @@ async function pathStepToActivity(
   return null;
 }
 
-function summarizeSpacedReview(summary: ChildSkillSummary | null): LearnPlanSpacedReview | undefined {
-  if (!summary) return undefined;
+function summarizeSpacedReview(
+  summary: ChildSkillSummary | null,
+  noHelpCheckCount = 0,
+): LearnPlanSpacedReview | undefined {
+  if (!summary) {
+    // Still return a minimal summary when there are no-help checks even without
+    // a Postgres skill summary, so the client can surface the retention badge.
+    if (noHelpCheckCount > 0) {
+      return {
+        eligibleCount: 0,
+        overdueCount: 0,
+        noHelpCheckCount,
+      };
+    }
+    return undefined;
+  }
   try {
     const schedule = buildReviewSchedule(summary);
-    if (schedule.length === 0) return undefined;
     const overdueCount = schedule.filter((e) => e.isOverdue).length;
+    if (schedule.length === 0 && noHelpCheckCount === 0) return undefined;
     const next = schedule[0];
     return {
       eligibleCount: schedule.length,
       overdueCount,
-      nextReview: {
-        skillCode: next.skillCode,
-        skillName: next.skillName,
-        daysUntilReview: next.daysUntilReview,
-        isOverdue: next.isOverdue,
-      },
+      noHelpCheckCount,
+      nextReview: next
+        ? {
+            skillCode: next.skillCode,
+            skillName: next.skillName,
+            daysUntilReview: next.daysUntilReview,
+            isOverdue: next.isOverdue,
+          }
+        : undefined,
     };
   } catch {
-    return undefined;
+    return noHelpCheckCount > 0
+      ? { eligibleCount: 0, overdueCount: 0, noHelpCheckCount }
+      : undefined;
+  }
+}
+
+/**
+ * Build no-help retention check activities for skills with an overdue check.
+ * The child gets one attempt with no hints — a correct answer re-confirms
+ * mastery; a wrong answer demotes the skill. Capped at 1 per plan.
+ */
+async function fetchNoHelpCheckActivities(
+  childId: string,
+  ageBand: LearnAgeBand | undefined,
+): Promise<PlanActivity[]> {
+  try {
+    const skillsNeedingCheck = getMasteryCalculator().getSkillsNeedingNoHelpCheck(childId);
+    if (skillsNeedingCheck.length === 0) return [];
+
+    // Cap at 1 no-help check per plan so it doesn't overwhelm the session.
+    const skillCode = skillsNeedingCheck[0];
+    const items = await getLearningPhase1Service().listContent({
+      skillCode,
+      ageBand,
+      limit: 1,
+    });
+    if (items.length === 0) return [];
+
+    const item = items[0];
+    return [{
+      type: 'practice',
+      kind: 'no_help_check',
+      noHelpCheck: true,
+      skillCode,
+      contentItemId: item.id,
+      title: 'Show What You Know',
+      prompt: item.prompt,
+      difficulty: item.difficulty,
+      analyticalTags: item.analyticalTags,
+      // No hints available — this is a no-help retention check.
+      hintSet: [],
+      contentType: item.type,
+      rubricCriteria: item.rubricCriteria,
+    }];
+  } catch (error) {
+    console.warn('[api/learn/plan] fetchNoHelpCheckActivities skipped:', error);
+    return [];
   }
 }
 
@@ -531,10 +619,13 @@ function readOwnerIdHeader(req: NextApiRequest): string {
 // below mirrors the roadmap design; if Phase 4 names columns differently the query
 // throws and we degrade to [] rather than breaking the plan.
 async function fetchAssignmentSkillCodes(childId: string, limit: number): Promise<string[]> {
+  // Lesson-lifecycle assignments (ADR-0010 pipeline): a published lesson
+  // assigned to this child contributes its skill codes to the plan's focus.
+  const lessonCodes = await fetchLessonAssignmentSkillCodes(childId, limit);
   try {
     const exists = await dbPool.query("SELECT to_regclass('public.learning_assignments') AS reg");
     if (!exists.rows?.[0]?.reg) {
-      return [];
+      return lessonCodes;
     }
 
     // Order strictly by the documented columns (roadmap §12.1) so this activates as
@@ -556,9 +647,40 @@ async function fetchAssignmentSkillCodes(childId: string, limit: number): Promis
         codes.push(code);
       }
     }
-    return codes;
+    return [...new Set([...lessonCodes, ...codes])].slice(0, Math.max(1, limit));
   } catch (error) {
     console.warn('[api/learn/plan] assignments lookup skipped (table absent or schema mismatch):', error);
+    return lessonCodes;
+  }
+}
+
+/** Skill codes from assigned published lessons (lesson_assignments →
+ *  lessons.skill_codes). Best-effort: [] when nothing is assigned. */
+async function fetchLessonAssignmentSkillCodes(childId: string, limit: number): Promise<string[]> {
+  try {
+    const result = await dbPool.query(
+      `SELECT le.skill_codes
+         FROM public.lesson_assignments la
+         JOIN public.lessons le ON le.id = la.lesson_id
+        WHERE la.child_user_id = $1
+          AND le.lifecycle_state = 'published'
+          AND COALESCE(la.status, 'assigned') NOT IN ('completed', 'skipped')
+        ORDER BY la.due_date ASC NULLS LAST, la.created_at ASC
+        LIMIT $2`,
+      [childId, Math.max(1, limit)],
+    );
+    const codes: string[] = [];
+    for (const row of result.rows ?? []) {
+      for (const code of (row as { skill_codes?: unknown }).skill_codes ?? []) {
+        const c = `${code ?? ''}`.trim();
+        if (c) {
+          codes.push(c);
+        }
+      }
+    }
+    return [...new Set(codes)].slice(0, Math.max(1, limit));
+  } catch (error) {
+    console.warn('[api/learn/plan] lesson assignments lookup skipped:', error);
     return [];
   }
 }
