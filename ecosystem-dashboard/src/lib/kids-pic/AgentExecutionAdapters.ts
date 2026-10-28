@@ -39,10 +39,25 @@ export interface TaskInput {
   lessonDescription?: string;
   designSpec?: LessonDesignSpec;
   visualStyle?: string;
+  /** Bounded text from the blueprint's cited curriculum pages (ADR-0010 P2) —
+   *  generation teaches from this instead of inventing. */
+  sourceText?: string;
+  /** When set, generate_problem produces a whole practice bank for the
+   *  session loop instead of one step problem (items land in
+   *  learning_content_items on completion). */
+  practiceBank?: {
+    count: number;
+    types?: string[];
+    difficulty?: number;
+    answerKeyRule?: string;
+  };
 }
 
 export interface TaskOutput {
   stepContent?: Record<string, any>;
+  /** Practice-bank items (generate_problem with practiceBank) — execute.ts
+   *  inserts these into learning_content_items. */
+  items?: Record<string, any>[];
   designSpec?: LessonDesignSpec;
   asset?: {
     assetType?: string;
@@ -77,6 +92,10 @@ export interface ExecuteResult {
 // If a task is negotiable, any capable agent can be swapped in at runtime.
 
 interface GatewayCallParams {
+  /** Override the registry binding's maxTokens — reasoning models can burn
+   *  the whole binding budget on hidden reasoning and return empty content
+   *  (finish_reason=length, content=''). */
+  maxTokensOverride?: number;
   /** The task type — the registry resolves the agent from this */
   taskType: TaskType;
   /** Override the resolved agent (used when executing a task that already has an agentId assigned) */
@@ -136,7 +155,7 @@ async function callGateway(params: GatewayCallParams): Promise<{
       { role: 'user', content: params.userPrompt },
     ],
     temperature: registryParams.temperature,
-    max_tokens: registryParams.maxTokens,
+    max_tokens: params.maxTokensOverride ?? registryParams.maxTokens,
   };
 
   if (params.responseFormat === 'json') {
@@ -231,6 +250,83 @@ Create a pedagogically sound design spec that will engage a ${input.ageBand} lea
   return { system, user };
 }
 
+/** The cited-pages block for generation prompts — present only when the
+ *  blueprint's source pages were actually fetched. */
+function sourceBlock(sourceText?: string): string {
+  if (!sourceText) return '';
+  return `
+
+Source material (the lesson's cited curriculum pages — teach from this; keep its method, notation and numbers faithful):
+${sourceText}`;
+}
+
+/** Generate the blueprint's practice bank: `count` items shaped like
+ *  learning_content_items candidates (prompt, deterministic answerKey,
+ *  progressive hints), from one gateway call. */
+async function generatePracticeBank(input: TaskInput): Promise<{ items: Record<string, any>[]; raw: string; model: string; tokensUsed: number }> {
+  const bank = input.practiceBank!;
+  const system = `You are an expert practice-item designer for children's education. Generate a bank of practice items for an adaptive session loop.
+
+You must output ONLY a valid JSON array. Each element:
+{
+  "prompt": "The problem or question statement",
+  "answerKey": { "kind": "number" | "exact_text", "value": <number or exact string>, "acceptedForms": ["alternate accepted spellings/forms"], "tolerance": <number, numbers only> },
+  "hintSet": ["gentle hint", "more specific hint", "nearly the answer"],
+  "difficulty": 1-5,
+  "analyticalTags": ["what the item discriminates, e.g. 'unlike-denominators'"]
+}
+
+Rules:
+- Every item MUST have a deterministic answerKey (a number, or exact short text) — grading is done in code, never by a model.
+- Items progress from easier to harder across the bank.
+- Vary contexts and numbers between items; no two items the same.
+- Age-appropriate, encouraging, free of harmful themes.`;
+
+  const user = `Generate ${bank.count} practice items for:
+- Subject: ${input.subject}
+- Age band: ${input.ageBand}
+- Difficulty target: ${bank.difficulty || input.difficulty || 2}/5
+- Skill codes: ${(input.skillCodes || []).join(', ')}
+- Lesson objectives: ${input.designSpec?.objectives?.join('; ') || '(see source)'}${input.designSpec?.adaptationNotes ? `
+- Misconception patterns to target: ${input.designSpec.adaptationNotes}` : ''}${sourceBlock(input.sourceText)}`;
+
+  const result = await callGateway({
+    taskType: 'generate_problem',
+    agentIdOverride: (input as any)._agentId,
+    systemPrompt: system,
+    userPrompt: user,
+    responseFormat: 'json',
+    maxTokensOverride: 6000,
+  });
+
+  // The bank is a JSON array — slice the outermost brackets and parse
+  // (same approach as content/generate's parseGeneratedContent).
+  const raw = result.content.trim();
+  const arrStart = raw.indexOf('[');
+  const arrEnd = raw.lastIndexOf(']');
+  let arr: unknown[] | null = null;
+  if (arrStart !== -1 && arrEnd > arrStart) {
+    try { arr = JSON.parse(raw.slice(arrStart, arrEnd + 1)); if (!Array.isArray(arr)) arr = null; } catch { arr = null; }
+  }
+  // Accept both the bank answerKey shape ({kind, value}) and the single-problem
+  // shape ({answer, explanation}) — normalize to {kind, value}.
+  const normalizeItem = (x: any) => {
+    if (!x || typeof x.prompt !== 'string' || !x.prompt.trim()) return null;
+    let ak = x.answerKey;
+    if (ak && typeof ak === 'object' && ak.kind === undefined && (ak.answer !== undefined || ak.value !== undefined)) {
+      const v = ak.value !== undefined ? ak.value : ak.answer;
+      ak = typeof v === 'number' ? { kind: 'number', value: v } : { kind: 'exact_text', value: String(v) };
+    }
+    if (!ak || (ak.kind !== 'number' && ak.kind !== 'exact_text') || ak.value === undefined || ak.value === '') return null;
+    return { ...x, answerKey: ak };
+  };
+  const items = (arr ?? []).map(normalizeItem).filter(Boolean).slice(0, bank.count);
+  if (!items.length) {
+    throw new Error(`Practice bank generation returned no usable items (raw head: ${result.content.slice(0, 240)})`);
+  }
+  return { items, raw: result.content, model: result.model, tokensUsed: result.tokensUsed };
+}
+
 function buildWriteContentPrompt(input: TaskInput): { system: string; user: string } {
   const ageContext = getAgeContext(input.ageBand);
   const visualStyle = input.designSpec?.visualStyle || 'colorful and friendly';
@@ -258,7 +354,7 @@ Write in a warm, encouraging tone. Use simple language appropriate for the age g
 ${input.designSpec ? `- Lesson objectives: ${input.designSpec.objectives?.join(', ')}` : ''}
 ${input.designSpec ? `- Narrative arc: ${input.designSpec.narrativeArc}` : ''}
 
-Write content that fits naturally into the lesson flow. The content should be engaging and educational.`;
+Write content that fits naturally into the lesson flow. The content should be engaging and educational.${sourceBlock(input.sourceText)}`;
 
   return { system, user };
 }
@@ -284,7 +380,7 @@ Include 3-4 multiple choice options for younger learners. Always include a clear
 - Skill codes: ${(input.skillCodes || []).join(', ')}
 - Step title: ${input.stepTitle || 'Practice'}
 
-Make the problem concrete and relatable. Use real-world scenarios when possible. The problem should test understanding, not just memorization.`;
+Make the problem concrete and relatable. Use real-world scenarios when possible. The problem should test understanding, not just memorization.${sourceBlock(input.sourceText)}`;
 
   return { system, user };
 }
@@ -314,7 +410,7 @@ Use 2-4 choices. Exactly one must be correct. The question should make the learn
 - Skill codes: ${(input.skillCodes || []).join(', ')}
 ${input.designSpec ? `- Lesson objectives: ${input.designSpec.objectives?.join(', ')}` : ''}
 
-Design a question that checks understanding of the core concept. The explanation should be educational — even if the learner gets it wrong, they should learn from the explanation.`;
+Design a question that checks understanding of the core concept. The explanation should be educational — even if the learner gets it wrong, they should learn from the explanation.${sourceBlock(input.sourceText)}`;
 
   return { system, user };
 }
@@ -445,6 +541,12 @@ const adapters: Partial<Record<TaskType, { agentId: AgentId; execute: AdapterFn 
   generate_problem: {
     agentId: 'gpt-5.5', // default; registry can rebind
     execute: async (input: TaskInput): Promise<TaskOutput> => {
+      // Blueprint practice bank (ADR-0010 P2): count items with deterministic
+      // answer keys for the session loop, grounded in the cited pages.
+      if (input.practiceBank?.count) {
+        const bank = await generatePracticeBank(input);
+        return { items: bank.items, rawResponse: bank.raw, model: bank.model, tokensUsed: bank.tokensUsed };
+      }
       const { system, user } = buildGenerateProblemPrompt(input);
       const result = await callGateway({
         taskType: 'generate_problem',

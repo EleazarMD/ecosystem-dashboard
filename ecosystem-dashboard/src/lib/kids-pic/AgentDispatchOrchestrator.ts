@@ -36,6 +36,7 @@ import {
   type CreateStepInput,
 } from './LessonLifecycleService';
 import { agentRegistry } from './AgentRegistry';
+import { blueprintSourceText, type BlueprintSourceRef } from './blueprint-sources';
 import { getVisionModelId } from '@/lib/vision/vision-model-config';
 import { getChildChatModel } from '@/lib/llm-model-config';
 
@@ -446,6 +447,148 @@ export class AgentDispatchOrchestrator {
       tasksDispatched: 0,
       stateTransitioned: 'generating',
       message: `Design spec saved. ${createdSteps.length} steps scaffolded. ${tasksCreated} generation tasks created. Transitioned to 'generating'.`,
+    };
+  }
+
+  // ── Blueprint lessons: generate from the received spec + cited pages ──────
+
+  /** A blueprint lesson (ADR-0010) arrives at 'spec' with its design spec and
+   *  steps already created — this scaffolds generation tasks on the EXISTING
+   *  steps (no template re-scaffolding), grounds every prompt in the cited
+   *  curriculum pages, and adds the practice-bank task. */
+  async generateFromBlueprint(lessonId: string): Promise<DispatchResult> {
+    const lesson = await this.service.getLesson(lessonId);
+    if (!lesson) throw new Error('Lesson not found');
+    const spec = lesson.designSpec;
+    if (!spec) throw new Error('Lesson has no design spec');
+
+    const meta = (spec as unknown as { blueprint?: { sourceRefs?: BlueprintSourceRef[]; practiceSpec?: { count?: number; types?: string[]; difficulty?: number; answerKeyRule?: string } } }).blueprint;
+
+    // Re-entry while generating: only ensure the practice-bank task exists
+    // (an earlier partial send may have launched generation without it).
+    if (lesson.lifecycleState === 'generating') {
+      const practice = meta?.practiceSpec;
+      if (!practice?.count) throw new Error(`Blueprint generation starts from 'spec' (current: generating, no practiceSpec)`);
+      const tasks = await this.service.getTasks(lessonId);
+      if (tasks.some(t => (t.inputPayload as Record<string, unknown> | null)?.practiceBank)) {
+        return { lessonId, tasksCreated: 0, tasksDispatched: 0, stateTransitioned: null, message: 'Practice bank task already exists.' };
+      }
+      const sourceText = await blueprintSourceText(meta?.sourceRefs);
+      const bankAgent = agentRegistry.resolveAgent('generate_problem');
+      await this.service.createTask({
+        lessonId,
+        agentId: bankAgent,
+        taskType: 'generate_problem',
+        inputPayload: {
+          practiceBank: {
+            count: practice.count,
+            types: practice.types ?? ['problem'],
+            difficulty: practice.difficulty ?? lesson.difficulty,
+            answerKeyRule: practice.answerKeyRule ?? 'deterministic',
+          },
+          designSpec: spec,
+          lessonSubject: lesson.subject,
+          lessonAgeBand: lesson.ageBand,
+          skillCodes: lesson.skillCodes,
+          ...(sourceText ? { sourceText } : {}),
+        },
+      });
+      return { lessonId, tasksCreated: 1, tasksDispatched: 0, stateTransitioned: null, message: 'Practice bank task created (generation already running).' };
+    }
+
+    if (lesson.lifecycleState !== 'spec') {
+      throw new Error(`Blueprint generation starts from 'spec' (current: ${lesson.lifecycleState})`);
+    }
+    const steps = await this.service.getSteps(lessonId);
+    if (!steps.length) throw new Error('Lesson has no steps to generate');
+
+    const sourceText = await blueprintSourceText(meta?.sourceRefs);
+
+    let tasksCreated = 0;
+    const usedAgents = new Set<AgentId>();
+    for (const step of steps) {
+      const contentTaskType: TaskType =
+        step.stepType === 'practice' ? 'generate_problem' :
+        (step.stepType === 'concept_check' || step.stepType === 'quiz') ? 'create_assessment' :
+        'write_content';
+      const contentAgentId = agentRegistry.resolveAgent(contentTaskType);
+      usedAgents.add(contentAgentId);
+      await this.service.createTask({
+        lessonId,
+        stepId: step.id,
+        agentId: contentAgentId,
+        taskType: contentTaskType,
+        inputPayload: {
+          stepId: step.id,
+          stepType: step.stepType,
+          stepTitle: step.title,
+          designSpec: spec,
+          lessonSubject: lesson.subject,
+          lessonAgeBand: lesson.ageBand,
+          lessonDifficulty: lesson.difficulty,
+          skillCodes: lesson.skillCodes,
+          ...(sourceText ? { sourceText } : {}),
+        },
+      });
+      tasksCreated++;
+
+      if (['intro', 'concept', 'example', 'celebration'].includes(step.stepType)) {
+        const visualAgentId = agentRegistry.resolveAgent('generate_image');
+        usedAgents.add(visualAgentId);
+        await this.service.createTask({
+          lessonId,
+          stepId: step.id,
+          agentId: visualAgentId,
+          taskType: 'generate_image',
+          inputPayload: {
+            stepId: step.id,
+            stepType: step.stepType,
+            stepTitle: step.title,
+            visualStyle: spec.visualStyle,
+            ageBand: lesson.ageBand,
+            ...(sourceText ? { sourceText } : {}),
+          },
+        });
+        tasksCreated++;
+      }
+    }
+
+    const practice = meta?.practiceSpec;
+    if (practice?.count) {
+      const bankAgent = agentRegistry.resolveAgent('generate_problem');
+      usedAgents.add(bankAgent);
+      await this.service.createTask({
+        lessonId,
+        agentId: bankAgent,
+        taskType: 'generate_problem',
+        inputPayload: {
+          practiceBank: {
+            count: practice.count,
+            types: practice.types ?? ['problem'],
+            difficulty: practice.difficulty ?? lesson.difficulty,
+            answerKeyRule: practice.answerKeyRule ?? 'deterministic',
+          },
+          designSpec: spec,
+          lessonSubject: lesson.subject,
+          lessonAgeBand: lesson.ageBand,
+          skillCodes: lesson.skillCodes,
+          ...(sourceText ? { sourceText } : {}),
+        },
+      });
+      tasksCreated++;
+    }
+
+    await this.service.updateLessonState(lessonId, 'generating', 'atlas-blueprint', 'system');
+    for (const agent of usedAgents) {
+      await this.service.assignAgent(lessonId, agent, false);
+    }
+
+    return {
+      lessonId,
+      tasksCreated,
+      tasksDispatched: 0,
+      stateTransitioned: 'generating',
+      message: `Blueprint generation: ${steps.length} steps → ${tasksCreated} tasks${sourceText ? ' grounded in the cited pages' : ' (source pages unreachable — ungrounded)'}. Transitioned to 'generating'.`,
     };
   }
 

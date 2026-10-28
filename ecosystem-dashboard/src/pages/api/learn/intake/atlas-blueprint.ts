@@ -266,6 +266,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const spec = designSpecFor(bp, skillCodes, sentBy, sentAt);
 
     if (existing) {
+      // Merge, not replace: a partial re-send must not wipe provenance the
+      // earlier full send carried (practiceSpec, sourceRefs).
+      const prev = (existing.designSpec as unknown as { blueprint?: Record<string, unknown> } | null)?.blueprint;
+      if (prev && typeof prev === 'object') {
+        (spec as unknown as { blueprint: Record<string, unknown> }).blueprint = { ...prev, ...(((spec as unknown as { blueprint?: Record<string, unknown> }).blueprint) ?? {}) };
+      }
       const updated = await service.updateLessonDesignSpec(existing.id, spec);
       return res.status(200).json({ lesson: updated, updated: true, skillCodes });
     }

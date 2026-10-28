@@ -1,6 +1,7 @@
 /**
  * Agent Dispatch Orchestrator API — pipeline control endpoints.
  *
+ * POST   /api/learn/lessons/orchestrate?action=generate    → generate a blueprint lesson (spec → generating)
  * POST   /api/learn/lessons/orchestrate?action=start       → start pipeline for a draft lesson
  * POST   /api/learn/lessons/orchestrate?action=dispatch     → dispatch ready tasks
  * POST   /api/learn/lessons/orchestrate?action=complete     → complete a task (triggers pipeline advance)
@@ -56,6 +57,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(405).json({ error: 'Method not allowed' });
     }
 
+    if (action === 'generate') {
+      // Blueprint lessons (ADR-0010) enter generation from 'spec' with the
+      // blueprint as their design spec — no Opus design phase.
+      if (!body.lessonId) return res.status(400).json({ error: 'lessonId is required' });
+      const result = await orchestrator.generateFromBlueprint(body.lessonId);
+      return res.status(200).json(result);
+    }
+
     if (action === 'start') {
       if (!body.lessonId) return res.status(400).json({ error: 'lessonId is required' });
       const result = await orchestrator.startPipeline(body.lessonId);
@@ -106,7 +115,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     return res.status(400).json({
-      error: 'Unknown action. Use start, dispatch, complete, review, publish, status, or plan.',
+      error: 'Unknown action. Use generate, start, dispatch, complete, review, publish, status, or plan.',
     });
   } catch (error: any) {
     console.error('[orchestrator-api]', error);

@@ -9,6 +9,7 @@
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { randomUUID } from 'crypto';
 import { Pool } from 'pg';
 import { LessonLifecycleService } from '@/lib/kids-pic/LessonLifecycleService';
 import { AgentDispatchOrchestrator } from '@/lib/kids-pic/AgentDispatchOrchestrator';
@@ -36,10 +37,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    // Get the task
-    const tasks = await service.getTasks('');
-    // We need to find the task by ID — getTasks returns all tasks for a lesson,
-    // but we don't know the lesson ID yet. Query directly.
+    // Find the task by ID directly (getTasks needs a lesson id; we don't
+    // have one yet — the task row carries it).
     const taskResult = await pool.query(
       'SELECT * FROM lesson_agent_tasks WHERE id = $1',
       [taskId]
@@ -84,6 +83,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
+    // Blueprint practice bank (ADR-0010 P2): the task's items land in
+    // learning_content_items so the session loop can draw on them.
+    let itemIds: string[] = [];
+    if (Array.isArray(result.output.items) && result.output.items.length) {
+      try {
+        itemIds = await insertPracticeBank(pool, taskRow, result.output.items);
+        result.output.items = itemIds.map(id => ({ id }));
+      } catch (err: any) {
+        console.error('[lesson-execute] practice bank insert failed:', err?.message);
+      }
+    }
+
     // Complete the task via the orchestrator (which handles pipeline advancement)
     const completion = await orchestrator.onTaskComplete(
       taskId,
@@ -96,7 +107,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       success: true,
       task: completion.task,
       pipelineAdvanced: completion.pipelineAdvanced,
-      message: completion.message,
+      message: completion.message + (itemIds.length ? ` ${itemIds.length} practice item(s) banked.` : ''),
+      itemIds,
       model: result.output.model,
       tokensUsed: result.output.tokensUsed,
       durationMs: result.durationMs,
@@ -105,4 +117,68 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.error('[execute-api]', error);
     return res.status(500).json({ error: error.message || 'Internal server error' });
   }
+}
+
+
+/** Insert the generated practice bank into learning_content_items (draft
+ *  review status; safety screened best-effort) and link the ids on the
+ *  lesson. Items are child-agnostic catalog material (ADR-0010). */
+async function insertPracticeBank(
+  pool: Pool,
+  taskRow: { lesson_id: string; input_payload: Record<string, any> | null },
+  items: Record<string, any>[],
+): Promise<string[]> {
+  const { getAIChildSafetyMonitor } = await import('@/domains/learning/features/safety-monitor');
+  const monitor = getAIChildSafetyMonitor(pool);
+  const input = taskRow.input_payload || {};
+  const skillCode = Array.isArray(input.skillCodes) && input.skillCodes.length ? String(input.skillCodes[0]) : 'math.general';
+  const ageBand = typeof input.lessonAgeBand === 'string' ? input.lessonAgeBand : 'middle';
+  const gradeMin = ageBand === 'early' ? 'K' : ageBand === 'middle' ? '2' : '4';
+  const gradeMax = ageBand === 'early' ? '2' : ageBand === 'middle' ? '5' : '7';
+  const ids: string[] = [];
+  for (const it of items.slice(0, 50)) {
+    const prompt = typeof it.prompt === 'string' ? it.prompt.trim() : '';
+    const ak = it.answerKey && typeof it.answerKey === 'object' ? it.answerKey : null;
+    if (!prompt || !ak || (ak.kind !== 'number' && ak.kind !== 'exact_text')) continue;
+    let safetyStatus = 'pending';
+    try {
+      const analysis = await monitor.analyzeMessage({
+        childId: 'content-generation',
+        sessionId: 'lesson-practice-bank',
+        childMessage: 'Generate a learning activity.',
+        aiResponse: prompt,
+        timestamp: new Date(),
+      });
+      safetyStatus = analysis.safe && !analysis.shouldBlock ? 'passed' : 'failed';
+    } catch { safetyStatus = 'pending'; }
+    const id = `gen.${randomUUID().slice(0, 8)}`;
+    await pool.query(
+      `INSERT INTO learning_content_items
+       (id, version, subject, skill_code, analytical_tags, content_type, age_band,
+        min_grade, max_grade, difficulty, prompt, answer_key, hint_set,
+        provenance, review_status, safety_status, low_stakes_only)
+       VALUES ($1,1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'ai_generated','draft',$13,true)`,
+      [id,
+       typeof input.lessonSubject === 'string' ? input.lessonSubject : 'math',
+       skillCode,
+       JSON.stringify(Array.isArray(it.analyticalTags) ? it.analyticalTags.map(String).slice(0, 6) : []),
+       ak.kind === 'number' ? 'problem' : 'question',
+       ageBand, gradeMin, gradeMax,
+       Math.min(Math.max(Number(it.difficulty) || 2, 1), 5),
+       prompt,
+       JSON.stringify(ak),
+       JSON.stringify(Array.isArray(it.hintSet) ? it.hintSet.map(String).slice(0, 4) : []),
+       safetyStatus]);
+    ids.push(id);
+  }
+  if (ids.length) {
+    await pool.query(
+      `UPDATE lessons SET content_item_ids = (
+         SELECT jsonb_agg(x) FROM (
+           SELECT jsonb_array_elements_text(COALESCE(content_item_ids, '[]'::jsonb)) AS x
+           UNION ALL SELECT unnest($2::text[])
+         ) t) WHERE id = $1`,
+      [taskRow.lesson_id, ids]);
+  }
+  return ids;
 }

@@ -414,7 +414,7 @@ export class LessonLifecycleService {
       params.push(filters.ageBand);
     }
     if (filters?.assignedAgent) {
-      conditions.push(`$${idx++} = ANY(assigned_agents)`);
+      conditions.push(`assigned_agents ? $${idx++}`);
       params.push(filters.assignedAgent);
     }
 
@@ -474,13 +474,14 @@ export class LessonLifecycleService {
         [agentId, lessonId]
       );
     }
-    // Add to assigned_agents array if not already present
+    // Add to assigned_agents array if not already present (jsonb `?` tests
+    // array elements; to_jsonb wraps the text as a jsonb string element).
     await this.pool.query(
       `UPDATE lessons SET assigned_agents = 
-        CASE WHEN $1 = ANY(assigned_agents) THEN assigned_agents
-        ELSE assigned_agents || $1::jsonb END
+        CASE WHEN assigned_agents ? $1 THEN assigned_agents
+        ELSE assigned_agents || to_jsonb($1::text) END
        WHERE id = $2`,
-      [JSON.stringify(agentId), lessonId]
+      [agentId, lessonId]
     );
 
     await this.pool.query(
