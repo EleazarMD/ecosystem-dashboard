@@ -4,7 +4,18 @@
  */
 
 const AI_INFERENCING_URL = process.env.NEXT_PUBLIC_AI_INFERENCING_URL || 'http://localhost:9000';
-const ADMIN_KEY = process.env.NEXT_PUBLIC_AI_INFERENCING_ADMIN_KEY || 'ai-inferencing-admin-key-2024';
+// Broker key reads are authenticated (2026-10-27): X-Api-Key must be the
+// shared read credential. Server-side api routes read it JIT from the
+// root-owned file — never a NEXT_PUBLIC var (those ship to the browser).
+import { readFileSync } from 'fs';
+function brokerReadKey(): string {
+  try {
+    return readFileSync('/etc/ai-homelab/credentials/ai-inferencing-read-key', 'utf8').trim();
+  } catch {
+    return process.env.AI_INFERENCING_READ_KEY || '';
+  }
+}
+const ADMIN_KEY = brokerReadKey();
 
 interface APIKeyResponse {
   success: boolean;
